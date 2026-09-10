@@ -9,7 +9,7 @@ and the multi-hop `ChainExecutor` used for all upstream chains.
 
 | File | Role |
 |---|---|
-| `src/lib.rs` | Core types: `BoxStream`, `TargetAddr`/`TargetHost`, `ClientIdentity`, `SessionContext`, `ProtocolId`, `UpstreamId`, `RejectReason`, `RouteAction`; error enums (`ConnectError`, `ProtocolError`, `AuthError`, `RelayError`); `AsyncStream` blanket trait; crate re-exports |
+| `src/lib.rs` | Core types: `BoxStream`, `TargetAddr`/`TargetHost`, `ClientIdentity`, `SessionContext`, `ProtocolId` (+ `from_protocol_spec` disposition, `ProtocolConversionError`), `UpstreamId`, `RejectReason`, `RouteAction`; error enums (`ConnectError`, `ProtocolError`, `AuthError`, `RelayError`); `AsyncStream` blanket trait; crate re-exports |
 | `src/listener.rs` | `TcpListener`: semaphore-bounded accept via `PermitStream` wrapper that holds the permit until the connection drops |
 | `src/connector.rs` | `DirectConnector` with `ConnectOptions`; `is_reserved_or_private_ip` / `is_dns_rebinding_risk` for all IPv4 and IPv6 private/reserved/special-use ranges including IPv4-mapped v6 |
 | `src/relay.rs` | `relay()`: bidirectional copy using `JoinSet` with half-close awareness (shutdown write half on EOF) and `AtomicU64` byte counters; returns `RelayResult` with `TerminationReason` |
@@ -25,7 +25,7 @@ and the multi-hop `ChainExecutor` used for all upstream chains.
 
 | Type | Variants/Fields | Notes |
 |---|---|---|
-| `ProtocolId` | Http, Socks4, Socks5, Shadowsocks, ShadowsocksR, Trojan, Http2, Http3, Quic, WebSocket, Raw, Echo, Reverse | 13 variants; `Debug`/`Display` |
+| `ProtocolId` | Http, Socks4, Socks5, Shadowsocks, ShadowsocksR, Trojan, Http2, Http3, Quic, WebSocket, Raw, Echo, Reverse | 13 variants; `Debug`/`Display`; `from_protocol_spec` exhaustively maps `ProtocolSpec` (HttpOnly→Http, Unix→Raw, Ssh errors upstream-only; Echo/Reverse are runtime-only) |
 | `UpstreamId` | newtype `Arc<str>` | `Serialize`, `FromStr`, `Display` |
 | `TargetHost` | `Ip(IpAddr)` / `Domain(String)` | Domains stay unresolved until dial |
 | `TargetAddr` | `host: TargetHost`, `port: u16` | `FromStr` parses `[ipv6]:port` / `host:port`; rejects unbracketed IPv6 |

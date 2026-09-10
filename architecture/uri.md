@@ -2,11 +2,15 @@
 
 Leaf crate (no eggress dependencies). Parses proxy URIs into a typed AST that
 config compilation, routing, and the pproxy compatibility layer all consume.
-Single `src/lib.rs` (~1220 lines including tests and proptests).
 
 ## Module map
 
-Single file. Public items:
+| File | Role |
+|---|---|
+| `src/lib.rs` | `ProxyChainSpec`/`ProxyHopSpec` AST, `parse_proxy_chain`, redaction |
+| `src/syntax.rs` | Shared lexical/endpoint primitives reused by the compat parser |
+
+Public items:
 
 | Item | Role |
 |---|---|
@@ -18,6 +22,7 @@ Single file. Public items:
 | `RedactedUri` | Display wrapper that masks credentials in output |
 | `UriParseError` | Structured parse errors with span information |
 | `parse_proxy_chain(uri) -> Result<ProxyChainSpec, UriParseError>` | Main entry point |
+| `syntax::{split_chain_hops, split_once_outside_brackets, find_userinfo_separator, parse_host_port, split_userinfo, format_host}` | Neutral lexical helpers (no grammar policy) |
 
 ## Public API surface
 
@@ -25,6 +30,11 @@ Single file. Public items:
 
 Http, HttpOnly, Socks4, Socks5, Shadowsocks, ShadowsocksR, Trojan, Http2,
 Http3, Quic, WebSocket, Raw, Ssh, Unix.
+
+`ProtocolSpec::canonical_name()` is the single native name per variant
+(matches redacted display); `ProtocolSpec::parse_name()` is the single native
+recognition point plus explicit aliases; `FromStr`/`Display` delegate to both.
+`ProtocolSpec::all_variants()` enumerates all 14 for exhaustive disposition tests.
 
 Scheme aliases accepted during parsing:
 
@@ -34,6 +44,27 @@ Scheme aliases accepted during parsing:
 | `ss` | Shadowsocks |
 | `ws`, `wss` | WebSocket |
 | `raw`, `tunnel` | Raw |
+
+`tls` is a transport modifier, not a protocol. Compatibility-only names
+(`https`, `direct`, `redir`, `echo`, `bind`, `listen`, `backward`, `rebind`,
+`secure`, `in`, `websocket`) intentionally return `None` from `parse_name`.
+
+### Shared lexical primitives (`syntax`)
+
+```
+shared lexical primitives != shared grammar
+```
+
+`syntax` owns bracket/brace-aware chain splitting, `@` detection, neutral
+host/port splitting, userinfo splitting (no decoding), and host formatting.
+It returns neutral structures (`HostPort`, raw userinfo parts) and
+`SyntaxError`; each grammar maps errors and applies its own policy:
+
+- empty/duplicate `__` handling stays with the owning grammar (native keeps
+  `DuplicateHopSeparator` for `___`; compat keeps leading/trailing/doubled checks);
+- percent-decoding stays native-only (compat keeps values verbatim);
+- default ports stay compat-owned (8080 / ssh 22); native requires explicit ports;
+- empty hosts are rejected for native proxy hops but allowed for compat listeners.
 
 ### ProxyHopSpec fields
 
@@ -88,13 +119,25 @@ Renders the chain with credentials masked:
 
 ### redact_proxy_uri (canonical tolerant redactor)
 
-`redact_proxy_uri()` (`lib.rs:132`) is the single authority for scrubbing
+`redact_proxy_uri()` is the single authority for scrubbing
 credentials from arbitrary URI-like strings in logs, diagnostics, redacted
 TOML, and oracle transcripts. It is scheme-agnostic (keyed on `://`, last
-unbracketed `@` wins) and returns `scheme://****@host`, or the input
-unchanged when no userinfo is present. `eggress-embed`
-(`to_redacted_toml`) and `eggress-testkit` (oracle transcript scrubbing)
-both delegate to it instead of maintaining scheme whitelists.
+unbracketed `@` wins via `syntax::find_userinfo_separator`) and returns
+`scheme://****@host`, or the input unchanged when no userinfo is present.
+`eggress-embed` (`to_redacted_toml`) and `eggress-testkit` (oracle transcript
+scrubbing) both delegate to it instead of maintaining scheme whitelists.
+Compat structured displays (`PproxyUri::redacted_display`) use the shared
+`syntax::format_host` for IPv6 bracketing rather than a second formatter.
+
+### Syntax-to-runtime disposition
+
+`ProtocolSpec` is syntax; `eggress_core::ProtocolId` is runtime dispatch.
+`ProtocolId::from_protocol_spec()` in `eggress-core` is the central exhaustive
+conversion: `HttpOnly` collapses to `Http`, `Unix` serves `Raw` semantics,
+`Ssh` fails explicitly as upstream-only, and `Echo`/`Reverse` are runtime-only
+with no syntax counterpart. The CLI listener path delegates to it; config
+string compilation (`compile_protocol`) keeps its own string arms for
+runtime-only names like `echo`/`websocket`.
 
 ### CredentialSpec
 
@@ -117,15 +160,16 @@ Error messages include hop context (e.g. `"hop 1: missing scheme"`).
 
 ## How it works (control flow)
 
-1. `parse_proxy_chain(uri)` calls `split_hops(uri)` which splits on `__` with bracket-depth tracking
+1. `parse_proxy_chain(uri)` calls `split_hops()` — triple-`_` check plus shared
+   `syntax::split_chain_hops` (bracket/brace-aware, unmatched fails closed)
 2. Each hop string is passed to `parse_hop()` which:
-   - Detects trailing local-bind modifier (`find_last_at_outside_scheme`)
-   - Extracts scheme, calls `parse_protocols()` to split on `+` and map to `ProtocolSpec`
+   - Detects trailing local-bind modifier (`find_last_at_outside_scheme` over shared `@` scan)
+   - Extracts scheme, calls `parse_protocols()` (`+` split, `tls` modifier, `ProtocolSpec::parse_name`)
    - Extracts `#auth_prefix` fragment
-   - Extracts credentials (`find_at_outside_brackets` for the `@` separator)
+   - Extracts credentials (shared `@` scan, native percent-decode)
    - Parses plugin path segment
    - Splits endpoint from query string
-   - Calls `parse_endpoint()` for host:port
+   - Calls `parse_endpoint()` (shared `syntax::parse_host_port` + native port/host policy)
    - Extracts `?rule=` and `?insecure` query params
    - Validates port != 0 (except Unix)
 3. `parse_credentials()` percent-decodes username and password; Trojan allows password-only (no colon)
@@ -156,22 +200,25 @@ Error messages include hop context (e.g. `"hop 1: missing scheme"`).
 
 ## Test coverage map
 
-| Category | Count | Key tests |
+| Category | Location | Key tests |
 |---|---|---|
-| Basic parsing | 10 | Empty URI, simple http/socks4/socks5, named host, missing scheme, empty host, invalid port, port zero |
-| Multi-protocol | 3 | `http+socks4+socks5`, tls suffix, tls+http |
-| Credentials | 8 | User:pass, Trojan password-only, password-only rejected for non-Trojan, percent-decoded @ and : in password/username, UTF-8 creds |
-| Multi-hop | 4 | Two hops, triple-hop separator rejected |
-| IPv6 | 4 | Bracketed, full, unterminated bracket, mismatched brackets |
-| Query/rule | 3 | Rule extraction, no rule, insecure flag |
-| Redaction | 4 | Credentialed/uncensored display, redacted Debug, roundtrip |
-| Roundtrip | 6 | Simple, multi-hop, multi-protocol, IPv6, with rule |
-| Regression | 3 | Password containing @, redacted display, IPv6 with @ in password |
-| Protocol variants | 4 | Shadowsocks, ss alias, Shadowsocks roundtrip, quic+http, h3, socks4a |
-| TLS | 3 | socks5+tls, http+tls, roundtrip |
-| SSH | 1 | Defaults to port 22 |
-| Proptest | 4 | Never panics on arbitrary input, valid chain roundtrips, hop separator split, protocol separator |
-| **Total** | **53 + 4 proptests** | |
+| Basic parsing | `src/lib.rs` | Empty URI, simple http/socks4/socks5, named host, missing scheme, empty host, invalid port, port zero |
+| Multi-protocol | `src/lib.rs` | `http+socks4+socks5`, tls suffix, tls+http |
+| Credentials | `src/lib.rs` | User:pass, Trojan password-only, password-only rejected for non-Trojan, percent-decoded @ and : in password/username, UTF-8 creds |
+| Multi-hop | `src/lib.rs` | Two hops, triple-hop separator rejected |
+| IPv6 | `src/lib.rs` | Bracketed, full, unterminated bracket, mismatched brackets |
+| Query/rule | `src/lib.rs` | Rule extraction, no rule, insecure flag |
+| Redaction | `src/lib.rs` | Credentialed/uncensored display, redacted Debug, roundtrip |
+| Roundtrip | `src/lib.rs` | Simple, multi-hop, multi-protocol, IPv6, with rule |
+| Regression | `src/lib.rs` | Password containing @, redacted display, IPv6 with @ in password |
+| Protocol variants | `src/lib.rs` | Shadowsocks, ss alias, Shadowsocks roundtrip, quic+http, h3, socks4a |
+| TLS | `src/lib.rs` | socks5+tls, http+tls, roundtrip |
+| SSH | `src/lib.rs` | Defaults to port 22 |
+| Canonical recognition | `src/lib.rs` | `canonical_name` roundtrip for all 14 variants; explicit alias + compat-only exclusion table |
+| Shared syntax | `src/syntax.rs` | `@` separator, chain split with braces, host/port corpus, userinfo split, host formatting |
+| Cross-parser equivalence | `eggress-pproxy-compat/tests/uri_syntax_equivalence.rs` | Shared endpoint/userinfo/chain/TLS/alias/redaction corpus, malformed fail-closed, empty-host + percent-decode differences, compat-only constructs |
+| Runtime disposition | `eggress-core` | Exhaustive `ProtocolSpec` → `ProtocolId` mapping (HttpOnly→Http, Unix→Raw, Ssh explicit error) |
+| Proptest | `src/lib.rs` | Never panics on arbitrary input, valid chain roundtrips, hop separator split, protocol separator |
 
 ## Reviewer gotchas
 

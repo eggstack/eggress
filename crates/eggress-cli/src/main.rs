@@ -1040,27 +1040,18 @@ fn parse_listener_uri(uri: &str) -> Result<ListenerSpec, Box<dyn std::error::Err
     let bind_addr: SocketAddr =
         format!("{}:{}", first_hop.endpoint.host, first_hop.endpoint.port).parse()?;
 
+    // Central typed conversion: exhaustive over `ProtocolSpec`, with
+    // upstream-only transports failing explicitly (see
+    // `ProtocolId::from_protocol_spec`).
     let mut protocols: Vec<eggress_core::ProtocolId> =
         Vec::with_capacity(first_hop.protocols.len());
     for p in &first_hop.protocols {
-        let id = match p {
-            eggress_uri::ProtocolSpec::Http => eggress_core::ProtocolId::Http,
-            eggress_uri::ProtocolSpec::HttpOnly => eggress_core::ProtocolId::Http,
-            eggress_uri::ProtocolSpec::Socks4 => eggress_core::ProtocolId::Socks4,
-            eggress_uri::ProtocolSpec::Socks5 => eggress_core::ProtocolId::Socks5,
-            eggress_uri::ProtocolSpec::Shadowsocks => eggress_core::ProtocolId::Shadowsocks,
-            eggress_uri::ProtocolSpec::ShadowsocksR => eggress_core::ProtocolId::ShadowsocksR,
-            eggress_uri::ProtocolSpec::Trojan => eggress_core::ProtocolId::Trojan,
-            eggress_uri::ProtocolSpec::Http2 => eggress_core::ProtocolId::Http2,
-            eggress_uri::ProtocolSpec::Http3 => eggress_core::ProtocolId::Http3,
-            eggress_uri::ProtocolSpec::Quic => eggress_core::ProtocolId::Quic,
-            eggress_uri::ProtocolSpec::WebSocket => eggress_core::ProtocolId::WebSocket,
-            eggress_uri::ProtocolSpec::Raw => eggress_core::ProtocolId::Raw,
-            eggress_uri::ProtocolSpec::Unix => eggress_core::ProtocolId::Raw,
-            eggress_uri::ProtocolSpec::Ssh => {
-                return Err("SSH is an upstream-only transport, not a listener protocol".into())
-            }
-        };
+        let id = eggress_core::ProtocolId::from_protocol_spec(*p).map_err(|e| {
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                e.to_string(),
+            )) as Box<dyn std::error::Error + Send + Sync>
+        })?;
         protocols.push(id);
     }
 

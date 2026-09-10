@@ -163,7 +163,7 @@ they are grounded in current source layout and public APIs.
 
 The root `Cargo.toml` package is `eggress-bench` (Criterion benches in `benches/`). The workspace itself holds 26 crates under `crates/`, grouped by role (each role maps to a deep dive in the [Architecture deep dives](#architecture-deep-dives) section above):
 
-- Foundation: `eggress-core` (shared types, traits, relay, boxed stream boundaries), `eggress-uri` (URI parsing/compatibility grammar), `eggress-config` (TOML schema and validation), `eggress-routing` (rules, schedulers, health state, route selection), `eggress-metrics`.
+- Foundation: `eggress-core` (shared types, traits, relay, boxed stream boundaries; owns `ProtocolId::from_protocol_spec` disposition), `eggress-uri` (native URI chain grammar + shared `syntax` lexical primitives; owns canonical `ProtocolSpec::parse_name`/`canonical_name`), `eggress-config` (TOML schema and validation), `eggress-routing` (rules, schedulers, health state, route selection), `eggress-metrics`.
 - Runtime: `eggress-server` (listener/connection orchestration), `eggress-runtime` (supervisor, lifecycle, reload, shutdown), `eggress-admin` (local admin HTTP: PAC, metrics, status, route explanation), `eggress-udp`, `eggress-system-proxy`.
 - Protocols: `eggress-protocol-{http,socks,shadowsocks,trojan,websocket,raw,reverse,h3}` — HTTP CONNECT/forward + H2, SOCKS4/4a + SOCKS5, Shadowsocks AEAD/legacy, Trojan over rustls, WebSocket tunnel, raw passthrough, reverse control channel, HTTP/3 CONNECT.
 - Transports: `eggress-transport-{tls,ssh,quic}`; ssh/quic are optional features.

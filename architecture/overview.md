@@ -76,7 +76,7 @@ drain/cancel → admin last. Details: [runtime.md](runtime.md).
 | Component | Crate(s) | Role | Deep dive |
 |---|---|---|---|
 | Core types & streams | `eggress-core` | BoxStream, targets, relay, detection/dispatch, ChainExecutor, rebinding guard | [core.md](core.md) |
-| URI grammar | `eggress-uri` | ProxyChainSpec AST, `+`/`__` syntax, redaction | [uri.md](uri.md) |
+| URI grammar | `eggress-uri` | ProxyChainSpec AST, `+`/`__` syntax, shared `syntax` primitives, canonical `ProtocolSpec` names, redaction | [uri.md](uri.md) |
 | Configuration | `eggress-config` | TOML schema, validation, secrets, compilation | [config.md](config.md) |
 
 ### Policy & observability

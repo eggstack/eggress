@@ -1,4 +1,5 @@
 use crate::error::CompatError;
+use eggress_uri::syntax as uri_syntax;
 
 /// Parsed pproxy-style URI.
 #[derive(Debug, Clone)]
@@ -183,14 +184,12 @@ fn redact_unix_path(path: &str) -> String {
     }
 }
 
+/// Shared host formatting (bracket IPv6 literals).
+///
+/// Delegates to [`eggress_uri::syntax::format_host`] so native and
+/// compatibility displays cannot drift.
 fn format_host_for_uri(host: &str) -> String {
-    if host.is_empty() {
-        String::new()
-    } else if host.contains(':') {
-        format!("[{}]", host)
-    } else {
-        host.to_string()
-    }
+    uri_syntax::format_host(host)
 }
 
 /// Parse a single pproxy-style URI into our typed representation.
@@ -284,13 +283,16 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
         tls = true;
     }
 
-    // Validate known schemes
+    // Validate known schemes: native-capable tokens delegate to the canonical
+    // `ProtocolSpec::parse_name` path; only pproxy-specific pseudo-protocols
+    // stay in the explicit compat table. pproxy-only reverse words are never
+    // added to the native enum merely for exhaustiveness.
     for protocol in &protocol_chain {
+        if eggress_uri::ProtocolSpec::parse_name(protocol).is_some() {
+            continue;
+        }
         match protocol.as_str() {
-            "http" | "https" | "socks4" | "socks4a" | "socks5" | "trojan" | "ss"
-            | "shadowsocks" | "ssr" | "direct" | "ssh" | "unix" | "redir" | "h2" | "ws" | "wss"
-            | "raw" | "tunnel" | "bind" | "listen" | "backward" | "rebind" | "httponly"
-            | "echo" | "quic" | "h3" => {}
+            "https" | "direct" | "redir" | "echo" | "bind" | "listen" | "backward" | "rebind" => {}
             other => {
                 return Err(CompatError::UnsupportedProtocol(other.to_string()));
             }
@@ -439,22 +441,12 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
     })
 }
 
+/// Split at the first top-level `delimiter` (outside `[]`/`{}`).
+///
+/// Shared lexical primitive from `eggress-uri`; compat fixed-target braces
+/// are tracked so `{host:port}` never splits early.
 fn split_top_level(input: &str, delimiter: char) -> (&str, Option<&str>) {
-    let mut bracket = 0u32;
-    let mut brace = 0u32;
-    for (idx, ch) in input.char_indices() {
-        match ch {
-            '[' => bracket += 1,
-            ']' => bracket = bracket.saturating_sub(1),
-            '{' => brace += 1,
-            '}' => brace = brace.saturating_sub(1),
-            _ => {}
-        }
-        if ch == delimiter && bracket == 0 && brace == 0 {
-            return (&input[..idx], Some(&input[idx + 1..]));
-        }
-    }
-    (input, None)
+    uri_syntax::split_once_outside_brackets(input, delimiter)
 }
 
 /// Split a protocol expression without treating a brace-delimited tunnel
@@ -556,78 +548,29 @@ fn parse_path_metadata(path: Option<&str>) -> (Option<String>, Vec<PproxyPluginS
     (bind, plugins)
 }
 
-/// Find the position of the LAST unbracketed `@` in `s`. The userinfo
-/// separator is the last `@` after the scheme, not the first; a raw
-/// password containing `@` must not be truncated by the parser.
+/// Shared userinfo-separator primitive (last `@` outside `[]`).
+///
+/// Delegates to `eggress-uri` so both grammars agree on passwords containing
+/// `@` and bracketed IPv6 endpoints.
 fn find_last_at_outside_brackets(s: &str) -> Option<usize> {
-    let mut last_at: Option<usize> = None;
-    let mut bracket_depth = 0u32;
-    for (i, c) in s.char_indices() {
-        match c {
-            '[' => bracket_depth += 1,
-            ']' => bracket_depth = bracket_depth.saturating_sub(1),
-            '@' if bracket_depth == 0 => last_at = Some(i),
-            _ => {}
-        }
-    }
-    last_at
+    uri_syntax::find_userinfo_separator(s)
 }
 
 fn parse_userinfo(userinfo: &str) -> Result<(String, String), CompatError> {
-    match userinfo.find(':') {
-        Some(colon_pos) => {
-            let user = userinfo[..colon_pos].to_string();
-            let pass = userinfo[colon_pos + 1..].to_string();
-            Ok((user, pass))
-        }
-        None => {
-            // No colon: treat as password-only (e.g. Trojan: trojan://password@host:port)
-            Ok((String::new(), userinfo.to_string()))
-        }
-    }
+    // Shared split on first `:`; compat keeps values verbatim (no
+    // percent-decoding — that stays a native-only semantic). No colon means
+    // password-only (e.g. Trojan: trojan://password@host:port).
+    let (user, pass, _) = uri_syntax::split_userinfo(userinfo);
+    Ok((user, pass))
 }
 
 fn parse_endpoint(endpoint: &str) -> Result<(String, u16, bool), CompatError> {
-    if endpoint.is_empty() {
-        return Ok((String::new(), 0, false));
-    }
-
-    // Handle bracketed IPv6: [::1]:8080
-    if endpoint.starts_with('[') {
-        let close = endpoint.find(']').ok_or_else(|| CompatError::InvalidUri {
-            message: "unterminated IPv6 bracket".to_string(),
-        })?;
-        let host = &endpoint[1..close];
-        let after = &endpoint[close + 1..];
-        if !after.starts_with(':') {
-            return Err(CompatError::InvalidUri {
-                message: "expected ':' after IPv6 bracket".to_string(),
-            });
-        }
-        let port = after[1..]
-            .parse::<u16>()
-            .map_err(|e| CompatError::InvalidUri {
-                message: format!("invalid port: {}", e),
-            })?;
-        return Ok((host.to_string(), port, true));
-    }
-
-    // Regular host:port
-    let colon_pos = match endpoint.rfind(':') {
-        Some(pos) => pos,
-        None => {
-            return Ok((endpoint.to_string(), 0, false));
-        }
-    };
-    let host = &endpoint[..colon_pos];
-    let port_str = &endpoint[colon_pos + 1..];
-    let port = port_str
-        .parse::<u16>()
-        .map_err(|e| CompatError::InvalidUri {
-            message: format!("invalid port '{}': {}", port_str, e),
-        })?;
-
-    Ok((host.to_string(), port, true))
+    // Shared lexical host/port split; compat policy (empty host allowed,
+    // missing port allowed with `port_specified=false`, port 0 preserved)
+    // is applied by the caller.
+    uri_syntax::parse_host_port(endpoint)
+        .map(|hp| (hp.host, hp.port.unwrap_or(0), hp.port_specified))
+        .map_err(|e| CompatError::InvalidUri { message: e.message })
 }
 
 fn default_port_for_scheme(scheme: &str) -> Option<u16> {
@@ -735,54 +678,25 @@ pub fn parse_pproxy_chain(uri: &str) -> Result<PproxyChain, CompatError> {
     })
 }
 
+/// Shared chain splitting (bracket/brace-aware) with compat diagnostics.
+///
+/// The lexical split lives in `eggress-uri`; empty/duplicate-separator policy
+/// stays compat-owned in [`parse_pproxy_chain`].
 fn split_chain_hops(uri: &str) -> Result<Vec<&str>, CompatError> {
-    let mut result = Vec::new();
-    let mut start = 0;
-    let mut bracket = 0u32;
-    let mut brace = 0u32;
-    let bytes = uri.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] as char {
-            '[' => bracket += 1,
-            ']' => {
-                if bracket == 0 {
-                    return Err(CompatError::InvalidUri {
-                        message: format!("chain URI has unmatched ']': {}", uri),
-                    });
-                }
-                bracket -= 1;
-            }
-            '{' => brace += 1,
-            '}' => {
-                if brace == 0 {
-                    return Err(CompatError::InvalidUri {
-                        message: format!("chain URI has unmatched '}}': {}", uri),
-                    });
-                }
-                brace -= 1;
-            }
-            '_' if i + 1 < bytes.len() && bytes[i + 1] == b'_' && bracket == 0 && brace == 0 => {
-                result.push(&uri[start..i]);
-                i += 1;
-                start = i + 1;
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-    if bracket != 0 {
-        return Err(CompatError::InvalidUri {
-            message: format!("chain URI has unmatched '[': {}", uri),
-        });
-    }
-    if brace != 0 {
-        return Err(CompatError::InvalidUri {
-            message: format!("chain URI has unmatched '{{': {}", uri),
-        });
-    }
-    result.push(&uri[start..]);
-    Ok(result)
+    uri_syntax::split_chain_hops(uri).map_err(|e| {
+        let detail = if e.message.contains(']') {
+            format!("chain URI has unmatched ']': {uri}")
+        } else if e.message.contains('}') {
+            format!("chain URI has unmatched '}}': {uri}")
+        } else if e.message.contains('[') {
+            format!("chain URI has unmatched '[': {uri}")
+        } else if e.message.contains('{') {
+            format!("chain URI has unmatched '{{': {uri}")
+        } else {
+            format!("chain URI split failed for '{uri}': {}", e.message)
+        };
+        CompatError::InvalidUri { message: detail }
+    })
 }
 
 /// Check if any hop in a chain uses an unsupported protocol for chaining.

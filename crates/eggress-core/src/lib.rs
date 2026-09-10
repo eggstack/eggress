@@ -55,6 +55,52 @@ impl fmt::Display for ProtocolId {
     }
 }
 
+/// Failure to convert URI syntax into a dispatchable runtime protocol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum ProtocolConversionError {
+    /// The syntax concept has no listener/runtime role (e.g. SSH upstream-only).
+    #[error("SSH is an upstream-only transport, not a listener protocol")]
+    UpstreamOnlyTransport,
+}
+
+impl ProtocolId {
+    /// Central typed conversion from URI syntax to runtime disposition.
+    ///
+    /// Exhaustive over [`eggress_uri::ProtocolSpec`]; unsupported and
+    /// non-dispatchable variants fail explicitly instead of silent fallback:
+    ///
+    /// - `HttpOnly` is an upstream request adapter; listeners serve `Http`.
+    /// - `Unix` is a transport concept; listeners serve it as `Raw` TCP
+    ///   semantics with a unix-socket bind (see `ListenerUdpConfig`/unix listener).
+    /// - `Ssh` is upstream-only and returns [`ProtocolConversionError::UpstreamOnlyTransport`].
+    /// - `Echo` / `Reverse` are runtime-only: they have no `ProtocolSpec`
+    ///   counterpart and never flow through this conversion.
+    /// - `Raw` covers both `raw` and `tunnel` URI aliases (canonicalized in
+    ///   `ProtocolSpec`), and `WebSocket` covers `ws`/`wss`.
+    /// - `H3`/`Quic` map directly; feature gating (optional `quic` build)
+    ///   stays in config compilation, not here.
+    pub fn from_protocol_spec(
+        spec: eggress_uri::ProtocolSpec,
+    ) -> Result<Self, ProtocolConversionError> {
+        use eggress_uri::ProtocolSpec as S;
+        match spec {
+            S::Http | S::HttpOnly => Ok(ProtocolId::Http),
+            S::Socks4 => Ok(ProtocolId::Socks4),
+            S::Socks5 => Ok(ProtocolId::Socks5),
+            S::Shadowsocks => Ok(ProtocolId::Shadowsocks),
+            S::ShadowsocksR => Ok(ProtocolId::ShadowsocksR),
+            S::Trojan => Ok(ProtocolId::Trojan),
+            S::Http2 => Ok(ProtocolId::Http2),
+            S::Http3 => Ok(ProtocolId::Http3),
+            S::Quic => Ok(ProtocolId::Quic),
+            S::WebSocket => Ok(ProtocolId::WebSocket),
+            S::Raw => Ok(ProtocolId::Raw),
+            S::Unix => Ok(ProtocolId::Raw),
+            S::Ssh => Err(ProtocolConversionError::UpstreamOnlyTransport),
+        }
+    }
+}
+
 /// A unique identifier for a listener.
 pub type ListenerId = u64;
 
@@ -355,5 +401,42 @@ mod tests {
             port: 80,
         };
         assert_eq!(addr.to_string(), "127.0.0.1:80");
+    }
+
+    #[test]
+    fn test_protocol_spec_runtime_disposition_is_exhaustive() {
+        use eggress_uri::ProtocolSpec as S;
+        // Every current `ProtocolSpec` variant has an explicit disposition.
+        assert_eq!(eggress_uri::ProtocolSpec::all_variants().len(), 14);
+        let cases: &[(S, Option<ProtocolId>)] = &[
+            (S::Http, Some(ProtocolId::Http)),
+            // Upstream adapter collapses to Http for listener dispatch.
+            (S::HttpOnly, Some(ProtocolId::Http)),
+            (S::Socks4, Some(ProtocolId::Socks4)),
+            (S::Socks5, Some(ProtocolId::Socks5)),
+            (S::Shadowsocks, Some(ProtocolId::Shadowsocks)),
+            (S::ShadowsocksR, Some(ProtocolId::ShadowsocksR)),
+            (S::Trojan, Some(ProtocolId::Trojan)),
+            (S::Http2, Some(ProtocolId::Http2)),
+            (S::Http3, Some(ProtocolId::Http3)),
+            (S::Quic, Some(ProtocolId::Quic)),
+            (S::WebSocket, Some(ProtocolId::WebSocket)),
+            (S::Raw, Some(ProtocolId::Raw)),
+            // Transport concept: Unix listeners serve Raw semantics.
+            (S::Unix, Some(ProtocolId::Raw)),
+            // Upstream-only transport fails explicitly.
+            (S::Ssh, None),
+        ];
+        for (spec, expected) in cases {
+            assert_eq!(
+                ProtocolId::from_protocol_spec(*spec).ok(),
+                *expected,
+                "disposition for {spec:?}"
+            );
+        }
+        assert_eq!(
+            ProtocolId::from_protocol_spec(S::Ssh),
+            Err(ProtocolConversionError::UpstreamOnlyTransport)
+        );
     }
 }

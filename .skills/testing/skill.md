@@ -378,8 +378,9 @@ The older strict manifest is historical provenance, not an active claim.
 
 ### pproxy compat unit tests
 - `crates/eggress-pproxy-compat/src/tests.rs` — protocol aliases, diagnostics, credential redaction
-- `crates/eggress-pproxy-compat/src/uri.rs` — URI chain parsing (`__` separators, semicolon/comma rejection, per-hop validation) — 14 tests
-- `crates/eggress-pproxy-compat/src/translate/` — chain translation (multi-hop TOML generation, unsupported protocol diagnostics; `entry`/`intermediates`/`native`/`toml_render` renderers) — 8 tests
+- `crates/eggress-pproxy-compat/src/uri.rs` — URI chain parsing (`__` separators, semicolon/comma rejection, per-hop validation; native tokens delegate to `ProtocolSpec::parse_name`, compat-only table stays explicit)
+- `crates/eggress-pproxy-compat/src/translate/` — chain translation (multi-hop TOML generation, unsupported protocol diagnostics; `entry`/`intermediates`/`native`/`toml_render` renderers)
+- `crates/eggress-pproxy-compat/tests/uri_syntax_equivalence.rs` — cross-parser shared-syntax corpus and intentional grammar differences
 - Diagnostics tests: `cargo test -p eggress-pproxy-compat diagnostics`
 - Exit codes tests: `cargo test -p eggress-pproxy-compat exit_codes`
 
@@ -481,6 +482,11 @@ evidence of a pass.
 - `crates/eggress-pproxy-compat/tests/native_equivalence.rs` — direct native
   vs TOML-render/reparse equivalence + identical warnings/unsupported +
   outbound chain match + credential redaction.
+- `crates/eggress-pproxy-compat/tests/uri_syntax_equivalence.rs` — shared
+  URI lexical corpus vs intentional grammar differences (empty hosts,
+  default ports, percent-decoding, compat-only `+in`/reverse/plugin/fragment/
+  fixed-target forms). Shared lexing lives in `eggress-uri::syntax`;
+  grammars stay separate.
 - `python/tests/test_asyncio_bridge_convergence.py` — shared
   AsyncBridge/CloseWaiter contracts across AsyncConnection/outbound
   (no direct `run_in_executor` outside bridge + documented plugin exception).

@@ -79,13 +79,15 @@ pub fn compile_chain_to_native(
                 detail: error,
             });
         }
-        match hop.scheme.as_str() {
-            "ss" | "shadowsocks" | "ssr" => {}
-            "http" | "https" | "httponly" | "socks4" | "socks4a" | "socks5" | "trojan"
-            | "direct" | "h2" | "h3" | "quic" | "quic+http" | "http+quic" | "ws" | "wss"
-            | "raw" | "tunnel" => {}
-            "ssh" if cfg!(feature = "ssh") => {}
-            "ssh" => {
+        // Native-capable single tokens delegate to the canonical
+        // `ProtocolSpec::parse_name` path; only compat-specific outbound
+        // tokens and the two historical combined `quic+http` forms stay
+        // explicit here. This preserves the exact accepted set while removing
+        // the independent native whitelist.
+        if hop.scheme == "ssh" {
+            if cfg!(feature = "ssh") {
+                // accepted below
+            } else {
                 return Err(CompatError::UnsupportedFeature {
                     feature: "ssh-upstream",
                     detail: format!(
@@ -94,22 +96,43 @@ pub fn compile_chain_to_native(
                     ),
                 });
             }
-            "unix" => {}
-            "redir" => {
-                return Err(CompatError::UnsupportedFeature {
-                    feature: "redir-upstream",
-                    detail: format!(
-                        "Redir upstream '{}': transparent proxy redirect is not supported as upstream",
-                        hop.redacted_display()
-                    ),
-                });
+        } else if hop.scheme == "redir" {
+            return Err(CompatError::UnsupportedFeature {
+                feature: "redir-upstream",
+                detail: format!(
+                    "Redir upstream '{}': transparent proxy redirect is not supported as upstream",
+                    hop.redacted_display()
+                ),
+            });
+        } else if hop.scheme == "unix" {
+            // accepted below
+        } else if hop.scheme == "quic+http" || hop.scheme == "http+quic" {
+            // Historical combined upstream form; both tokens are native.
+            debug_assert!(hop
+                .protocol_chain
+                .iter()
+                .all(|t| eggress_uri::ProtocolSpec::parse_name(t).is_some()));
+        } else if hop.protocol_chain.len() == 1 {
+            let token = hop.protocol_chain[0].as_str();
+            if eggress_uri::ProtocolSpec::parse_name(token).is_some() {
+                // native-capable single token
+            } else {
+                // Explicit compat-only outbound tokens (never added to native).
+                match token {
+                    "https" | "direct" => {}
+                    other => {
+                        return Err(CompatError::UnsupportedFeature {
+                            feature: "scheme",
+                            detail: format!("unknown scheme '{other}' in upstream URI"),
+                        });
+                    }
+                }
             }
-            other => {
-                return Err(CompatError::UnsupportedFeature {
-                    feature: "scheme",
-                    detail: format!("unknown scheme '{other}' in upstream URI"),
-                });
-            }
+        } else {
+            return Err(CompatError::UnsupportedFeature {
+                feature: "scheme",
+                detail: format!("unknown scheme '{}' in upstream URI", hop.scheme),
+            });
         }
     }
 

@@ -12,7 +12,7 @@ diagnostics, and the fail-closed startup gate.
 |---|---|
 | `lib.rs` | Public re-exports: `PproxyArgs`, `translate_pproxy_args`, `translate_from_uris`, `classify_aggregate_tier`, `evaluate_execution_gate`, `ManifestTier`, `DiagnosticCode`, `StructuredDiagnostic`, `CompatIssue`, `IssueSeverity`, `CompatRegex`, `PproxyRuleFile` |
 | `args.rs` | `PproxyArgs`: frozen pproxy 2.7.9 flag parser; strict violations for unknown flags/values |
-| `uri.rs` | `PproxyUri`/`PproxyChain`/`PproxyPluginSpec` — separate parser from native eggress grammar |
+| `uri.rs` | `PproxyUri`/`PproxyChain`/`PproxyPluginSpec` — compat grammar over shared `eggress-uri::syntax` primitives; native tokens delegate to `ProtocolSpec::parse_name`, compat-only tokens stay explicit |
 | `translate/` | Split by semantic area: `entry` (arg-level entry points + `CombinedTranslation`), `intermediates` (shared semantic builder), `model` (TOML structs shared by builder/renderers), `rules` (patterns/rule files), `toml_render` (presentation-only TOML), `native` (native compilation + `NativeTranslation`) |
 | `issues.rs` | `CompatIssue` (severity, code, category/feature tags, tier, message, suggestion) — the single stored diagnostic model; `IssueSeverity::{Warning, Unsupported, Info}` |
 | `tier.rs` | `ManifestTier` enum (5 variants) + `classify_aggregate_tier` + `manifest_tier_for_category` |
@@ -98,6 +98,31 @@ delegate to it). Key mappings:
 | `socks4-bind`, `socks5-bind` | `unsupported_protocol` | `unsupported` |
 | `system-proxy`, `auth-timeout` | `unsupported_flag` | `compatible_with_warning` |
 
+## URI layer: shared lexing, separate grammar
+
+```
+shared lexical primitives != shared grammar
+```
+
+`uri.rs` reuses `eggress_uri::syntax` for chain splitting
+(`split_chain_hops`), top-level delimiter scans (`split_once_outside_brackets`
+for `?`/`#`/`/`), userinfo separation (`find_userinfo_separator`),
+host/port splitting (`parse_host_port` + `split_userinfo`), and host
+formatting (`format_host`). Empty/duplicate-`__` policy, percent-decoding
+(native-only; compat keeps values verbatim), default ports (compat 8080/ssh
+22; native requires explicit), and empty-host allowance (compat listeners;
+native proxy hops reject) stay with the owning grammar.
+
+Native-capable protocol tokens delegate to the canonical
+`eggress_uri::ProtocolSpec::parse_name` path. Only eight pproxy-specific
+tokens stay in the explicit compat table: `https`, `direct`, `redir`, `echo`,
+`bind`, `listen`, `backward`, `rebind` (plus `tls`/`ssl`/`secure`/`in`
+modifiers, fixed targets, plugins, fragments, rule files). Reverse/plugin
+concepts are never added to the native AST. Outbound validation in
+`translate/native.rs` (`compile_chain_to_native`) uses the same delegation
+for single tokens and keeps only the historical `quic+http` combined forms
+plus `ssh`/`unix`/`redir` roles explicit.
+
 ## How it works
 
 1. **Argument parsing**: `PproxyArgs::parse()` freezes the pproxy 2.7.9 CLI
@@ -168,6 +193,7 @@ EGRESS_REQUIRE_EXTERNAL_INTEROP=1 \
 
 | Location | What it covers |
 |---|---|
+| `crates/eggress-pproxy-compat/tests/uri_syntax_equivalence.rs` | Cross-parser shared-syntax corpus, intentional differences, compat-only constructs |
 | `crates/eggress-pproxy-compat/src/tests.rs` | Translation correctness, gate evaluation, tier classification |
 | `crates/eggress-pproxy-compat/src/tier.rs` (inline tests) | Aggregate tier logic, category/feature mapping |
 | `crates/eggress-pproxy-compat/src/diagnostics.rs` (inline tests) | Diagnostic code display, JSON serialization, redaction |

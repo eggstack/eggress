@@ -63,9 +63,21 @@ The chain executor in `eggress-core/src/chain.rs` folds over hops with protocol-
 - Implement the hop handler that takes a stream to the hop and produces a stream to the next target
 
 ### 4. Registration
-- Add the protocol variant to `ProtocolId` enum in `eggress-core/src/detect.rs`
+- Add the protocol variant to `ProtocolId` enum in `eggress-core/src/lib.rs`
+  (runtime dispatch) and map syntax via `ProtocolId::from_protocol_spec()`
+  (exhaustive; `HttpOnly`→`Http`, `Unix`→`Raw`, `Ssh` upstream-only errors,
+  `Echo`/`Reverse` are runtime-only with no syntax counterpart)
 - Register the detector in the appropriate listener setup
-- Add URI scheme handling in `eggress-uri/`
+- Add URI scheme handling in `eggress-uri/` via the canonical
+  `ProtocolSpec::canonical_name()` / `ProtocolSpec::parse_name()` path
+  (`FromStr`/`Display` delegate; `all_variants()` for exhaustive tests).
+  Reuse `eggress-uri::syntax` lexical primitives
+  (`split_chain_hops`, `split_once_outside_brackets`,
+  `find_userinfo_separator`, `parse_host_port`, `split_userinfo`,
+  `format_host`) — do not reimplement bracket-aware splitting or `@`
+  scanning. Compatibility-only tokens (`bind`, `listen`, `backward`,
+  `rebind`, `https`, `direct`, `redir`, `echo`, `in`, fixed targets,
+  plugins) stay in `eggress-pproxy-compat`, never in the native AST.
 
 ### 5. Advanced transport considerations
 For H2, WebSocket, or raw tunnel transports, see `.skills/advanced-transports/skill.md` for specialized guidance. All intermediate-hop handlers (WS, Raw, H2) are stream-consuming — they perform handshake over the prior-hop stream provided by the chain executor. Chain entries (socks5→ws, http→ws, socks5→raw, http→raw, socks5→h2, http→h2) are classified as `drop_in`.

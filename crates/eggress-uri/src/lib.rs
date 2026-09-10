@@ -1,6 +1,9 @@
 use std::fmt;
+use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
+
+pub mod syntax;
 
 /// Specification for a proxy chain (one or more hops).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -59,6 +62,97 @@ pub enum ProtocolSpec {
     Raw,
     Ssh,
     Unix,
+}
+
+impl ProtocolSpec {
+    /// Canonical URI name for this protocol (matches redacted display).
+    ///
+    /// This is the single native recognition point: [`ProtocolSpec::parse_name`]
+    /// inverts this mapping plus explicit aliases. Compatibility parsing
+    /// delegates native-capable tokens here and keeps only pproxy-specific
+    /// pseudo-protocols (`bind`, `listen`, `backward`, `rebind`, `direct`,
+    /// `redir`, `echo`, `https`, ...) in its own small table.
+    pub fn canonical_name(self) -> &'static str {
+        match self {
+            ProtocolSpec::Http => "http",
+            ProtocolSpec::HttpOnly => "httponly",
+            ProtocolSpec::Socks4 => "socks4",
+            ProtocolSpec::Socks5 => "socks5",
+            ProtocolSpec::Shadowsocks => "shadowsocks",
+            ProtocolSpec::ShadowsocksR => "ssr",
+            ProtocolSpec::Trojan => "trojan",
+            ProtocolSpec::Http2 => "h2",
+            ProtocolSpec::Http3 => "h3",
+            ProtocolSpec::Quic => "quic",
+            ProtocolSpec::WebSocket => "ws",
+            ProtocolSpec::Raw => "raw",
+            ProtocolSpec::Ssh => "ssh",
+            ProtocolSpec::Unix => "unix",
+        }
+    }
+
+    /// Parse one native protocol token, including explicit aliases.
+    ///
+    /// Accepted aliases (tested):
+    /// `socks4a` -> `Socks4`, `ss` -> `Shadowsocks`, `wss` -> `WebSocket`,
+    /// `tunnel` -> `Raw`. Transport modifier `tls` is NOT a protocol and
+    /// returns `None` so callers handle it separately. Compatibility-only
+    /// names (`https`, `direct`, `redir`, `echo`, `bind`, `listen`,
+    /// `backward`, `rebind`, `websocket`, `secure`, `in`, ...) intentionally
+    /// return `None`.
+    pub fn parse_name(name: &str) -> Option<Self> {
+        match name {
+            "http" => Some(ProtocolSpec::Http),
+            "httponly" => Some(ProtocolSpec::HttpOnly),
+            "socks4" | "socks4a" => Some(ProtocolSpec::Socks4),
+            "socks5" => Some(ProtocolSpec::Socks5),
+            "shadowsocks" | "ss" => Some(ProtocolSpec::Shadowsocks),
+            "ssr" => Some(ProtocolSpec::ShadowsocksR),
+            "trojan" => Some(ProtocolSpec::Trojan),
+            "h2" => Some(ProtocolSpec::Http2),
+            "h3" => Some(ProtocolSpec::Http3),
+            "quic" => Some(ProtocolSpec::Quic),
+            "ws" | "wss" => Some(ProtocolSpec::WebSocket),
+            "raw" | "tunnel" => Some(ProtocolSpec::Raw),
+            "ssh" => Some(ProtocolSpec::Ssh),
+            "unix" => Some(ProtocolSpec::Unix),
+            _ => None,
+        }
+    }
+
+    /// All native variants in canonical order (for exhaustive disposition tests).
+    pub fn all_variants() -> &'static [ProtocolSpec] {
+        &[
+            ProtocolSpec::Http,
+            ProtocolSpec::HttpOnly,
+            ProtocolSpec::Socks4,
+            ProtocolSpec::Socks5,
+            ProtocolSpec::Shadowsocks,
+            ProtocolSpec::ShadowsocksR,
+            ProtocolSpec::Trojan,
+            ProtocolSpec::Http2,
+            ProtocolSpec::Http3,
+            ProtocolSpec::Quic,
+            ProtocolSpec::WebSocket,
+            ProtocolSpec::Raw,
+            ProtocolSpec::Ssh,
+            ProtocolSpec::Unix,
+        ]
+    }
+}
+
+impl FromStr for ProtocolSpec {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        ProtocolSpec::parse_name(s).ok_or_else(|| format!("unsupported protocol: {s}"))
+    }
+}
+
+impl fmt::Display for ProtocolSpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.canonical_name())
+    }
 }
 
 /// Endpoint address specification.
@@ -129,12 +223,15 @@ pub struct RedactedUri<'a> {
 ///
 /// This is intentionally tolerant of URI forms that are not parseable as a
 /// native [`ProxyChainSpec`], so callers can safely use it for diagnostics.
+/// It is the single canonical tolerant credential-hiding primitive:
+/// [`syntax::find_userinfo_separator`] owns `@` detection for both native
+/// and compatibility diagnostics.
 pub fn redact_proxy_uri(uri: &str) -> String {
     let Some(scheme_end) = uri.find("://") else {
         // No `://` — still redact `user:pass@host` style credentials so
         // raw `user:pass@host` or base64-decoded blobs never leak when
         // callers fallback via `unwrap_or_else(|_| redact_proxy_uri(uri))`.
-        if let Some(at_pos) = find_at_outside_brackets(uri) {
+        if let Some(at_pos) = syntax::find_userinfo_separator(uri) {
             if uri[..at_pos].contains(':') {
                 return format!("****@{}", &uri[at_pos + 1..]);
             }
@@ -144,7 +241,7 @@ pub fn redact_proxy_uri(uri: &str) -> String {
         return uri.to_string();
     };
     let after_scheme = &uri[scheme_end + 3..];
-    match find_at_outside_brackets(after_scheme) {
+    match syntax::find_userinfo_separator(after_scheme) {
         Some(at_pos) => format!(
             "{}****@{}",
             &uri[..scheme_end + 3],
@@ -167,36 +264,18 @@ impl fmt::Display for RedactedUri<'_> {
             .hops
             .iter()
             .map(|hop| {
-                let mut proto_parts: Vec<&str> = hop
-                    .protocols
-                    .iter()
-                    .map(|p| match p {
-                        ProtocolSpec::Http => "http",
-                        ProtocolSpec::HttpOnly => "httponly",
-                        ProtocolSpec::Socks4 => "socks4",
-                        ProtocolSpec::Socks5 => "socks5",
-                        ProtocolSpec::Shadowsocks => "shadowsocks",
-                        ProtocolSpec::ShadowsocksR => "ssr",
-                        ProtocolSpec::Trojan => "trojan",
-                        ProtocolSpec::Http2 => "h2",
-                        ProtocolSpec::Http3 => "h3",
-                        ProtocolSpec::Quic => "quic",
-                        ProtocolSpec::WebSocket => "ws",
-                        ProtocolSpec::Raw => "raw",
-                        ProtocolSpec::Ssh => "ssh",
-                        ProtocolSpec::Unix => "unix",
-                    })
-                    .collect();
+                let mut proto_parts: Vec<&str> =
+                    hop.protocols.iter().map(|p| p.canonical_name()).collect();
                 if hop.tls {
                     proto_parts.push("tls");
                 }
                 let proto_str = proto_parts.join("+");
 
-                let endpoint_str = if hop.endpoint.host.contains(':') {
-                    format!("[{}]:{}", hop.endpoint.host, hop.endpoint.port)
-                } else {
-                    format!("{}:{}", hop.endpoint.host, hop.endpoint.port)
-                };
+                let endpoint_str = format!(
+                    "{}:{}",
+                    syntax::format_host(&hop.endpoint.host),
+                    hop.endpoint.port
+                );
 
                 let cred_str = if hop.credentials.is_some() {
                     "****:****@"
@@ -263,53 +342,49 @@ pub fn parse_proxy_chain(uri: &str) -> Result<ProxyChainSpec, UriParseError> {
 }
 
 fn split_hops(uri: &str) -> Result<Vec<String>, UriParseError> {
-    // Split on `__` but not inside brackets or other contexts
-    let mut hops = Vec::new();
-    let mut current = String::new();
-    let chars: Vec<char> = uri.chars().collect();
-    let len = chars.len();
-    let mut i = 0;
-    let mut bracket_depth: usize = 0;
+    // Shared lexical split tracks `[]`/`{}` and fails closed on unmatched
+    // brackets. Triple-underscore policy stays native: any `___` run outside
+    // brackets is `DuplicateHopSeparator`, preserving historical diagnostics.
+    if has_triple_underscore_outside_brackets(uri) {
+        return Err(UriParseError::DuplicateHopSeparator);
+    }
+    let hops = syntax::split_chain_hops(uri).map_err(|e| UriParseError::InvalidFormat {
+        message: e.message,
+        span: e.span,
+    })?;
+    Ok(hops.into_iter().map(str::to_string).collect())
+}
 
-    while i < len {
-        if chars[i] == '[' {
-            bracket_depth += 1;
-            current.push(chars[i]);
-        } else if chars[i] == ']' {
-            if bracket_depth == 0 {
-                return Err(UriParseError::InvalidFormat {
-                    message: "unmatched ']'".to_string(),
-                    span: Some(i),
-                });
+/// Detect `___` (or longer) outside `[]` without splitting.
+///
+/// Bracket-only on purpose: this preserves the historical native split policy
+/// exactly (braces were never tracked here). The shared splitter below also
+/// tracks `{}` so compat fixed-targets never split; brace-containing native
+/// inputs still fail closed, only via endpoint validation instead.
+fn has_triple_underscore_outside_brackets(s: &str) -> bool {
+    let mut bracket = 0u32;
+    let bytes = s.as_bytes();
+    let mut run = 0u32;
+    for &b in bytes {
+        match b as char {
+            '[' => {
+                bracket += 1;
+                run = 0;
             }
-            bracket_depth -= 1;
-            current.push(chars[i]);
-        } else if bracket_depth == 0 && i + 1 < len && chars[i] == '_' && chars[i + 1] == '_' {
-            if (i > 0 && chars[i - 1] == '_') || (i + 2 < len && chars[i + 2] == '_') {
-                return Err(UriParseError::DuplicateHopSeparator);
+            ']' => {
+                bracket = bracket.saturating_sub(1);
+                run = 0;
             }
-            hops.push(current.clone());
-            current.clear();
-            i += 2;
-            continue;
-        } else {
-            current.push(chars[i]);
+            '_' if bracket == 0 => {
+                run += 1;
+                if run >= 3 {
+                    return true;
+                }
+            }
+            _ => run = 0,
         }
-        i += 1;
     }
-
-    if bracket_depth != 0 {
-        return Err(UriParseError::InvalidFormat {
-            message: "unmatched '['".to_string(),
-            span: None,
-        });
-    }
-
-    if !current.is_empty() {
-        hops.push(current);
-    }
-
-    Ok(hops)
+    false
 }
 
 fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseError> {
@@ -496,23 +571,15 @@ fn parse_protocols(scheme: &str) -> Result<(Vec<ProtocolSpec>, bool), UriParseEr
     let mut tls = false;
 
     for p in &parts {
-        match *p {
-            "http" => protocols.push(ProtocolSpec::Http),
-            "httponly" => protocols.push(ProtocolSpec::HttpOnly),
-            "socks4" | "socks4a" => protocols.push(ProtocolSpec::Socks4),
-            "socks5" => protocols.push(ProtocolSpec::Socks5),
-            "shadowsocks" | "ss" => protocols.push(ProtocolSpec::Shadowsocks),
-            "ssr" => protocols.push(ProtocolSpec::ShadowsocksR),
-            "trojan" => protocols.push(ProtocolSpec::Trojan),
-            "h2" => protocols.push(ProtocolSpec::Http2),
-            "h3" => protocols.push(ProtocolSpec::Http3),
-            "quic" => protocols.push(ProtocolSpec::Quic),
-            "ws" | "wss" => protocols.push(ProtocolSpec::WebSocket),
-            "raw" | "tunnel" => protocols.push(ProtocolSpec::Raw),
-            "ssh" => protocols.push(ProtocolSpec::Ssh),
-            "unix" => protocols.push(ProtocolSpec::Unix),
-            "tls" => tls = true,
-            _ => return Err(UriParseError::UnsupportedProtocol(p.to_string())),
+        // Canonical native recognition lives in `ProtocolSpec::parse_name`;
+        // `tls` remains a transport modifier, not a protocol.
+        if *p == "tls" {
+            tls = true;
+            continue;
+        }
+        match ProtocolSpec::parse_name(p) {
+            Some(spec) => protocols.push(spec),
+            None => return Err(UriParseError::UnsupportedProtocol(p.to_string())),
         }
     }
 
@@ -530,79 +597,53 @@ fn parse_endpoint(endpoint: &str) -> Result<EndpointSpec, UriParseError> {
     if endpoint.is_empty() {
         return Err(UriParseError::MissingHost);
     }
-
-    // Handle bracketed IPv6: [::1]:8080
-    if endpoint.starts_with('[') {
-        let close_bracket = endpoint
-            .find(']')
-            .ok_or_else(|| UriParseError::InvalidFormat {
-                message: "unterminated IPv6 bracket".to_string(),
-                span: None,
-            })?;
-
-        let host = &endpoint[1..close_bracket];
-
-        let after_bracket = &endpoint[close_bracket + 1..];
-        if !after_bracket.starts_with(':') {
-            return Err(UriParseError::InvalidFormat {
-                message: "expected ':' after IPv6 bracket".to_string(),
-                span: None,
-            });
+    // Shared lexical split: bracketed IPv6, host:port, bare host.
+    // Port-required / empty-host / port-zero policy stays native below.
+    let parsed = syntax::parse_host_port(endpoint).map_err(|e| {
+        let msg = e.message.clone();
+        if msg.contains("port") || msg.contains("Port") {
+            // Preserve historical variant: missing/invalid ports surface as
+            // `InvalidPort` except bare "missing port" which was InvalidFormat.
+            if msg == "missing port" {
+                UriParseError::InvalidFormat {
+                    message: msg,
+                    span: e.span,
+                }
+            } else if msg.starts_with("invalid port") || msg == "empty port" {
+                UriParseError::InvalidPort(msg)
+            } else {
+                UriParseError::InvalidFormat {
+                    message: msg,
+                    span: e.span,
+                }
+            }
+        } else {
+            UriParseError::InvalidFormat {
+                message: msg,
+                span: e.span,
+            }
         }
-
-        let port_str = &after_bracket[1..];
-        let port = parse_port(port_str)?;
-
-        return Ok(EndpointSpec {
-            host: host.to_string(),
-            port,
-        });
-    }
-
-    // Regular host:port
-    let colon_pos = endpoint
-        .rfind(':')
-        .ok_or_else(|| UriParseError::InvalidFormat {
+    })?;
+    let Some(port) = parsed.port else {
+        return Err(UriParseError::InvalidFormat {
             message: "missing port".to_string(),
             span: None,
-        })?;
-
-    let host = &endpoint[..colon_pos];
-    let port_str = &endpoint[colon_pos + 1..];
-
-    if host.contains(':') {
-        return Err(UriParseError::InvalidFormat {
-            message: format!(
-                "endpoint '{endpoint}' contains multiple ':' separators; \
-                 use [ipv6]:port form for IPv6 literals"
-            ),
-            span: None,
         });
-    }
-
-    let port = parse_port(port_str)?;
-
+    };
     Ok(EndpointSpec {
-        host: host.to_string(),
+        host: parsed.host,
         port,
     })
-}
-
-fn parse_port(port_str: &str) -> Result<u16, UriParseError> {
-    if port_str.is_empty() {
-        return Err(UriParseError::InvalidPort("empty port".to_string()));
-    }
-
-    port_str
-        .parse::<u16>()
-        .map_err(|e| UriParseError::InvalidPort(format!("{}: {}", port_str, e)))
 }
 
 fn parse_credentials(
     userinfo: &str,
     protocols: &[ProtocolSpec],
 ) -> Result<CredentialSpec, UriParseError> {
-    let Some(colon_pos) = userinfo.find(':') else {
+    // Shared split on first `:`; percent-decoding and Trojan password-only
+    // policy remain native semantics.
+    let (raw_user, raw_pass, has_colon) = syntax::split_userinfo(userinfo);
+    if !has_colon {
         if protocols.contains(&ProtocolSpec::Trojan) && !userinfo.is_empty() {
             return Ok(CredentialSpec {
                 username: String::new(),
@@ -614,10 +655,10 @@ fn parse_credentials(
             message: "missing ':' in credentials".to_string(),
             span: None,
         });
-    };
+    }
 
-    let username = percent_decode(&userinfo[..colon_pos])?;
-    let password = percent_decode(&userinfo[colon_pos + 1..])?;
+    let username = percent_decode(&raw_user)?;
+    let password = percent_decode(&raw_pass)?;
 
     if username.is_empty() && password.is_empty() {
         return Err(UriParseError::InvalidFormat {
@@ -693,20 +734,12 @@ fn hex_val(b: u8) -> Option<u8> {
 
 /// Find the position of the LAST `@` that's not inside brackets.
 /// The userinfo separator is the last unbracketed `@` after the
-/// scheme, not the first; a raw password containing `@` must not be
-/// truncated by the parser.
+/// Shared userinfo-separator primitive (last `@` outside `[]`).
+///
+/// Thin wrapper over [`syntax::find_userinfo_separator`] so native call sites
+/// no longer own an independent scan.
 fn find_at_outside_brackets(s: &str) -> Option<usize> {
-    let mut last_at: Option<usize> = None;
-    let mut bracket_depth = 0u32;
-    for (i, c) in s.char_indices() {
-        match c {
-            '[' => bracket_depth += 1,
-            ']' => bracket_depth = bracket_depth.saturating_sub(1),
-            '@' if bracket_depth == 0 => last_at = Some(i),
-            _ => {}
-        }
-    }
-    last_at
+    syntax::find_userinfo_separator(s)
 }
 
 /// Find last '@' that's outside brackets and not part of a scheme.
@@ -717,20 +750,7 @@ fn find_at_outside_brackets(s: &str) -> Option<usize> {
 fn find_last_at_outside_scheme(s: &str) -> Option<usize> {
     let scheme_end = s.find("://")?;
     let after_scheme = &s[scheme_end + 3..];
-    // Find the LAST '@' in the part after ://, outside brackets
-    let mut last_at: Option<usize> = None;
-    let mut bracket_depth = 0u32;
-    for (i, c) in after_scheme.char_indices() {
-        match c {
-            '[' => bracket_depth += 1,
-            ']' => bracket_depth = bracket_depth.saturating_sub(1),
-            '@' if bracket_depth == 0 => {
-                last_at = Some(scheme_end + 3 + i);
-            }
-            _ => {}
-        }
-    }
-    last_at
+    syntax::find_userinfo_separator(after_scheme).map(|pos| scheme_end + 3 + pos)
 }
 
 fn add_hop_context(mut err: UriParseError, hop_index: usize) -> UriParseError {
@@ -1218,6 +1238,67 @@ mod tests {
         assert_eq!(creds.password, "p@ss");
         assert_eq!(result.hops[0].endpoint.host, "::1");
         assert_eq!(result.hops[0].endpoint.port, 8080);
+    }
+
+    #[test]
+    fn test_protocol_canonical_names_roundtrip() {
+        for spec in ProtocolSpec::all_variants() {
+            let name = spec.canonical_name();
+            assert_eq!(
+                ProtocolSpec::parse_name(name),
+                Some(*spec),
+                "canonical name '{name}' must parse back"
+            );
+            assert_eq!(
+                spec.to_string(),
+                name,
+                "Display must equal canonical name for {spec:?}"
+            );
+            assert_eq!(
+                (*spec).to_string().parse::<ProtocolSpec>(),
+                Ok(*spec),
+                "FromStr must roundtrip for {spec:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_protocol_aliases_are_explicit() {
+        assert_eq!(
+            ProtocolSpec::parse_name("socks4a"),
+            Some(ProtocolSpec::Socks4)
+        );
+        assert_eq!(
+            ProtocolSpec::parse_name("ss"),
+            Some(ProtocolSpec::Shadowsocks)
+        );
+        assert_eq!(
+            ProtocolSpec::parse_name("wss"),
+            Some(ProtocolSpec::WebSocket)
+        );
+        assert_eq!(ProtocolSpec::parse_name("tunnel"), Some(ProtocolSpec::Raw));
+        // `tls` is a modifier, not a protocol.
+        assert_eq!(ProtocolSpec::parse_name("tls"), None);
+        // Compatibility-only pseudo-protocols stay out of the native enum.
+        for compat_only in [
+            "https",
+            "direct",
+            "redir",
+            "echo",
+            "bind",
+            "listen",
+            "backward",
+            "rebind",
+            "secure",
+            "in",
+            "websocket",
+        ] {
+            assert_eq!(
+                ProtocolSpec::parse_name(compat_only),
+                None,
+                "'{compat_only}' must remain compatibility-owned"
+            );
+        }
     }
 }
 
