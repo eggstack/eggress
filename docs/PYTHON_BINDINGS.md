@@ -924,7 +924,7 @@ directly via `translate_pproxy_args`, `translate_pproxy_uri`, and
 section above. For CLI-based translation, you can still use:
 
 ```bash
-python -m eggress pproxy translate -- -l socks5://:1080 -r http://proxy:8080
+eggress pproxy translate -- -l socks5://:1080 -r http://proxy:8080
 ```
 
 ### Native outbound streams and Python imports

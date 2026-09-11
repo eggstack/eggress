@@ -1,5 +1,11 @@
 # eggress-cli
 
+> Superseded note: the maintained CLI deep dive is
+> [`architecture/cli.md`](../../architecture/cli.md); the operational
+> reference is [`docs/OPERATIONS.md`](../OPERATIONS.md) and the install
+> reference is [`docs/INSTALLATION.md`](../INSTALLATION.md). This file is
+> retained for history and is not updated for every CLI change.
+
 `crates/eggress-cli/`
 
 CLI binary providing `eggress` and a pproxy-style `pproxy` executable. The
@@ -50,7 +56,7 @@ through the internal `eggress-udp/shadowsocks` gate used by `extended`.
 ### Route Explain
 
 ```bash
-eggress route-explain --target example.com:443 --config config.toml
+eggress route example.com:443 --config config.toml
 ```
 
 Explains which routing rule matches a given target.
@@ -58,7 +64,7 @@ Explains which routing rule matches a given target.
 ### Upstream Test
 
 ```bash
-eggress upstream-test --uri socks5://127.0.0.1:1080
+eggress upstream test --config config.toml -t 127.0.0.1:1080
 ```
 
 Tests upstream reachability.
@@ -66,7 +72,7 @@ Tests upstream reachability.
 ### System Proxy Inspect
 
 ```bash
-eggress system-proxy-inspect
+eggress system-proxy inspect
 ```
 
 Shows current system proxy configuration.

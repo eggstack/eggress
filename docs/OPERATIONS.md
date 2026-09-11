@@ -31,13 +31,16 @@ Native `eggress` subcommands (see `eggress --help`):
 ```text
 eggress version
 eggress update
-eggress route <target> [--listener] [--protocol http|socks4|socks5] [--json] [--admin URL]
-eggress upstream test [-i id] [-t HOST:PORT] [--timeout 5] [--mode proxy|tcp] [--json]
-eggress pproxy translate -- <pproxy args> [--annotate]
-eggress pproxy check -- <pproxy args> [--json]
+eggress route <target> [--listener NAME] [--protocol http|socks4|socks5] [--json] [--admin URL]
+eggress upstream test --config PATH [-i id] [-t HOST:PORT] [--timeout 5] [--mode proxy|tcp] [--json]
+eggress pproxy translate [--annotate] -- <pproxy args>
+eggress pproxy check [--json] -- <pproxy args>
 eggress pproxy run -- <pproxy args>
 eggress system-proxy inspect [--json]
 ```
+
+`upstream test` requires the global `--config`. `--protocol`, `--mode`,
+and `--log-format` are typed enums: typos exit 2 at parse time.
 
 `--config` is a single global option (usable before or after the
 subcommand) and is incompatible with `-l`/`-r` for native startup. The

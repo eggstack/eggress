@@ -8,7 +8,7 @@ If you are migrating from pproxy, you can translate pproxy-style CLI arguments
 to TOML configuration using:
 
 ```bash
-eggress pproxy translate -l socks5://:1080 -r http://proxy:8080
+eggress pproxy translate -- -l socks5://:1080 -r http://proxy:8080
 ```
 
 This outputs equivalent TOML that can be saved and used with `--config`. See

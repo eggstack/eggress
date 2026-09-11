@@ -12,7 +12,7 @@ pproxy accepts connections without authentication unless the user explicitly add
 
 ```bash
 # pproxy compat (no auth — open proxy)
-eggress pproxy run -l socks5://0.0.0.0:1080
+eggress pproxy run -- -l socks5://0.0.0.0:1080
 
 # eggress-native (explicit auth)
 eggress --config hardened.toml  # with [listeners.auth] configured
@@ -78,7 +78,7 @@ A strict mode could block both DNS-resolved and literal private IPs, but the def
 ### Step 1: Generate Baseline Config
 
 ```bash
-eggress pproxy translate -l socks5://0.0.0.0:1080 -r socks5://upstream:1080
+eggress pproxy translate -- -l socks5://0.0.0.0:1080 -r socks5://upstream:1080
 ```
 
 Save the output to a file and review it.
@@ -149,7 +149,7 @@ Add explicit allow rules for permitted destinations.
 ### Step 8: Run Validation
 
 ```bash
-eggress pproxy check -l socks5://0.0.0.0:1080 -r socks5://upstream:1080
+eggress pproxy check -- -l socks5://0.0.0.0:1080 -r socks5://upstream:1080
 ```
 
 Review diagnostics for any security warnings before starting.

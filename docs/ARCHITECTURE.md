@@ -183,9 +183,9 @@ Shared TLS transport layer:
 
 ### eggress-pproxy-compat
 pproxy compatibility layer:
-- `pproxy translate` — converts pproxy CLI args to TOML configuration
-- `pproxy check` — validates translated configuration
-- `pproxy run` — runs eggress with pproxy-style arguments (translated internally)
+- `eggress pproxy translate` — converts pproxy CLI args to TOML configuration
+- `eggress pproxy check` — validates translated configuration
+- `eggress pproxy run` — runs eggress with pproxy-style arguments (translated internally)
 - URI translation from pproxy listen/remote format to eggress TOML
 - Typed flag model follows the frozen pproxy 2.7.9 parser: `-l`, `-r`, `-ul`, `-ur`, `-b`, `-a`, `-s`, `-d`, `-v`, `--ssl`, `--pac`, `--get`, `--auth`, `--sys`, `--reuse`, `--daemon`, `--test`, `--version`, and `--help`. Eggress-only `--config`, `--log`, and `--rulefile` extensions are not upstream flags.
 - Fatal startup gating: unknown flags (exit code 2), unsupported features (exit code 5) prevent service start

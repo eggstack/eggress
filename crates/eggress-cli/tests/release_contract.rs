@@ -360,3 +360,63 @@ fn install_docs_reference_real_assets() {
         "docs/INSTALLATION.md must state the Linux compatibility floor"
     );
 }
+
+#[test]
+fn readme_points_at_canonical_install_surface() {
+    let readme = read_repo("README.md");
+    assert!(
+        readme.contains("releases/latest/download/install.sh"),
+        "README.md must reference the real binary bootstrap URL"
+    );
+    assert!(
+        readme.contains("docs/INSTALLATION.md"),
+        "README.md must link to the canonical install guide"
+    );
+    let installer_pos = readme
+        .find("releases/latest/download/install.sh")
+        .expect("installer URL must exist");
+    let cargo_pos = readme
+        .find("cargo install eggress-cli")
+        .expect("Cargo alternative must remain documented");
+    assert!(
+        installer_pos < cargo_pos,
+        "README.md must present the binary installer before the Cargo alternative"
+    );
+}
+
+#[test]
+fn pproxy_migration_examples_stay_flat() {
+    // The standalone `pproxy` binary stays flat; nested
+    // `translate/check/run` tooling lives only under native `eggress`.
+    // Catch docs regressions where a fenced example shows
+    // `pproxy translate|check|run` as if the compat binary accepted it.
+    for rel in [
+        "README.md",
+        "docs/OPERATIONS.md",
+        "docs/PPROXY_MIGRATION.md",
+        "docs/INSTALLATION.md",
+        "crates/eggress-cli/README.md",
+    ] {
+        let content = read_repo(rel);
+        let mut in_fence = false;
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("```") {
+                in_fence = !in_fence;
+                continue;
+            }
+            if !in_fence {
+                continue;
+            }
+            let code = trimmed.strip_prefix('$').unwrap_or(trimmed).trim_start();
+            for sub in ["pproxy translate", "pproxy check", "pproxy run"] {
+                if code == sub
+                    || code.starts_with(&format!("{sub} "))
+                    || code.starts_with(&format!("{sub}\t"))
+                {
+                    panic!("{rel} shows flat-binary `{sub}` as a subcommand: {line}");
+                }
+            }
+        }
+    }
+}
