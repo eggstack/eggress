@@ -397,8 +397,16 @@ fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseE
     let local_bind = if let Some(at_pos) = find_last_at_outside_scheme(remaining) {
         let after_at = &remaining[at_pos + 1..];
         let before_at = &remaining[..at_pos];
-        let scheme_end = before_at.find("://").unwrap_or(0);
-        let before_endpoint = &before_at[scheme_end + 3..];
+        // `find_last_at_outside_scheme` only returns `Some` when `"://"` is
+        // present, so `before_at` always contains a scheme here; error
+        // instead of falling back to a slicing offset that could panic.
+        let Some(scheme_pos) = before_at.find("://") else {
+            return Err(UriParseError::InvalidFormat {
+                message: "missing scheme (expected protocol://)".to_string(),
+                span: None,
+            });
+        };
+        let before_endpoint = &before_at[scheme_pos + 3..];
         let base_endpoint = before_endpoint
             .split_once('?')
             .map_or(before_endpoint, |(endpoint, _)| endpoint);
@@ -559,13 +567,15 @@ fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseE
 }
 
 fn parse_protocols(scheme: &str) -> Result<(Vec<ProtocolSpec>, bool), UriParseError> {
-    let parts: Vec<&str> = scheme.split('+').collect();
-    if parts.is_empty() {
+    // `"".split('+')` yields `[""]`, never `[]`, so check for an empty scheme
+    // directly instead of an unreachable empty-parts branch.
+    if scheme.is_empty() {
         return Err(UriParseError::InvalidFormat {
             message: "empty protocol list".to_string(),
             span: None,
         });
     }
+    let parts: Vec<&str> = scheme.split('+').collect();
 
     let mut protocols = Vec::new();
     let mut tls = false;

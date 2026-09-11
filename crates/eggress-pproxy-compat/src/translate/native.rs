@@ -430,6 +430,13 @@ pub(crate) fn intermediates_to_config_file(
         .collect();
 
     let admin = if intermediates.pac_enabled || !intermediates.static_content.is_empty() {
+        // Keep field-for-field agreement with the TOML renderer: bare
+        // host:port from the first listener bind.
+        let proxy = intermediates
+            .listeners
+            .first()
+            .map(|l| l.bind.clone())
+            .unwrap_or_else(|| "127.0.0.1:8080".to_string());
         Some(model::AdminConfig {
             bind: None,
             enabled: None,
@@ -437,9 +444,7 @@ pub(crate) fn intermediates_to_config_file(
             auth: None,
             pac: Some(model::PacConfigToml {
                 path: intermediates.pac_path.clone(),
-                // Preserve renderer behavior verbatim (including the known
-                // literal directive) so direct and TOML paths stay equivalent.
-                proxy: "PROXY {}".to_string(),
+                proxy,
                 direct_fallback: Some(true),
                 direct_hosts: None,
                 direct_suffixes: None,

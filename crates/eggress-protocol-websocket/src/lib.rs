@@ -99,7 +99,14 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static> A
                 Poll::Ready(Some(Ok(Message::Close(_)))) => {
                     return Poll::Ready(Ok(()));
                 }
-                Poll::Ready(Some(Ok(Message::Ping(_)))) => {
+                Poll::Ready(Some(Ok(Message::Ping(payload)))) => {
+                    // RFC 6455 §5.5.3: a Ping must elicit a Pong. The adapter
+                    // owns the split write half, so reply explicitly here
+                    // rather than relying on tungstenite auto-pong (which is
+                    // not guaranteed after `split()`). An extra Pong is
+                    // harmless if the peer ignores it; failures are surfaced
+                    // on the next read/write.
+                    let _ = Pin::new(&mut self.write_half).start_send(Message::Pong(payload));
                     continue;
                 }
                 Poll::Ready(Some(Ok(Message::Pong(_)))) => {
@@ -534,11 +541,21 @@ mod tests {
         let (ws_stream, _) = tokio_tungstenite::connect_async(format!("ws://{}", server_addr))
             .await
             .unwrap();
-        let (mut sink, _stream) = ws_stream.split();
+        let (mut sink, mut stream) = ws_stream.split();
 
         sink.send(Message::Ping(b"ping-data".to_vec().into()))
             .await
             .unwrap();
+        // The tunnel must answer Ping with a Pong carrying the same payload.
+        let pong = tokio::time::timeout(std::time::Duration::from_secs(3), stream.next())
+            .await
+            .expect("timed out waiting for Pong")
+            .expect("stream ended")
+            .expect("pong read failed");
+        assert!(
+            matches!(&pong, Message::Pong(payload) if payload.as_ref() == b"ping-data"),
+            "expected Pong(ping-data), got: {pong:?}"
+        );
         sink.send(Message::Pong(b"pong-data".to_vec().into()))
             .await
             .unwrap();

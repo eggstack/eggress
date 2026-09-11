@@ -296,7 +296,13 @@ fn handle_route_explain_remote(args: &RouteExplain, admin_url: &str) {
     let base = admin_url.trim_end_matches('/');
     let url = format!("{base}/-/route-explain");
 
-    let (host, port, path) = parse_admin_url(&url);
+    let (host, port, path) = match parse_admin_url(&url) {
+        Ok(parsed) => parsed,
+        Err(e) => {
+            eprintln!("invalid --admin-url '{admin_url}': {e}");
+            std::process::exit(EXIT_CLI_PARSE_ERROR);
+        }
+    };
     let host_header = if host.contains(':') {
         format!("[{host}]:{port}")
     } else {
@@ -381,11 +387,11 @@ fn handle_route_explain_remote(args: &RouteExplain, admin_url: &str) {
     }
 }
 
-fn parse_admin_url(url: &str) -> (String, u16, String) {
-    let without_proto = url
-        .strip_prefix("http://")
-        .or_else(|| url.strip_prefix("https://"))
-        .unwrap_or(url);
+fn parse_admin_url(url: &str) -> Result<(String, u16, String), String> {
+    if url.starts_with("https://") {
+        return Err("TLS admin URLs are not supported; use http://".to_string());
+    }
+    let without_proto = url.strip_prefix("http://").unwrap_or(url);
     let (host_port, path) = match without_proto.find('/') {
         Some(i) => (&without_proto[..i], &without_proto[i..]),
         None => (without_proto, "/"),
@@ -394,21 +400,26 @@ fn parse_admin_url(url: &str) -> (String, u16, String) {
         let close = rest.find(']').unwrap_or(rest.len());
         let host = rest[..close].to_string();
         let after = rest[close..].strip_prefix(']').unwrap_or("");
-        let port = after
-            .strip_prefix(':')
-            .and_then(|p| p.parse::<u16>().ok())
-            .unwrap_or(9090);
+        let port = match after.strip_prefix(':') {
+            Some(port_str) => port_str.parse::<u16>().map_err(|_| {
+                format!("invalid port '{port_str}' in admin URL (expected 1-65535)")
+            })?,
+            None => 9090,
+        };
         (host, port)
     } else {
         match host_port.rfind(':') {
-            Some(i) => (
-                host_port[..i].to_string(),
-                host_port[i + 1..].parse::<u16>().unwrap_or(9090),
-            ),
+            Some(i) => {
+                let port_str = &host_port[i + 1..];
+                let port = port_str.parse::<u16>().map_err(|_| {
+                    format!("invalid port '{port_str}' in admin URL (expected 1-65535)")
+                })?;
+                (host_port[..i].to_string(), port)
+            }
             None => (host_port.to_string(), 9090),
         }
     };
-    (host, port, path.to_string())
+    Ok((host, port, path.to_string()))
 }
 
 fn handle_upstream_test(args: &UpstreamTest) {
@@ -1658,7 +1669,7 @@ mod tests {
 
     #[test]
     fn parse_admin_url_default_port_ipv6_loopback() {
-        let (host, port, path) = parse_admin_url("http://[::1]/-/route-explain");
+        let (host, port, path) = parse_admin_url("http://[::1]/-/route-explain").unwrap();
         assert_eq!(host, "::1");
         assert_eq!(port, 9090);
         assert_eq!(path, "/-/route-explain");
@@ -1666,7 +1677,7 @@ mod tests {
 
     #[test]
     fn parse_admin_url_explicit_port_ipv6_loopback() {
-        let (host, port, path) = parse_admin_url("http://[::1]:9090/admin");
+        let (host, port, path) = parse_admin_url("http://[::1]:9090/admin").unwrap();
         assert_eq!(host, "::1");
         assert_eq!(port, 9090);
         assert_eq!(path, "/admin");
@@ -1674,14 +1685,15 @@ mod tests {
 
     #[test]
     fn parse_admin_url_full_ipv6() {
-        let (host, port, _path) = parse_admin_url("http://[2001:db8::1]:8080/-/route-explain");
+        let (host, port, _path) =
+            parse_admin_url("http://[2001:db8::1]:8080/-/route-explain").unwrap();
         assert_eq!(host, "2001:db8::1");
         assert_eq!(port, 8080);
     }
 
     #[test]
     fn parse_admin_url_default_port_ipv4() {
-        let (host, port, path) = parse_admin_url("http://127.0.0.1/admin");
+        let (host, port, path) = parse_admin_url("http://127.0.0.1/admin").unwrap();
         assert_eq!(host, "127.0.0.1");
         assert_eq!(port, 9090);
         assert_eq!(path, "/admin");
@@ -1689,9 +1701,22 @@ mod tests {
 
     #[test]
     fn parse_admin_url_domain_with_port() {
-        let (host, port, _path) = parse_admin_url("http://admin.example.com:8080/-/x");
+        let (host, port, _path) = parse_admin_url("http://admin.example.com:8080/-/x").unwrap();
         assert_eq!(host, "admin.example.com");
         assert_eq!(port, 8080);
+    }
+
+    #[test]
+    fn parse_admin_url_rejects_malformed_port() {
+        assert!(parse_admin_url("http://host:notaport/path").is_err());
+        assert!(parse_admin_url("http://host:99999/path").is_err());
+        assert!(parse_admin_url("http://[::1]:notaport/admin").is_err());
+    }
+
+    #[test]
+    fn parse_admin_url_rejects_https() {
+        let err = parse_admin_url("https://127.0.0.1:9090/-/route-explain").unwrap_err();
+        assert!(err.contains("TLS"), "unexpected error: {err}");
     }
 
     #[test]

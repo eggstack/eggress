@@ -11,7 +11,7 @@ use crate::direct::UdpTargetFlow;
 use crate::error::UdpError;
 use crate::flow::{
     can_use_flow, close_all_flows, local_udp_bind_addr, reap_idle_flows, resolve_endpoint,
-    socks_addr_equivalent, socks_to_target_addr, target_to_socks_addr, total_target_flows,
+    socks_addr_equivalent, socks_to_target_addr, target_to_socks_addr, total_target_flows_capped,
     ClientFlowState, TargetFlowEntry, UdpFlowKey, UdpFlowKind,
 };
 use crate::limits::UdpLimits;
@@ -175,7 +175,10 @@ pub async fn shadowsocks_standalone_udp_relay(
                     continue;
                 }
 
-                let total_flows = total_target_flows(&clients);
+                let total_flows = total_target_flows_capped(
+                    &clients,
+                    crate::flow::max_standalone_flows(&config.limits),
+                );
                 let state = clients.entry(client_addr).or_default();
                 state.touch();
 

@@ -386,7 +386,10 @@ where
     let (mut send_request, conn) = h2::client::handshake(stream).await?;
 
     let conn_handle = tokio::spawn(async move {
-        conn.await?;
+        if let Err(e) = conn.await {
+            tracing::debug!(%e, "H2 connection driver terminated with error");
+            return Err(e);
+        }
         Ok(())
     });
 
@@ -613,7 +616,10 @@ impl H2ConnectionPool {
         let (send_request, conn) = h2::client::handshake(stream).await?;
 
         let conn_handle = tokio::spawn(async move {
-            conn.await?;
+            if let Err(e) = conn.await {
+                tracing::debug!(%e, "H2 pooled connection driver terminated with error");
+                return Err(e);
+            }
             Ok(())
         });
 

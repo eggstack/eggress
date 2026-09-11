@@ -834,6 +834,53 @@ host_regex = "[invalid"
     }
 
     #[test]
+    fn invalid_destination_port_regex_rejected() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[[rules]]
+id = "bad-port-regex"
+direct = true
+destination_port_regex = "[invalid"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_err(),
+            "invalid destination_port_regex should fail validation"
+        );
+
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[[rules]]
+id = "bad-port-regex-leaf"
+direct = true
+
+[rules.match]
+destination_port_regex = "[invalid"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_err(),
+            "invalid leaf destination_port_regex should fail validation"
+        );
+    }
+
+    #[test]
     fn health_config_all_fields_compiles() {
         let config = r#"
 version = 1

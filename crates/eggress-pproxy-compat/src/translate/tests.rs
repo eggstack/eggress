@@ -1176,6 +1176,32 @@ fn test_pac_flag_generates_admin_pac_config() {
 }
 
 #[test]
+fn test_pac_proxy_uses_first_listener_bind() {
+    let args = PproxyArgs::parse(&[
+        "-l".into(),
+        "socks5://127.0.0.1:1080".into(),
+        "--pac".into(),
+        "/proxy.pac".into(),
+    ])
+    .unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+    let proxy = parsed["admin"]["pac"]["proxy"].as_str().unwrap();
+    assert!(
+        proxy.contains("127.0.0.1:1080"),
+        "PAC proxy must reference the listener bind, got: {proxy}"
+    );
+    assert!(
+        !proxy.contains("{}"),
+        "PAC proxy must not be a literal placeholder, got: {proxy}"
+    );
+    assert!(
+        !proxy.starts_with("PROXY "),
+        "PAC proxy is the bare directive (renderer adds PROXY prefix), got: {proxy}"
+    );
+}
+
+#[test]
 fn test_translate_trojan_listener_supported() {
     let args = PproxyArgs::parse(&[
         "-l".into(),

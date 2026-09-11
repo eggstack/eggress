@@ -761,6 +761,9 @@ const REDACTED_SECRET_KEYS: &[&str] = &[
     "secret",
     "secret_ref",
     "token",
+    "bearer",
+    "bearer_token",
+    "bearer_token_env",
     "api_key",
     "apikey",
     "credentials",
@@ -839,6 +842,26 @@ mod tests {
             listener_addr_or_configured(&[], 0, "not an address"),
             default_listener_addr()
         );
+    }
+
+    #[test]
+    fn redacted_toml_hides_bearer_token() {
+        let input = r#"
+version = 1
+
+[admin]
+bind = "127.0.0.1:9090"
+
+[admin.auth]
+bearer_token = "super-secret-token"
+"#;
+        let config = super::EggressConfig::from_toml_str(input).unwrap();
+        let redacted = config.to_redacted_toml().unwrap();
+        assert!(
+            !redacted.contains("super-secret-token"),
+            "redacted TOML leaked bearer_token: {redacted}"
+        );
+        assert!(redacted.contains("****"));
     }
 
     fn temp_embed_files() -> Vec<std::path::PathBuf> {

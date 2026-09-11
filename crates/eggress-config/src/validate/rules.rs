@@ -105,6 +105,15 @@ pub(crate) fn validate_rules(
                     ));
                 }
             }
+
+            if let Some(ref port_regex) = rule.destination_port_regex {
+                if regex::Regex::new(port_regex).is_err() {
+                    errors.push(ConfigError::validation(
+                        &path,
+                        &format!("invalid destination port regex: {}", port_regex),
+                    ));
+                }
+            }
         } else if let Some(ref match_expr) = rule.match_expr {
             if matcher_count > 0 {
                 errors.push(ConfigError::validation(
@@ -222,6 +231,14 @@ pub(crate) fn validate_match_expr(
                 if regex::Regex::new(regex_str).is_err() {
                     errors.push(ConfigError::validation(
                         &format!("{}.host_regex", path),
+                        &format!("invalid regex: {}", regex_str),
+                    ));
+                }
+            }
+            if let Some(ref regex_str) = leaf.destination_port_regex {
+                if regex::Regex::new(regex_str).is_err() {
+                    errors.push(ConfigError::validation(
+                        &format!("{}.destination_port_regex", path),
                         &format!("invalid regex: {}", regex_str),
                     ));
                 }

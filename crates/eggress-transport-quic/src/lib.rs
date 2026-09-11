@@ -105,7 +105,8 @@ impl QuicServerConfig {
         let crypto = QuinnTlsServerConfig::try_from(Arc::new(tls))
             .map_err(|e| QuicError::Tls(e.to_string()))?;
         let mut config = ServerConfig::with_crypto(Arc::new(crypto));
-        let transport = Arc::get_mut(&mut config.transport).expect("new transport config");
+        let transport = Arc::get_mut(&mut config.transport)
+            .ok_or_else(|| QuicError::Tls("failed to configure QUIC transport".to_string()))?;
         transport.max_concurrent_bidi_streams(self.max_concurrent_streams.into());
         transport.max_idle_timeout(Some(
             self.idle_timeout
@@ -481,6 +482,38 @@ impl rustls::client::danger::ServerCertVerifier for InsecureVerifier {
             rustls::SignatureScheme::ED25519,
             rustls::SignatureScheme::RSA_PSS_SHA256,
         ]
+    }
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::*;
+
+    #[test]
+    fn server_config_rejects_missing_certificate() {
+        let config = QuicServerConfig {
+            certificate_pem: Vec::new(),
+            private_key_pem: Vec::new(),
+            idle_timeout: DEFAULT_IDLE_TIMEOUT,
+            max_concurrent_streams: DEFAULT_MAX_STREAMS,
+            alpn_protocols: Vec::new(),
+        };
+        assert!(matches!(
+            config.server_config(),
+            Err(QuicError::MissingCertificate)
+        ));
+    }
+
+    #[test]
+    fn server_config_rejects_invalid_pem() {
+        let config = QuicServerConfig {
+            certificate_pem: b"not-a-cert".to_vec(),
+            private_key_pem: b"not-a-key".to_vec(),
+            idle_timeout: DEFAULT_IDLE_TIMEOUT,
+            max_concurrent_streams: DEFAULT_MAX_STREAMS,
+            alpn_protocols: Vec::new(),
+        };
+        assert!(matches!(config.server_config(), Err(QuicError::Tls(_))));
     }
 }
 

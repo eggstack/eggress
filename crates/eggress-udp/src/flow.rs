@@ -268,6 +268,23 @@ pub fn total_target_flows(clients: &HashMap<SocketAddr, ClientFlowState>) -> usi
     clients.values().map(|s| s.target_flows.len()).sum()
 }
 
+/// Capped variant for the per-datagram admission check (O-03): stops summing
+/// once `cap` is reached, since `can_use_flow` only needs to know whether the
+/// global total is below the limit.
+pub fn total_target_flows_capped(
+    clients: &HashMap<SocketAddr, ClientFlowState>,
+    cap: usize,
+) -> usize {
+    let mut total = 0usize;
+    for state in clients.values() {
+        total = total.saturating_add(state.target_flows.len());
+        if total >= cap {
+            break;
+        }
+    }
+    total
+}
+
 pub fn max_standalone_flows(limits: &UdpLimits) -> usize {
     if limits.max_standalone_flows > 0 {
         limits.max_standalone_flows

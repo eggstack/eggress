@@ -143,8 +143,10 @@ Routine CI runs on Ubuntu. Validate macOS or Windows when modifying platform-spe
 
 ## Integration test inventory (narrowest commands)
 
-Less-discoverable suites not covered above; run the narrowest one for the
-subsystem being changed:
+Non-exhaustive — for the full per-crate list see `crates/*/tests/`,
+`tests/compat/`, and `tests/regression_injections/` (or
+`cargo test --workspace -- --list`). Less-discoverable suites not covered
+above; run the narrowest one for the subsystem being changed:
 
 ```bash
 cargo test -p eggress-runtime --test load -- --ignored  # + EGRESS_REQUIRE_LOAD=1

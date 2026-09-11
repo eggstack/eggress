@@ -82,7 +82,10 @@ impl H3Client {
             .await
             .map_err(|e| H3Error::Connection(e.to_string()))?;
         tokio::spawn(async move {
-            let _ = driver.wait_idle().await;
+            // `wait_idle` resolves to the terminal `ConnectionError` (including
+            // clean shutdown); log it so broken connections leave a trace.
+            let err = driver.wait_idle().await;
+            tracing::debug!(%err, "H3 connection driver terminated");
         });
         let session = Arc::new(H3Session { sender });
         let mut guard = self.session.lock().await;
@@ -379,6 +382,32 @@ mod tests {
             base64::engine::general_purpose::STANDARD.encode("user:pass"),
             "dXNlcjpwYXNz"
         );
+    }
+
+    #[test]
+    fn h3_request_target_parses_authority() {
+        let request = H3Request {
+            authority: "example.com:443".to_string(),
+            headers: http::HeaderMap::new(),
+        };
+        let target = request.target().unwrap();
+        assert_eq!(target.port, 443);
+
+        let bad = H3Request {
+            authority: "not a target".to_string(),
+            headers: http::HeaderMap::new(),
+        };
+        assert!(matches!(bad.target(), Err(H3Error::InvalidAuthority)));
+    }
+
+    #[test]
+    fn h3_basic_authorization_parses_and_rejects_controls() {
+        let encoded = base64::engine::general_purpose::STANDARD.encode("alice:s3cret");
+        let (user, pass) = parse_basic_authorization(&format!("Basic {encoded}")).unwrap();
+        assert_eq!(user, "alice");
+        assert_eq!(pass, "s3cret");
+        assert!(parse_basic_authorization("Bearer token").is_none());
+        assert!(parse_basic_authorization("Basic !!!").is_none());
     }
 
     #[cfg(feature = "insecure-quic")]

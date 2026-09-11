@@ -15,7 +15,7 @@ use crate::flow::resolve_endpoint;
 use crate::flow::target_to_socks_addr;
 use crate::flow::{
     can_use_flow, close_all_flows, local_udp_bind_addr, reap_idle_flows, socks_addr_equivalent,
-    socks_to_target_addr, total_target_flows, ClientFlowState, TargetFlowEntry, UdpFlowKey,
+    socks_to_target_addr, total_target_flows_capped, ClientFlowState, TargetFlowEntry, UdpFlowKey,
     UdpFlowKind,
 };
 use crate::limits::UdpLimits;
@@ -146,7 +146,12 @@ pub async fn standalone_udp_relay(
                     continue;
                 }
 
-                let total_flows = total_target_flows(&clients);
+                // Capped scan (O-03): admission only needs to know whether the
+                // global total is below the limit, so stop summing at the cap.
+                let total_flows = total_target_flows_capped(
+                    &clients,
+                    crate::flow::max_standalone_flows(&config.limits),
+                );
                 let state = clients.entry(client_addr).or_default();
                 state.touch();
 

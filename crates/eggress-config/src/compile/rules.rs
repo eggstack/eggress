@@ -109,8 +109,10 @@ pub(crate) fn compile_matcher(
             && rule.destination_port_regex.is_none()
             && !rule.any.unwrap_or(false)
         {
+            // Normalize once at compile so per-request matching does not
+            // re-normalize this constant (O-01).
             return Ok(eggress_routing::MatchExpr::HostSuffix(Arc::from(
-                suffix.as_str(),
+                eggress_routing::normalize_host_for_exact(suffix).as_str(),
             )));
         }
     }
@@ -248,7 +250,7 @@ pub(crate) fn compile_leaf_matcher(
     }
     if let Some(ref suffix) = leaf.host_suffix {
         matchers.push(eggress_routing::MatchExpr::HostSuffix(Arc::from(
-            suffix.as_str(),
+            eggress_routing::normalize_host_for_exact(suffix).as_str(),
         )));
     }
     if let Some(ref regex_str) = leaf.host_regex {

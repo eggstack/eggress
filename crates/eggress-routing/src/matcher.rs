@@ -152,23 +152,32 @@ impl MatchExpr {
             MatchExpr::All(exprs) => exprs.iter().all(|e| e.matches(request)),
             MatchExpr::AnyOf(exprs) => exprs.iter().any(|e| e.matches(request)),
             MatchExpr::Not(inner) => !inner.matches(request),
-            MatchExpr::HostExact(expected) => {
-                let host_str = target_host_str(&request.target.host);
-                let normalized = normalize_host_for_exact(host_str.as_ref());
-                normalized == expected.as_ref()
-            }
-            MatchExpr::HostSuffix(suffix) => {
-                let host_str = target_host_str(&request.target.host);
-                // Apply the same IPv4-mapped canonicalization as HostExact so
-                // dual-stack clients rendering `::ffff:a.b.c.d` match a suffix
-                // written as `a.b.c.d`, and to keep routing consistent with
-                // the rebinding guard. Domain case is already handled by the
-                // case-insensitive suffix matcher, but normalizing both sides
-                // collapses IPv6 padding/case and keeps the comparison canonical.
-                let normalized_host = normalize_host_for_exact(host_str.as_ref());
-                let normalized_suffix = normalize_host_for_exact(suffix);
-                host_matches_suffix(&normalized_host, &normalized_suffix)
-            }
+            MatchExpr::HostExact(expected) => match &request.target.host {
+                // Fast path for domain targets: case-insensitive compare
+                // without heap-allocating a normalized copy per rule (O-02).
+                // `expected` is stored normalized (lowercase, no trailing
+                // dot) at compile time.
+                TargetHost::Domain(domain) => {
+                    let host = domain.strip_suffix('.').unwrap_or(domain);
+                    host.eq_ignore_ascii_case(expected.as_ref())
+                }
+                TargetHost::Ip(_) => {
+                    let host_str = target_host_str(&request.target.host);
+                    normalize_host_for_exact(host_str.as_ref()) == expected.as_ref()
+                }
+            },
+            MatchExpr::HostSuffix(suffix) => match &request.target.host {
+                // Suffix constants are normalized once at compile (O-01), so
+                // domain targets match allocation-free via the case-insensitive
+                // suffix helper; IP literals keep canonicalization for
+                // IPv4-mapped/hex equivalence.
+                TargetHost::Domain(domain) => host_matches_suffix(domain, suffix),
+                TargetHost::Ip(_) => {
+                    let host_str = target_host_str(&request.target.host);
+                    let normalized_host = normalize_host_for_exact(host_str.as_ref());
+                    host_matches_suffix(&normalized_host, suffix)
+                }
+            },
             MatchExpr::HostRegex(re) => {
                 // HostRegex intentionally matches the raw host string (case-
                 // sensitive, trailing-dot preserved) unlike HostExact/Suffix.

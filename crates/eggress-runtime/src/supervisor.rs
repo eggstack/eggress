@@ -430,8 +430,16 @@ impl ServiceSupervisor {
         let metrics_registry_for_admin = self.metrics_registry.clone();
 
         let run_async = async move {
-            if let Ok(mut runtime) = state_ref.health_runtime.lock() {
-                *runtime = Some(tokio::runtime::Handle::current());
+            match state_ref.health_runtime.lock() {
+                Ok(mut runtime) => {
+                    *runtime = Some(tokio::runtime::Handle::current());
+                }
+                Err(error) => {
+                    tracing::warn!("health runtime state was poisoned; resetting it: {error}");
+                    let mut runtime = error.into_inner();
+                    *runtime = Some(tokio::runtime::Handle::current());
+                    state_ref.health_runtime.clear_poison();
+                }
             }
             #[cfg(feature = "operations")]
             let mut compatibility_system_proxy: Option<
