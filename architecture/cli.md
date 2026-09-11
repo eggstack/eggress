@@ -43,8 +43,8 @@ Clap-derived parser (`src/main.rs:24-44`):
 
 **Default behavior**: when no subcommand and no `--config`, builds a
 router from `-l`/`-r` flags. Default listener is `http://127.0.0.1:8080`
-(:1163-1165). Registers SIGINT/SIGTERM/SIGHUP handlers on Unix
-(:1209-1251). SIGHUP without `--config` is logged and ignored (:1238).
+(:1192). Registers SIGINT/SIGTERM/SIGHUP handlers on Unix
+(:1240-1272). SIGHUP without `--config` is logged and ignored (:1272).
 
 **Upstream test** (`upstream test`): requires `--config`. Accepts `--id`
 (upstream filter), `--target` (default `example.com:443`), `--mode`
@@ -170,17 +170,17 @@ Opt-in suites are gated by env vars (`EGRESS_REQUIRE_EXTERNAL_INTEROP=1`,
 
 ## Concurrency & lifecycle
 
-- `run()` in `main.rs` (:1081) is an async function driven by `#[tokio::main]`.
+- `run()` in `main.rs` (:1109) is an async function driven by `#[tokio::main]`.
 - Signal handling: SIGINT triggers `EXIT_SIGINT` (130), SIGTERM triggers
   `EXIT_SIGTERM` (143). On non-Unix, only ctrl-c is handled.
 - Connection drain: 30-second deadline after cancel, polling `ACTIVE_CONNECTIONS`
-  every 100ms (:1256-1268).
+  every 100ms (:1288-1305).
 - `pproxy` binary is synchronous — no Tokio runtime unless upstream test
   triggers `run_async_test()`.
 
 ## Reviewer gotchas
 
-- `--config` and `-l`/`-r` are mutually exclusive (:1126-1129) — mixing
+- `--config` and `-l`/`-r` are mutually exclusive (:1154-1155) — mixing
   them exits with code 2.
 - The `route explain` command supports both offline mode (no config →
   default `Router::new(vec![], RouteActionSpec::Direct)`) and online mode

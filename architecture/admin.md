@@ -72,17 +72,17 @@ pub struct StaticAdminSnapshot { pub snapshot: AdminSnapshot }
    - **Bearer**: `Authorization: Bearer <token>` compared via `subtle::ConstantTimeEq`
    - **Basic**: `Authorization: Basic <base64>` decoded, split on `:`, CT-compared
    - On failure: `401` with `WWW-Authenticate: Bearer, Basic` header
-3. **Timeout** — each HTTP/1.1 connection is wrapped in `tokio::time::timeout(Duration::from_secs(30), conn)` (`server.rs:135-148`).
+3. **Timeout** — each HTTP/1.1 connection is wrapped in `tokio::time::timeout(Duration::from_secs(30), conn)` (`server.rs:241`).
 4. **Snapshot** — handlers call `state.snapshot()` which delegates to `AdminSnapshotProvider::snapshot()`. A fresh snapshot is fetched per request, so reloads are immediately visible without restarting admin.
 5. **Dispatch** — `handle_request()` (`routes.rs:15`) pattern-matches on path. Body-consuming endpoints (`/-/route-explain`) use `collect_limited()` to enforce the 16 KiB limit.
-6. **Non-loopback warning** — `AdminServer::new()` logs a warning when bound to a non-loopback address (`server.rs:79-86`).
+6. **Non-loopback warning** — `AdminServer::new()` logs a warning when bound to a non-loopback address (`server.rs:161-168`).
 
 ## Limits
 
 | Constant | Value | Location |
 |----------|-------|----------|
-| `MAX_ADMIN_CONNECTIONS` | 64 | `server.rs:23` |
-| Connection timeout | 30 s | `server.rs:136` |
+| `MAX_ADMIN_CONNECTIONS` | 64 | `server.rs:24` |
+| Connection timeout | 30 s | `server.rs:241` |
 | `MAX_ADMIN_BODY` | 16 KiB | `routes.rs:12` |
 | `MAX_IDENTITY_LEN` | 256 bytes | `routes.rs:13` |
 
@@ -105,11 +105,11 @@ Thread-safe registry (`RwLock<HashMap<ReverseServerId, ReverseServerEntry>>`). R
 
 - **Snapshot freshness**: handlers fetch a fresh `AdminSnapshot` from the provider per request, so config reloads are immediately visible.
 - **Non-loopback warning**: binding to a non-loopback address emits a tracing warning; auth is recommended (401 with `WWW-Authenticate: Bearer, Basic` otherwise).
-- **Readiness flips before drain**: readiness must become `false` before connection drain begins (tested invariant: `lib.rs:404-418`).
-- **Auth constant-time**: both Bearer token and Basic username/password comparisons use `subtle::ConstantTimeEq` to prevent timing side-channels (`server.rs:36,54`).
+- **Readiness flips before drain**: readiness must become `false` before connection drain begins (tested invariant: `lib.rs:454-469`).
+- **Auth constant-time**: both Bearer token and Basic username/password comparisons use `subtle::ConstantTimeEq` to prevent timing side-channels (`server.rs:115,135-136`).
 - **Auth per-request**: auth is checked inside the service_fn closure per request, not per-connection, so keep-alive connections are still gated.
-- **Body limit streaming**: `collect_limited()` rejects bodies exceeding 16 KiB chunk-by-chunk, avoiding unbounded memory allocation (`routes.rs:394-424`).
-- **Identity validation**: empty identity rejected; identity over 256 bytes rejected; non-`None` identity wrapped as `ClientIdentity::Username` (`routes.rs:318-334`).
+- **Body limit streaming**: `collect_limited()` rejects bodies exceeding 16 KiB chunk-by-chunk, avoiding unbounded memory allocation (`routes.rs:388-412`).
+- **Identity validation**: empty identity rejected; identity over 256 bytes rejected; non-`None` identity wrapped as `ClientIdentity::Username` (`routes.rs:316-335`).
 
 ## Security notes
 
@@ -148,7 +148,7 @@ Run: `cargo test -p eggress-admin`
 5. `StaticAdminSnapshot` is a test helper that returns a fixed snapshot — it does not reflect live reloads.
 6. `ReverseRegistry` uses `std::sync::RwLock` (not Tokio), which is fine because `snapshot()` is fast and non-async.
 7. Auth checking happens inside the service_fn closure, not at the accept layer, so an unauthenticated request still holds a connection slot for the duration of the 30 s timeout.
-8. `AdminState::generation()` (`server.rs:212-214`) calls `provider.snapshot().generation` — a convenience method that allocates a full snapshot just to read one field.
+8. `AdminState::generation()` (`server.rs:341-343`) calls `provider.snapshot().generation` — a convenience method that allocates a full snapshot just to read one field.
 
 ## See also
 

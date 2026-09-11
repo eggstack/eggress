@@ -92,7 +92,7 @@ Client                              Server
   |===== bidirectional relay ========|
 ```
 
-The auth payload is capped at 4096 bytes (`MAX_AUTH_BYTES` in `lib.rs:109`). A payload without a trailing `\n` is rejected as `AuthFailed`. The newline is part of the wire framing; requiring it prevents truncated credentials from being accepted at EOF.
+The auth payload is capped at 4096 bytes (`MAX_AUTH_BYTES` in `lib.rs:132`). A payload without a trailing `\n` is rejected as `AuthFailed`. The newline is part of the wire framing; requiring it prevents truncated credentials from being accepted at EOF.
 
 ### Pproxy compat handshake
 
@@ -173,8 +173,8 @@ The pproxy compat adapter does NOT send or read the 0x01/0x00 accept/reject byte
 - **Plaintext auth without TLS.** Credentials cross the wire as `user:pass\n` with no challenge. Captured handshakes are replayable. Prefer `[[reverse_servers.tls]]` / `[[reverse_clients.tls]]` (server-authenticated TLS, optional mTLS) when control traffic leaves a trusted network; see `docs/CONFIG_REFERENCE.md`.
 - **TLS uses shared infrastructure.** `src/tls.rs` builds via `eggress-transport-tls` builders (no reverse-specific crypto). Server `require_client_cert` without `client_ca` fails at validation/build; client cert without key fails; missing/invalid `server_name` fails; malformed PEM fails at config compile. `pproxy_compat` + TLS is rejected (wire must stay byte-compatible plaintext).
 - **Constant-time comparison.** `server_auth_handshake` uses `subtle::ConstantTimeEq` for credential validation.
-- **Auth failure delay.** 100 ms sleep (`AUTH_FAILURE_DELAY` at `server.rs:16`) after failed auth to slow brute-force attempts.
-- **Auth payload cap.** 4096 bytes maximum (`MAX_AUTH_BYTES` at `lib.rs:109`). Prevents unbounded memory growth from malicious clients.
+- **Auth failure delay.** 100 ms sleep (`AUTH_FAILURE_DELAY` at `server.rs:13`) after failed auth to slow brute-force attempts.
+- **Auth payload cap.** 4096 bytes maximum (`MAX_AUTH_BYTES` at `lib.rs:132`). Prevents unbounded memory growth from malicious clients.
 - **One session per control connection.** Each control channel carries exactly one proxy session (matching pproxy's backward model). Parallelism requires N control connections.
 
 ## Concurrency and lifecycle

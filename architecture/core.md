@@ -65,9 +65,9 @@ and the multi-hop `ChainExecutor` used for all upstream chains.
 
 - `relay(client: BoxStream, server: BoxStream) -> RelayResult`
 - Splits both streams via `io::split`, spawns two copy tasks in a `JoinSet`
-- `copy_direction()`: 8 KiB buffer; on read EOF, calls `writer.shutdown()` (half-close); on error, aborts both tasks
+- `copy_direction()`: 64 KiB buffer; on read EOF, calls `writer.shutdown()` (half-close); on error, aborts both tasks
 - `RelayResult`: bytes_upstream, bytes_downstream, termination_reason
-- `TerminationReason`: ClientClosed, ServerClosed, BothClosed, Error, Cancelled
+- `TerminationReason`: ClientClosed, ServerClosed, BothClosed, Error
 
 ### Replay (`replay.rs`)
 
@@ -94,13 +94,13 @@ and the multi-hop `ChainExecutor` used for all upstream chains.
 ### Chain (`chain.rs`)
 
 - `HopHandler` trait (dyn-compatible): `protocol()`, `open()` (optional, for QUIC/H3), `handshake(stream, target, hop, hop_index)`
-- `ChainExecutor::new(handlers)`, `with_tls_wrapper()`, `with_shared_tls_config()`
+- `ChainExecutor::new(handlers)`, `with_tls_wrapper()`, `with_shared_tls_config()`, `with_insecure_shared_tls_config()`
 - `execute(chain, target) -> Result<BoxStream, ChainError>`
 - Execution flow: pre-flight handler validation, connect to hop 0 (TCP/QUIC/Unix), then for each hop: TLS wrap if `hop.tls` → application handshake → next hop
 - TLS wrapping: uses `hop.server_name` (defaults to endpoint host), sets H2 ALPN for Http2 protocol
 - `ChainError`: EmptyChain, ConnectFailed{hop_index, endpoint, source}, HandshakeFailed{hop_index, protocol, source}, InvalidChain{reason}
 - `HandshakeError`: Io, Protocol, ConnectionRefused, AuthFailed, Other
-- `TlsWrapper`: boxed async closure `(BoxStream, String, Option<Vec<Vec<u8>>>) -> Result<BoxStream, ...>`
+- `TlsWrapper`: boxed async closure `(BoxStream, String, Option<Vec<Vec<u8>>>, bool) -> Result<BoxStream, ...>` (the `bool` is the insecure flag)
 
 ### Capability (`capability.rs`)
 
@@ -137,7 +137,7 @@ and the multi-hop `ChainExecutor` used for all upstream chains.
 ## Security notes
 
 - DNS-rebinding protection: `is_reserved_or_private_ip` covers all RFC-reserved ranges; IPv4-mapped IPv6 addresses are converted to v4 before checking
-- `ConnectOptions::enforce_dns_rebinding_check` is opt-in (default false) -- callers must explicitly enable it
+- `ConnectOptions::enforce_dns_rebinding_check` is enabled by default (default true) -- callers must explicitly disable it to skip the check
 - `CredentialSpec::Debug` and `RedactedUri::Display` never emit plaintext passwords
 - `ClientIdentity::Debug` does not redact (identities are not secrets)
 
@@ -146,22 +146,22 @@ and the multi-hop `ChainExecutor` used for all upstream chains.
 - `PermitStream` holds `OwnedSemaphorePermit` until the connection is dropped -- connection limit applies to the whole session, not just the accept call
 - `relay()` uses `JoinSet` for two copy tasks; on error, `abort_all()` cancels both directions
 - `CancellationToken` on `TcpListener` allows graceful shutdown of the accept loop
-- `ReplayStream` is `!Sync` (owns `Vec<u8>` buffer) -- safe because it moves through single-task protocol handling
+- `ReplayStream` is `!Sync` (owns the `Box<dyn AsyncStream>` inner stream) -- safe because it moves through single-task protocol handling
 
 ## Test coverage map
 
 | Module | Test count (lib) | Key coverage |
 |---|---|---|
-| `lib.rs` | 9 | TargetAddr display/FromStr, IPv6 bracketing, RejectReason display |
+| `lib.rs` | 10 | TargetAddr display/FromStr, IPv6 bracketing, RejectReason display |
 | `listener.rs` | 4 | Accept, cancellation, connection_limit held until drop, SO_REUSEPORT |
-| `connector.rs` | 19 | Echo connect, DNS-rebinding for domains, reserved IPv4/IPv6 ranges (loopback, private, link-local, multicast, broadcast, documentation, benchmarking, reserved-future, this-network, discard prefix, IPv4-mapped) |
-| `relay.rs` | 3 | Echo relay, half-close, cancellation |
-| `replay.rs` | 7 | Buffer during sniff, partial reads, into_inner, write delegation, finish_sniff, custom max_buffer, empty read |
-| `detect.rs` | 5 | Prefix match/no-match, need-more, empty input, exact match, custom min_length |
-| `dispatch.rs` | 9 | HTTP/Socks5/SSH detection, no-match, timeout, buffer overflow, ordered detection, fragmented, stream close |
+| `connector.rs` | 27 | Echo connect, DNS-rebinding for domains, reserved IPv4/IPv6 ranges (loopback, private, link-local, multicast, broadcast, documentation, benchmarking, reserved-future, this-network, discard prefix, IPv4-mapped) |
+| `relay.rs` | 5 | Echo relay, half-close, cancellation |
+| `replay.rs` | 10 | Buffer during sniff, partial reads, into_inner, write delegation, finish_sniff, custom max_buffer, empty read |
+| `detect.rs` | 6 | Prefix match/no-match, need-more, empty input, exact match, custom min_length |
+| `dispatch.rs` | 11 | HTTP/Socks5/SSH detection, no-match, timeout, buffer overflow, ordered detection, fragmented, stream close |
 | `chain.rs` | ~30 | Empty/invalid chains, missing handlers, connect/handshake failures, domain preservation through 1-3 hops, credentials, handler selection, error indexing, TLS wrapping |
-| `capability.rs` | 10 | Per-protocol classification, multi-hop, empty chain, QUIC at first hop, reason label stability |
-| **Total** | **105** | |
+| `capability.rs` | 9 | Per-protocol classification, multi-hop, empty chain, QUIC at first hop, reason label stability |
+| **Total** | **112** | |
 
 ## Reviewer gotchas
 

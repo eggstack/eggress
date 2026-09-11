@@ -85,6 +85,7 @@ Grouped by purpose:
 | `cli-baseline.json` | CLI output baseline |
 | `namespace-baseline.json` | Namespace/import baseline |
 | `fixture_manifest.toml` | Fixture file manifest |
+| `README.md` | Oracle directory guide |
 | `observations/` | Recorded behavioral observations |
 | `tests/` | Oracle test suite |
 | `examples/` | Example configurations |
@@ -101,6 +102,8 @@ Treat as immutable reference data. Prebuilt oracle venvs exist at repo root
 | File | Role |
 |---|---|
 | `test_pproxy_api_contract.py` | API contract validation against extracted pproxy 2.7.9 contract; class/method/signal coverage |
+| `pproxy_target.toml` | Target configuration |
+| `requirements-pproxy.txt` | Compat-test Python dependencies |
 | `fixtures/pproxy_api_snapshot.json` | Extracted API snapshot |
 | `fixtures/pproxy_cli_cases/` | CLI argument test cases |
 | `fixtures/pproxy_uri_corpus.toml` | URI parsing corpus |
@@ -108,7 +111,6 @@ Treat as immutable reference data. Prebuilt oracle venvs exist at repo root
 | `fixtures/python_api_cases.toml` | Python API test cases |
 | `fixtures/pproxy_*_behavior.md` | Behavioral documentation (Shadowsocks, SSR, UDP) |
 | `fixtures/pproxy_version_snapshot.toml` | Version snapshot |
-| `pproxy_target.toml` | Target configuration |
 
 Regression injection modules prove the differential harness catches mutations.
 

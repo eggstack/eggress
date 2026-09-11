@@ -14,56 +14,56 @@ listeners entirely. Designed as the binding target for PyO3.
 
 ## Public API surface
 
-### EggressConfig (`src/lib.rs:64`)
+### EggressConfig (`src/lib.rs:69`)
 
 | Method | Line | Description |
 |---|---|---|
 | `from_toml_str(input)` | `src/lib.rs` | Parse, version-check, validate, compile once via shared `parse_validate_compile`; stores compiled `RuntimeConfig` + ancillary source TOML |
 | `from_compiled(compiled, source)` | `src/lib.rs` | Construct from native `RuntimeConfig` (pproxy direct path); startup uses only `compiled` |
 | `compiled()` / `into_compiled()` | `src/lib.rs` | Borrow/consume the canonical compiled handoff |
-| `from_toml_file(path)` | :96 | Read file then delegate to `from_toml_str` |
-| `source_toml()` | :104 | Return raw TOML text |
-| `to_redacted_toml()` | :113 | TOML with secrets replaced by `****` and URI userinfo by `****@` |
+| `from_toml_file(path)` | :143 | Read file then delegate to `from_toml_str` |
+| `source_toml()` | :154 | Return raw TOML text |
+| `to_redacted_toml()` | :163 | TOML with secrets replaced by `****` and URI userinfo by `****@` |
 
 Validation chain (single shared boundary `parse_validate_compile`): `toml::from_str` → version check (must be 1 or absent) → `validate_config()` → `compile_config()`. `OutboundConnector::from_toml` / `validate_outbound_config` and `reload_toml_str` reuse the same boundary; reload maps failures to `Reload` + metrics.
 
-### EggressService (`src/lib.rs:127`)
+### EggressService (`src/lib.rs:177`)
 
 | Method | Line | Description |
 |---|---|---|
-| `new(config)` | :133 | Wrap a validated config |
-| `from_toml_str(input)` | :138 | Convenience: parse + new |
-| `from_toml_file(path)` | :143 | Convenience: file parse + new |
+| `new(config)` | :183 | Wrap a validated config |
+| `from_toml_str(input)` | :188 | Convenience: parse + new |
+| `from_toml_file(path)` | :193 | Convenience: file parse + new |
 | `start()` async | `src/lib.rs` | In-memory `start_from_config` (no temp file) inside caller's Tokio runtime |
 | `start_blocking()` | `src/lib.rs` | In-memory `start_from_config` (no temp file); single `eggress-embed-run` thread |
 | `start_blocking_with_compatibility_options(options)` | `src/lib.rs` | Deprecated legacy source-compatible facade (`CompatibilityOptions`); converts via `from_legacy_options` then shares `startup_in_memory` (empty maps to `None`) |
 | `start_blocking_with_compatibility_hooks(hooks)` | `src/lib.rs` | Preferred typed path with explicit `CompatibilityRuntimeHooks`; same `startup_in_memory` core (`Some` compat) |
 
-### EggressHandle (`src/lib.rs:419`)
+### EggressHandle (`src/lib.rs:422`)
 
 | Method | Line | Description |
 |---|---|---|
-| `bound_addresses()` | :430 | `BoundAddresses` with listener + admin addrs |
-| `status()` | :458 | `ServiceStatus`: generation, readiness, connections, uptime, listeners |
-| `metrics_text()` | :498 | Prometheus metrics text |
-| `reload_toml_str(input)` | :520 | Hot-reload routing/upstream/groups/health; rejects startup-captured listener changes |
-| `reload_toml_file(path)` | :584 | File-based reload |
-| `shutdown()` async | :594 | Cancel token + join runtime |
-| `shutdown_blocking()` | :614 | Blocking shutdown |
+| `bound_addresses()` | :433 | `BoundAddresses` with listener + admin addrs |
+| `status()` | :461 | `ServiceStatus`: generation, readiness, connections, uptime, listeners |
+| `metrics_text()` | :501 | Prometheus metrics text |
+| `reload_toml_str(input)` | :515 | Hot-reload routing/upstream/groups/health; rejects startup-captured listener changes |
+| `reload_toml_file(path)` | :572 | File-based reload |
+| `shutdown()` async | :601 | Cancel token + join runtime |
+| `shutdown_blocking()` | :619 | Blocking shutdown |
 
-### OutboundConnector (`src/outbound.rs:55`)
+### OutboundConnector (`src/outbound.rs:487`)
 
 | Method | Line | Description |
 |---|---|---|
 | `from_toml(config_toml)` | `src/outbound.rs` | Parse/validate/compile via shared `parse_validate_compile`, then require at least one upstream + non-empty chain (outbound-only checks) |
 | `from_pproxy_uri(uri)` | `src/outbound.rs` | Full pproxy `__` chain → `compile_chain_to_native` (typed `PproxyChain` → native `ProxyChainSpec`, no TOML string) → minimal `RuntimeConfig` → connector (fail-closed, redacted errors) |
-| `connect_tcp(host, port)` | :133 | Execute chain, return `(BoxStream, OutboundInfo)` |
-| `connect_tcp_timeout(host, port, timeout)` | :188 | Wraps `connect_tcp` in `tokio::time::timeout` |
+| `connect_tcp(host, port)` | :597 | Execute chain, return `(BoxStream, OutboundInfo)` |
+| `connect_tcp_timeout(host, port, timeout)` | :652 | Wraps `connect_tcp` in `tokio::time::timeout` |
 | `associate_udp(target_host, target_port)` | `src/outbound.rs` | Listener-free fixed-target UDP: direct or single-hop SOCKS5 via `eggress-udp` primitives, no hidden listener |
 | `associate_udp_timeout(host, port, timeout)` | `src/outbound.rs` | Same with establishment timeout |
 | `active_udp_associations()` | `src/outbound.rs` | Live listener-free UDP count (increment on create, decrement on close/drop) |
-| `upstream_count()` | :219 | Number of configured upstreams |
-| `validate_outbound_config(toml)` | :228 | Static validation, returns hop count |
+| `upstream_count()` | :807 | Number of configured upstreams |
+| `validate_outbound_config(toml)` | :819 | Static validation, returns hop count |
 
 ### Outbound UDP (`associate_udp`)
 
@@ -176,7 +176,7 @@ a stable `&'static str` label for each variant.
 | `common` | HTTP/SOCKS core, TLS transport, UDP, raw |
 | `extended` | Adds Shadowsocks, Trojan, WebSocket |
 | `pproxy-compat` | pproxy URI translation (`from_pproxy_uri`) and compatibility options |
-| `operations` | System proxy integration |
+| `operations` | Runtime operations gate (`eggress-runtime/operations`: admin snapshot provider wiring) |
 | `reverse` | Reverse proxy control channel |
 | `ssh` | SSH transport passthrough to runtime |
 | `quic` | QUIC/H3 config support |
@@ -203,7 +203,7 @@ a stable `&'static str` label for each variant.
 
 ## Concurrency & lifecycle
 
-- `reload_mutex` (:425) is a `std::sync::Mutex` — serializes reload
+- `reload_mutex` (:428) is a `std::sync::Mutex` — serializes reload
   attempts. Poisoned mutex is recovered via `into_inner()`.
 - `state.snapshot` is an `ArcSwap` — readers see a consistent snapshot
   without blocking writers.
@@ -232,7 +232,7 @@ Inline tests (`src/lib.rs`):
 
 - `start()` requires an active Tokio runtime context; calling it outside
   one produces a runtime error, not a compile error.
-- The 30-second readiness timeout (:177, :270) is a hard wall — if the
+- The 30-second readiness timeout (:375) is a hard wall — if the
   service doesn't become ready in time, the handle is not returned.
 - `reload_toml_str` rejects ANY listener topology change (count, name, or
   bind). Only routing rules, upstreams, and health state can be hot-reloaded.

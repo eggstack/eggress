@@ -27,7 +27,7 @@ The only TLS implementation in the workspace (no OpenSSL anywhere). Wraps
 | `with_alpn(protocols)` | Sets ALPN protocol list (e.g., `b"h2"`, `b"http/1.1"`) |
 | `with_h2_alpn()` | Shortcut: `vec![b"h2", b"http/1.1"]` |
 | `with_server_name_override(name)` | Default SNI when `tls_connect` has no explicit name |
-| `with_insecure()` | Accepts any server cert. **Gated**: `#[cfg(any(test, debug_assertions, feature = "insecure-tls"))]` |
+| `with_insecure()` | Accepts any server cert. **Gated**: `#[cfg(any(test, feature = "insecure-tls"))]` |
 | `build()` | Returns `Arc<ClientConfig>`. Insecure mode uses `InsecureVerifier`; if feature not enabled, returns `TlsError::Handshake` |
 
 ### Server (`TlsServerConfigBuilder`)
@@ -83,7 +83,7 @@ The only TLS implementation in the workspace (no OpenSSL anywhere). Wraps
 ### Client config construction
 
 1. `TlsClientConfigBuilder::build()` branches on `self.insecure`:
-   - **Insecure** (gated on `test || debug_assertions || feature = "insecure-tls"`): Uses `ClientConfig::builder().dangerous().with_custom_certificate_verifier(InsecureVerifier)`. The `InsecureVerifier` accepts any certificate and any handshake signature without validation.
+   - **Insecure** (gated on `test || feature = "insecure-tls"`): Uses `ClientConfig::builder().dangerous().with_custom_certificate_verifier(InsecureVerifier)`. The `InsecureVerifier` accepts any certificate and any handshake signature without validation.
    - **Secure**: Uses `ClientConfig::builder().with_root_certificates(self.root_store).with_no_client_auth()`.
 2. ALPN protocols are set on the resulting config.
 3. The config is wrapped in `Arc` and returned.
@@ -113,7 +113,7 @@ Both `tls_connect` and `tls_accept` use `tokio-rustls`:
 
 ## Security notes
 
-- **Insecure mode is triple-gated.** `with_insecure()` is only available under `#[cfg(any(test, debug_assertions, feature = "insecure-tls"))]`. If the feature is not enabled, `build()` returns `TlsError::Handshake("insecure TLS requires the insecure-tls feature")`. This prevents accidental use in release builds.
+- **Insecure mode is dual-gated.** `with_insecure()` is only available under `#[cfg(any(test, feature = "insecure-tls"))]`. If the feature is not enabled, `build()` returns `TlsError::Handshake("insecure TLS requires the insecure-tls feature")`. This prevents accidental use in release builds.
 - **Empty PEM is an error.** `load_pem_roots(b"")` returns `PemParse("no certificates found in PEM root material")`. This prevents silently trusting everything when CA material is misconfigured.
 - **Client auth defaults to none; mTLS is opt-in.** See above for the explicit builders.
 - **PKCS#8 only.** `load_private_key_pem` uses `PrivatePkcs8KeyDer::from_pem_slice`. Other key formats (RSA, EC) are not supported.
@@ -169,7 +169,7 @@ Both `tls_connect` and `tls_accept` use `tokio-rustls`:
 
 ## Reviewer gotchas
 
-- **`insecure-tls` feature escape hatch.** The `with_insecure()` method and `InsecureVerifier` are compiled only when `test || debug_assertions || feature = "insecure-tls"`. Auditing trust paths requires grepping for `insecure-tls` in `Cargo.toml` files.
+- **`insecure-tls` feature escape hatch.** The `with_insecure()` method and `InsecureVerifier` are compiled only when `test || feature = "insecure-tls"`. Auditing trust paths requires grepping for `insecure-tls` in `Cargo.toml` files.
 - **`load_pem_certs` vs `load_pem_roots`.** `load_pem_certs` returns raw `CertificateDer` values and does NOT fail on empty input. `load_pem_roots` builds a `RootCertStore` and DOES fail on empty input. These have different error semantics for the same "empty PEM" case.
 - **`with_custom_ca_pem` replaces, not extends.** It sets `builder.root_store = roots`, discarding any previously loaded roots (including system roots). Call `with_system_roots()` first if you need both.
 - **No `with_client_auth`.** Both sides default to `with_no_client_auth()`; use `with_client_ca_pem`/`with_require_client_cert` (server) and `with_client_cert_pem` (client) for mutual TLS.

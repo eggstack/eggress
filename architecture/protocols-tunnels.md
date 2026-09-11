@@ -25,7 +25,7 @@ Two thin tunnel wrappers used as chain hops and listener protocols:
 | `WebSocketTunnelServer` | struct | Holds `max_message_size`; provides `accept_upgrade`, `accept_upgrade_over_stream`, `accept_upgrade_with_config`, `accept_upgrade_with_config_over_stream` |
 | `WebSocketTunnelClient` | struct | Holds `max_message_size`; provides `connect`, `connect_with_config`, `connect_over_stream`, `connect_over_stream_with_config` |
 | `accept_upgrade_with_auth(stream, credentials)` | free fn | Server-side upgrade with optional Basic proxy auth; returns `(BoxStream, Option<String>)` where `String` is the authenticated username |
-| `DEFAULT_MAX_MESSAGE_SIZE` | const | 16 MiB (16 * 1024 * 1024) |
+| `DEFAULT_MAX_MESSAGE_SIZE` | const | 8 MiB (8 * 1024 * 1024) |
 
 ### Raw (`eggress-protocol-raw`)
 
@@ -122,7 +122,7 @@ Semaphore exhaustion in `RawTunnelListener` is not an error variant -- the conne
 - **Origin header not validated.** `accept_upgrade_with_auth` does not check the `Origin` header. This is intentional for non-browser tunnel usage; exposing these endpoints to browsers permits cross-site WebSocket hijacking.
 - **Constant-time auth.** Both `accept_upgrade_with_auth` (WebSocket) and `server_auth_handshake` (reverse) use `subtle::ConstantTimeEq` for credential comparison.
 - **DNS rebinding.** `RawTunnelListener` calls `is_dns_rebinding_risk` on resolved domain IPs before connecting. IP targets bypass this check (they are already resolved).
-- **Max message size.** The 16 MiB default prevents unbounded memory growth from malicious peers. Oversized frames produce a structured `MessageTooLarge` error.
+- **Max message size.** The 8 MiB default prevents unbounded memory growth from malicious peers. Oversized frames produce a structured `MessageTooLarge` error.
 - **No TLS built in.** WebSocket and raw tunnels do not perform TLS; wrap in `eggress-transport-tls` when needed (e.g., `wss://` via TLS listener).
 
 ## Concurrency and lifecycle
@@ -174,7 +174,7 @@ Semaphore exhaustion in `RawTunnelListener` is not an error variant -- the conne
 - `connect_over_stream` exists only on `WebSocketTunnelClient`, not on the server. The server has `accept_upgrade_over_stream` for the same purpose.
 - The `write_flush_outstanding` flag in `AsyncWrite` means a `poll_write` can return `Ok(len)` even when the flush is still pending. The next write will block on the flush. This is correct backpressure but looks surprising.
 - `RawTunnelListener::run()` has no graceful shutdown; the caller must cancel the task.
-- `DEFAULT_MAX_MESSAGE_SIZE` is 16 MiB. If a chain hop uses `accept_upgrade_with_auth`, it also uses this default (hardcoded at `lib.rs:320`), not a configurable value.
+- `DEFAULT_MAX_MESSAGE_SIZE` is 8 MiB. If a chain hop uses `accept_upgrade_with_auth`, it also uses this default (hardcoded at `lib.rs:320`), not a configurable value.
 
 ## See also
 

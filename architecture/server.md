@@ -11,7 +11,7 @@ crate.
 |------|------|
 | `src/lib.rs` | `serve_connection()` entry point; `ConnectionConfig`, `ConnectionContext`, `SessionMetrics` trait (6 session/route/upstream/auth methods; runtime concerns moved to `eggress-metrics::RuntimeMetrics`), `UdpService` trait, `UdpAssociationHandle`, `NoopMetrics` |
 | `src/accept/` | `mod.rs` (entry points + auth/session types) + `handlers.rs` (SOCKS5/SOCKS4/HTTP handshakes), `forward.rs` (CONNECT parsing, authority, 407 challenges), `detect.rs` (first-byte dispatch), `prefixed.rs` (peek-then-delegate stream): `AcceptedSession` (4 variants), `TunnelProtocol` (10 variants), `ReplyContext` (9 variants), `InboundAuthentication`, `AuthReuseCache` (IP-keyed, 4096 entries), `AcceptError`, `MAX_HEAD_SIZE` (32 KiB), `MAX_HEADER_LINES` (128) |
-| `src/execute/` | `mod.rs` (`execute()` dispatcher, `open_route()`, `build_chain_executor()`, `SessionReport`, `SessionOutcome` (7 variants), `FailureCategory` (14 variants)) + `hops.rs` (one `HopHandler` per upstream protocol, `HttpOnlyStream`, `PooledH2Stream`, `target_to_socks_addr`) |
+| `src/execute/` | `mod.rs` (`execute()` dispatcher, `open_route()`, `build_chain_executor()`, `SessionReport`, `SessionOutcome` (7 variants), `FailureCategory` (15 variants)) + `hops.rs` (one `HopHandler` per upstream protocol, `HttpOnlyStream`, `PooledH2Stream`, `target_to_socks_addr`) |
 | `src/reply.rs` | Protocol-correct success/failure replies: `send_tunnel_success()`, `send_tunnel_failure()`, `send_http_forward_failure()`, `send_http_expectation_failed()` (417), `send_http_upgrade_unsupported()` (501) |
 | `src/error.rs` | `SessionOpenError` with `From` impls for `ConnectError`, `ChainError`, `HttpError`, `Socks5Error` |
 | `src/advanced.rs` | `serve_h2_connection()` (H2 multiplexing), `serve_websocket_connection()` (WS upgrade). Gated on `feature = "extended"`. |
@@ -57,13 +57,13 @@ pub trait UdpService: Send + Sync { /* create_association, is_enabled, active_co
 
 1. **Metrics start** — `record_session_start()` if metrics configured (`lib.rs:125`).
 2. **Handshake with timeout** — `tokio::time::timeout(handshake_timeout, accept_with_fixed_target_for_peer(...))` wraps the entire accept phase (`lib.rs:129-142`). Timeout → `HandshakeTimedOut`.
-3. **Protocol detection** (`accept.rs`) — first byte: `0x05` → SOCKS5, `0x04` → SOCKS4, otherwise → HTTP method detection via `detect_http_method()` (up to 64 bytes prefix). Single-protocol listeners (Shadowsocks, Trojan, Raw, Echo) skip detection.
+3. **Protocol detection** (`accept.rs`) — first byte: `0x05` → SOCKS5, `0x04` → SOCKS4, otherwise → HTTP method detection via `detect_http_method()` (16-byte method/prefix cap). Single-protocol listeners (Shadowsocks, Trojan, Raw, Echo) skip detection.
 4. **Authentication** — per-connection or `AuthReuseCache` lookup. SOCKS5/4/HTTP use `subtle::ConstantTimeEq`.
 5. **Dispatch** — `execute()` on `AcceptedSession`: Tunnel → `execute_tunnel`, HttpForward → `execute_http_forward`, UdpAssociate → `execute_udp_associate`, Echo → `execute_echo`.
 6. **Route open** — `open_route()` calls `routing.route()` then `DirectConnector.connect_with_options()` (direct) or `ChainExecutor.execute()` (upstream). Wrapped in `tokio::time::timeout(connect_timeout, ...)` (`execute.rs:349`). Does NOT cover HTTP body upload (`execute.rs:640-643`).
 7. **Deferred success reply** — sent only after route opens: HTTP 200, SOCKS4 granted, SOCKS5 REP=0x00, Shadowsocks/Trojan/Raw: no reply.
 8. **Relay** — `eggress_core::relay::relay()` bidirectional half-close-aware copy.
-9. **Failure reply** — `send_tunnel_failure()` (`reply.rs:54`) maps `SessionOpenError` to per-protocol codes.
+9. **Failure reply** — `send_tunnel_failure()` (`reply.rs:58`) maps `SessionOpenError` to per-protocol codes.
 10. **Metrics end** — exactly one `record_session(&report)` before returning (`lib.rs:192`). Every code path reaches this block.
 
 ## Error & failure model
@@ -80,7 +80,7 @@ pub trait UdpService: Send + Sync { /* create_association, is_enabled, active_co
 | `RelayFailed` | `relay()` terminated with error |
 | `Cancelled` | Session cancelled (e.g., shutdown drain) |
 
-### `FailureCategory` (14 variants)
+### `FailureCategory` (15 variants)
 
 | Category | Source | `SessionOpenError` mapping |
 |----------|--------|---------------------------|
@@ -95,6 +95,7 @@ pub trait UdpService: Send + Sync { /* create_association, is_enabled, active_co
 | `RouteHop` | Chain hop failure | `Hop { .. }` |
 | `UpstreamAuthentication` | Upstream proxy auth rejected | `UpstreamAuthentication` |
 | `PolicyDenied` | Router rejected | `PolicyDenied` |
+| `UpstreamUnavailable` | Upstream group has no usable member | `UpstreamUnavailable` |
 | `Relay` | I/O error, reset, other IO | `Other(_)` |
 | `Cancelled` | Session cancelled | — |
 | `Internal` | Invariant violation | — |
@@ -151,13 +152,13 @@ H2/WebSocket failure: stream shutdown (no framed error code). HTTP forward failu
 
 ### Hop handler registry (`build_chain_executor`)
 
-Handlers in fixed order (`execute.rs:980`): Http, HttpOnly, Socks5, Socks4, [Shadowsocks, Trojan, WebSocket] (extended), [ShadowsocksR] (pproxy-legacy), Raw, Unix, [Ssh] (ssh), H2, [Quic, H3] (quic). The executor also installs a TLS wrapper using system root CAs or the `tls_client_config` override.
+Handlers in fixed order (`execute/mod.rs:991`): Http, HttpOnly, Socks5, Socks4, [Shadowsocks, Trojan, WebSocket] (extended), [ShadowsocksR] (pproxy-legacy), Raw, Unix, [Ssh] (ssh), H2, [Quic, H3] (quic). The executor also installs a TLS wrapper using system root CAs or the `tls_client_config` override.
 
 ## Security notes
 
 - **Constant-time auth**: SOCKS5 username (`accept.rs:758`), HTTP Basic (`accept.rs:983`, `advanced.rs:96`) use `subtle::ConstantTimeEq`.
 - **AuthReuseCache**: IP-keyed, max 4096, lazy expiry, LRU eviction (`accept.rs:31-75`). pproxy-compat only; native listeners authenticate every connection.
-- **Header limits**: 32 KiB head (`MAX_HEAD_SIZE`), 128 lines (`MAX_HEADER_LINES`) (`accept.rs:1242-1245`).
+- **Header limits**: 32 KiB head (`MAX_HEAD_SIZE`), 128 lines (`MAX_HEADER_LINES`) (`accept/forward.rs:240-243`).
 - **Transparent unsafe**: workspace's single `unsafe` block — `getsockopt(SO_ORIGINAL_DST)` FFI. Two `#[allow(unsafe_code)]` annotations: `query_original_dst` (sockaddr init + getsockopt) and `parse_sockaddr` (sockaddr_in/in6 reinterpretation with length validation).
 - **Unix socket safety**: `UnixListener::bind()` refuses to unlink non-socket files or symlinks (`listener/unix.rs:96-122`); only `FileType::is_socket()` passes.
 - **Trojan fallback**: on password mismatch, if `fallback` is set, relay to fallback target instead of rejecting (`accept.rs:632-646`).

@@ -11,7 +11,7 @@ swap.
 |---|---|
 | `src/lib.rs` | Public facade/re-exports only (no matching/selection logic) |
 | `src/model.rs` | IDs, request/result/action types: `TransportKind`, `UpstreamGroupId`, `RuleId`, `RouteActionSpec`, `RouteRequest`, `RouteDecision`, `SelectedRoute` + `SelectionReason`, `RouteError`, `RouteService` trait, explanation DTOs |
-| `src/matcher.rs` | `MatchExpr` (17 variants + 4 composites), `PortMatcher` (`new_range`/`new_set`), `normalize_host_for_exact`, suffix/host helpers; matching semantics preserved exactly |
+| `src/matcher.rs` | `MatchExpr` (17 variants: 4 composites + 13 concrete), `PortMatcher` (`new_range`/`new_set`), `normalize_host_for_exact`, suffix/host helpers; matching semantics preserved exactly |
 | `src/rule.rs` | `CompiledRule` (id + matcher + action) |
 | `src/router.rs` | `Router` (`decide`/`select`) + `RouteService` impls, `RoutingServiceInner`, `SharedRoutingService` (arc-swap) |
 | `src/explain.rs` | `Router::explain()` DTO construction (non-mutating preview preserved) |
@@ -103,19 +103,19 @@ Defaults (`HealthConfig::default()` at `src/health.rs:41-51`):
 - `failures_to_unhealthy`: 3, `successes_to_healthy`: 2.
 - `initial_state`: `Unknown`.
 
-Jitter: each probe delay is `interval +/- 20%` via signed `fastrand::f64()` multiplication (`src/health.rs:236-243`). Probe concurrency bounded by a 10-permit semaphore (`src/health.rs:216`).
+Jitter: each probe delay is `interval +/- 20%` via `fastrand::f64()` (`jittered_delay` at `src/health.rs:219`, sampled at `src/health.rs:263`). Probe concurrency bounded by a 10-permit semaphore (`src/health.rs:242`).
 
 ### Eligibility
 
-`is_eligible()` at `src/health.rs:189-200` returns `true` when `upstream.is_enabled()` AND state is `Unknown | Healthy | Suspect | Recovering`. `Unhealthy` and `Disabled` are excluded.
+`is_eligible()` at `src/health.rs:201-212` returns `true` when `upstream.is_enabled()` AND state is `Unknown | Healthy | Suspect | Recovering`. `Unhealthy` and `Disabled` are excluded.
 
 ### Lease RAII lifecycle
 
-`PendingLease::new()` at `src/lease.rs:18-24`: increments `in_flight` atomically. On drop (connection rejected or abandoned), `in_flight` is decremented.
+`PendingLease::new()` at `src/lease.rs:23-29`: increments `in_flight` atomically. On drop (connection rejected or abandoned), `in_flight` is decremented.
 
-`PendingLease::established()` at `src/lease.rs:26-34`: sets state to `Transferred`, decrements `in_flight`, increments `active`. Returns `ActiveLease`.
+`PendingLease::established()` at `src/lease.rs:31-39`: sets state to `Transferred`, decrements `in_flight`, increments `active`. Returns `ActiveLease`.
 
-`ActiveLease::drop()` at `src/lease.rs:59-62`: decrements `active`.
+`ActiveLease::drop()` at `src/lease.rs:64-67`: decrements `active`.
 
 This two-phase design means `in_flight` tracks route-selection-to-upstream-open latency while `active` tracks the live relay session. `UpstreamRuntime::current_load()` returns `active + in_flight`.
 
@@ -125,7 +125,7 @@ This two-phase design means `in_flight` tracks route-selection-to-upstream-open 
 |---|---|---|
 | `FirstAvailable` | First candidate where `is_eligible()` | List-order dependent |
 | `RoundRobin` | Atomic cursor, `compare_exchange` loop, skips ineligible | Concurrent-safe, skips disabled/unhealthy |
-| `Random` | `fastrand::usize` start index, circular scan for eligible | Seeded via `RandomIndex` trait (production: `FastrandRandom`; tests: `DeterministicRandom`) |
+| `Random` | Uniform random pick over the eligible set (`rng.index(eligible_count)` + linear scan) | Seeded via `RandomIndex` trait (production: `FastrandRandom`; tests: `DeterministicRandom`) |
 | `LeastConnections` | `min_by_key(current_load())` | Tie-broken by iterator order |
 
 ### CompatRegexRule matching
@@ -176,10 +176,10 @@ No Cargo features gate routing functionality (all routing code is always compile
 |---|---|---|
 | MatchExpr | `src/matcher.rs` + `src/lib.rs` tests | 30+ tests: host exact/suffix/regex, CIDR IPv4/v6, port exact/range/set, source CIDR/port, listener, protocol, identity, composite All/AnyOf/Not, empty All/AnyOf |
 | Router decide/select | `src/router.rs` + `src/lib.rs` tests | first-match-wins, default action, upstream group, reject, accessor methods |
-| Health state machine | `src/health.rs:306-508` | 15+ tests: every state transition, thread safety (100 threads), eligibility, timestamps, failure resets counter, Disabled terminal |
-| Jitter | `src/health.rs:572-596` | 1000 iterations, validates +/- 20% range |
-| Probe | `src/health.rs:536-560` | TCP probe success, failure, timeout |
-| Schedulers | `src/scheduler.rs:230-312` | FirstAvailable order, disabled skip, RoundRobin, Random determinism, LeastConnections |
+| Health state machine | `src/health.rs:325-561` | 15+ tests: every state transition, thread safety (100 threads), eligibility, timestamps, failure resets counter, Disabled terminal |
+| Jitter | `src/health.rs:598-616` | 1000 iterations, validates +/- 20% range |
+| Probe | `src/health.rs:563-596` | TCP probe success, failure, timeout |
+| Schedulers | `src/scheduler.rs:346-428` | FirstAvailable order, disabled skip, RoundRobin, Random determinism, LeastConnections |
 | Lease RAII | `src/lease.rs` + `src/lib.rs` tests | PendingLease decrement on drop, established->active, ActiveLease decrement on drop |
 | CompatRegexRule | `src/compat.rs` + `src/lib.rs` tests | Parse valid/invalid, file parsing, line numbers, hostname:port matching |
 | Properties | `tests/properties.rs` | Proptest-based property tests |

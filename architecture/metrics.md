@@ -57,7 +57,7 @@ The `MetricsRegistry` implements `eggress_server::SessionMetrics` (`src/session.
 
 ### Direct recording methods
 
-UDP: `record_udp_association_created` / `_closed` / `_failure`, `record_udp_packet_up(bytes)` / `_down(bytes)`, `record_udp_dropped()`, `record_udp_decode_error(kind)`, `record_udp_target_flow_created` / `_closed`, `record_udp_upstream_association_created` / `_closed` / `_failure`, `record_udp_upstream_packet_up(bytes)` / `_down(bytes)`.
+UDP: `record_udp_association_created` / `_closed` / `_failure`, `record_udp_packet_up(bytes)` / `_down(bytes)`, `record_udp_dropped()`, `record_udp_decode_error(kind)`, `record_udp_target_flow_created` / `_closed`, `record_udp_upstream_association_created` / `_closed` / `_failure`, `record_udp_upstream_packet_up(bytes)` / `_down(bytes)`. (Association timeouts surface only via the `UdpMetrics` bridge atomics — there is no direct-recording timeout method.)
 
 Platform: `record_transparent_connection_accepted` / `_original_dst_failed` / `_route_reject`, `record_unix_listener_connection_accepted` / `_bind_failure`, `record_platform_capability_check_failure`.
 
@@ -82,7 +82,7 @@ Query: `h2_snapshot() -> H2MetricsSnapshot`.
 | **Shadowsocks** (extended) | `eggress_shadowsocks_tcp_{sessions_active,sessions_total,upstream_sessions_total,decrypt_failures_total,frame_parse_failures_total,unsupported_method_rejects_total,active_flows}`, `eggress_shadowsocks_udp_{packets_in_total,packets_out_total,bytes_in_total,bytes_out_total,decrypt_failures_total,unsupported_method_rejects_total,active_flows}` | Gauge/Counter | -- |
 | **H2** | `eggress_h2_connections_{active,total}`, `eggress_h2_streams_{active,total}`, `eggress_h2_{goaway,handshake_failures,auth_failures,flow_control_stalls,pool_exhausted,bytes_relayed}_total` | Gauge/Counter | `{upstream_id, outcome}` on streams_total |
 
-All families except `eggress_udp_decode_errors_total`, `eggress_upstream_health`, and `eggress_h2_streams_total` have no labels. All bridged sources appear under the "Bridged" column -- their counters are promoted from `AtomicU64` values via delta math; direct methods write Prometheus counters/gauges atomically.
+Labeled families are `eggress_route_decisions_total` (`{rule, action, outcome}`), `eggress_upstream_health` (`{upstream_id, group_id}`), `eggress_upstream_open_total` (`{protocol, outcome}`), `eggress_upstream_open_failures_total` (`{protocol, reason}`), `eggress_unsupported_transport_total` (`{protocol, transport, reason}`), `eggress_udp_decode_errors_total` (`{kind}`), and `eggress_h2_streams_total` (`{upstream_id, outcome}`); all other families have no labels. All bridged sources appear under the "Bridged" column -- their counters are promoted from `AtomicU64` values via delta math; direct methods write Prometheus counters/gauges atomically.
 
 ### Bridge delta-promotion mechanics
 

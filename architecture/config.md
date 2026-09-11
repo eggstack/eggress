@@ -197,10 +197,10 @@ Non-fatal warnings emitted during `validate_config_security()`:
 
 | Module | Test count | Key coverage |
 |---|---|---|
-| `lib.rs` | ~80 | Minimal config, full config, all sections, invalid TOML, unsupported version, invalid duration/URI, duplicate names/IDs, unknown references, combined legacy matchers rejected, recursive matchers (all/any_of/not/nested), leaf matchers (port range/set/identity/CIDR/regex), health config (all/partial/defaults/invalid), PAC/static content config, UDP config (nested/legacy synthesis/conflict/SOCKS5 requirement/transport validation), TLS listener config |
-| `validate/` | ~15 | Zero durations rejected, loopback detection, security warnings (listener/admin/reverse), non-loopback without auth warned, loopback not warned, authed listener not warned |
-| `compile/` | ~12 | Process/admin defaults, protocol compilation, reject reasons, matcher compilation, UDP mode compilation, health compilation, H2 config, reverse server/client compilation (incl. `[*.tls]` PEM validation; `pproxy_compat` + TLS rejected) |
-| **Total** | **107** | |
+| `lib.rs` | ~100 | Minimal config, full config, all sections, invalid TOML, unsupported version, invalid duration/URI, duplicate names/IDs, unknown references, combined legacy matchers rejected, recursive matchers (all/any_of/not/nested), leaf matchers (port range/set/identity/CIDR/regex), health config (all/partial/defaults/invalid), PAC/static content config, UDP config (nested/legacy synthesis/conflict/SOCKS5 requirement/transport validation), TLS listener config |
+| `validate/` | ~21 | Zero durations rejected, loopback detection, security warnings (listener/admin/reverse), non-loopback without auth warned, loopback not warned, authed listener not warned |
+| `compile/` submodules | 0 (compile behavior is covered by `lib.rs` integration tests) | Process/admin defaults, protocol compilation, reject reasons, matcher compilation, UDP mode compilation, health compilation, H2 config, reverse server/client compilation (incl. `[*.tls]` PEM validation; `pproxy_compat` + TLS rejected) |
+| **Total** | **~121** | |
 
 ## Reviewer gotchas
 
