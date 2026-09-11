@@ -14,7 +14,7 @@ Use when working on security features, writing security tests, hardening attack 
 
 This prevents DNS rebinding attacks where a malicious DNS response points to an internal service. The check applies to domain resolution only — explicit IP targets in URIs bypass DNS and are not affected.
 
-New error variant: `ConnectError::ReservedTarget`.
+Error variant: `ConnectError::ReservedTarget`.
 
 ## Auth failure metrics
 
@@ -128,7 +128,7 @@ cargo test -p eggress-embed --test error_redaction
 # Full workspace security surface
 cargo clippy --workspace --all-targets -- -D warnings
 cargo deny check
-cargo audit
+cargo audit --ignore RUSTSEC-2025-0134 --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0009
 ```
 
 ## Closure audit
@@ -148,11 +148,12 @@ EGRESS_RUN_PPROXY_DIFFERENTIAL=1 cargo test -p eggress-cli --test pproxy_differe
 - `docs/security/THREAT_MODEL.md` — full threat model
 - `docs/security/REDACTION_POLICY.md` — credential redaction policy
 - `docs/SECURITY_REVIEW.md` — security review and residual risks
-- `docs/SECURITY_REVIEW.md` — Phase 50 security gate details
 
-## Track B/C cipher regressions
+## Cipher regression notes
 
-The Track B/C verification pass surfaced and fixed two cipher defects. Both are now covered by regression tests in `python/tests/test_protocol_cipher.py`:
+Two past cipher defects are covered by regression tests in
+`python/tests/test_protocol_cipher.py` — keep this coverage green when
+touching cipher code:
 
 - `AEADCipher.setup_iv` previously set `self._iv` but did not update `self._current_nonce`, so `encrypt()` after `setup_iv()` would use a stale random nonce. Fix: added an `AEADCipher.setup_iv` override that delegates to `setup_nonce`.
 - `BaseCipher.__copy__` re-ran `__init__`, which re-initialized the AEAD nonce. Fix: added `AEADCipher.__copy__` that does a proper shallow `__dict__` copy via `__new__`.

@@ -92,7 +92,9 @@ Run these when changing pproxy behavior, URI translation, compatibility manifest
 The strict certification audit is reserved for explicit closure or release evaluation:
 
 ```bash
-./scripts/run_strict_pproxy_closure_audit.sh
+./scripts/run_pproxy_certification.sh
+./scripts/run_strict_pproxy_api.sh
+./scripts/run_strict_pproxy_interop.sh
 ```
 
 Its generated reports are evidence for compatibility claims. They are not routine merge artifacts.
@@ -157,8 +159,6 @@ cargo test -p eggress-embed --test proxy_traffic
 cargo test -p eggress-embed --test error_redaction
 cargo test -p eggress-transport-ssh --test openssh -- --ignored  # requires openssh
 ```
-
-`zz_debug_ssserver_interaction.rs` is a debug-only helper, not a gate.
 
 ## Test selection rule
 

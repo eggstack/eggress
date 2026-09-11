@@ -249,7 +249,7 @@ One crate installing two binaries that converge on the same
 `ServiceSupervisor` and differ only in how arguments reach config. Native
 `eggress`: `-l`/`-r`/`--config`/`--rules-file`, `route`, `upstream test`,
 `pproxy translate|check|run`, `system-proxy inspect`, stable exit codes
-(0/1/2/3/5/130/143), lean `--no-default-features --features common` builds.
+(0–7, 130, 143), lean `--no-default-features --features common` builds.
 Compat `pproxy`: frozen 2.7.9 flag parser with fail-closed gate and Linux
 `--daemon` re-exec behind `pproxy-daemon`.
 
@@ -439,7 +439,7 @@ then the protocol/transport of interest, then [cli.md](cli.md) /
   `docs/parity/pproxy_2_7_9_strict_manifest.toml` — compatibility contracts
 - `docs/parity/README.md` + `crates/eggress-pproxy-compat/src/tier.rs` — tier vocabulary and classification rules (`docs/PPROXY_PARITY_SPEC.md` is historical provenance only)
 - `.skills/` — task-specific agent guides (rust-proxy-dev, python-bindings,
-  testing, security-dev, …); mirrored into `.agents/skills/` and
+  testing, security-dev, cli-ops, …); mirrored into `.agents/skills/` and
   `.opencode/skills/` via relative symlinks
 - Earlier per-crate notes also exist under `docs/architecture/`; treat this
   directory as the maintained review index.

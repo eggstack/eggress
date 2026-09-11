@@ -53,34 +53,18 @@ Fuzz harnesses live in `fuzz/fuzz_targets/` (standalone workspace, libfuzzer-sys
 - `socks5_handshake.rs` — SOCKS5 method negotiation + CONNECT / UDP_ASSOCIATE request parsers
 - `http_connect_response.rs` — HTTP CONNECT status line, authority, header, basic-auth parsers
 - `trojan_request.rs` — Trojan password hash + request encoder
-- `trojan_accept.rs` — Trojan server-side accept parser (Track B/C)
-- `shadowsocks_frame.rs` — Shadowsocks address decoder (Track B/C)
-- `toml_config.rs` — TOML config parse + compile (Track B/C)
-- `websocket_handshake.rs` — WebSocket error + tunnel construction (Track B/C)
-- `h2_connect_authority.rs` — H2 CONNECT authority + header + basic-auth parsers (Track B/C)
+- `trojan_accept.rs` — Trojan server-side accept parser
+- `shadowsocks_frame.rs` — Shadowsocks address decoder
+- `toml_config.rs` — TOML config parse + compile
+- `websocket_handshake.rs` — WebSocket error + tunnel construction
+- `h2_connect_authority.rs` — H2 CONNECT authority + header + basic-auth parsers
 - `route_match.rs` — Route matcher evaluation with constructed routers and requests
 
-Run with `cargo fuzz run <target>`. Smoke tests in per-crate `tests/` exercise seed inputs
-without requiring `cargo-fuzz`:
-- `crates/eggress-protocol-socks/tests/fuzz_smoke.rs` — seed corpus for SOCKS UDP codec and handshake parsers
-- `crates/eggress-uri/tests/fuzz_smoke.rs` — seed corpus for URI parser
-- `crates/eggress-protocol-http/tests/fuzz_smoke.rs` — HTTP CONNECT parsers (Track B/C)
-- `crates/eggress-protocol-trojan/tests/fuzz_smoke.rs` — Trojan request/accept (Track B/C)
-- `crates/eggress-protocol-websocket/tests/fuzz_smoke.rs` — WebSocket handshake (Track B/C)
-- `crates/eggress-protocol-shadowsocks/tests/fuzz_smoke.rs` — Shadowsocks address frame (Track B/C)
-- `crates/eggress-config/tests/fuzz_smoke.rs` — TOML config (Track B/C)
-
-### In-tree fuzz smoke tests (Track B/C verification)
-
-The Track B/C verification pass added fuzz smoke coverage for HTTP, Trojan, WebSocket, Shadowsocks, and TOML config parsers. Each runs a fixed corpus of deterministic inputs in < 1 second and asserts no panic, exception, or unbounded allocation:
-
-- `crates/eggress-protocol-http/tests/fuzz_smoke.rs` — HTTP CONNECT response, authority, header, basic-auth, credential validation
-- `crates/eggress-protocol-trojan/tests/fuzz_smoke.rs` — Trojan request encoding, password hash, server accept parser
-- `crates/eggress-protocol-websocket/tests/fuzz_smoke.rs` — Error display, message-too-large, tunnel construction
-- `crates/eggress-protocol-shadowsocks/tests/fuzz_smoke.rs` — Address decoder (IPv4, IPv6, domain, truncated)
-- `crates/eggress-config/tests/fuzz_smoke.rs` — TOML parse + compile with valid/invalid/edge inputs
-- `crates/eggress-uri/tests/fuzz_smoke.rs` — URI parser (pre-existing)
-- `crates/eggress-protocol-socks/tests/fuzz_smoke.rs` — SOCKS UDP codec and handshake (pre-existing)
+Run with `cargo fuzz run <target>`. Each parser also has a `fuzz_smoke.rs`
+seed-corpus test in its crate's `tests/` (socks, URI, HTTP, Trojan,
+WebSocket, Shadowsocks, config) exercising fixed deterministic inputs
+without requiring `cargo-fuzz`. Each asserts no panic, exception, or
+unbounded allocation.
 
 The reverse handshake (`eggress-protocol-reverse`) has no dedicated fuzz target; coverage comes from the reverse runtime tests in `crates/eggress-runtime/tests/reverse_runtime.rs`.
 
@@ -100,8 +84,9 @@ Criterion benchmarks live in `benches/`:
 Run with `cargo bench --workspace`.
 
 ### Load tests
-`#[ignore]`-annotated tests for stress/load scenarios:
-- `crates/eggress-runtime/tests/load.rs` — run with `cargo test -p eggress-runtime --test load -- --ignored`
+`#[ignore]`-annotated tests for stress/load scenarios, additionally gated on
+`EGRESS_REQUIRE_LOAD=1`:
+- `crates/eggress-runtime/tests/load.rs` — run with `EGRESS_REQUIRE_LOAD=1 cargo test -p eggress-runtime --test load -- --ignored`
 
 ### Performance smoke tests
 Tier 1 performance and leak detection tests (automated, not `#[ignore]`):
@@ -169,7 +154,6 @@ The reusable harness lives in `eggress_testkit::differential` (protocol-agnostic
 - `compare_tcp_echo()` / `compare_udp_echo()` / `assert_coarse_failure_equivalence()` — Comparison primitives
 
 Protocol-specific helpers (SOCKS5/HTTP/SOCKS4 client helpers, eggress server helpers) live in the test file since they depend on `eggress-core` types.
-- `build_socks5_udp_packet()` / `recv_udp_response()` — UDP datagram helpers
 
 Black-box probe tests document pproxy behavior for ambiguous scenarios (refused replies, auth success shape, chained failure, UDP relay lifetime).
 
@@ -198,13 +182,13 @@ checked in declaration order and no listener is bound.
 - Optional parity report generator (`report` module) — diagnostic JSON and markdown from manifest + test results; generated reports are not current public claims
 - Oracle harness (`oracle` module) — scenario registry, JSON report generation, gate functions (`EGRESS_PPROXY_CERTIFY`)
 
-### Oracle infrastructure (Phase A3)
+### Oracle infrastructure
 
 The oracle harness under `eggress-testkit/src/oracle/` provides:
 
 - **`mod.rs`** — Module root, gate checks (`EGRESS_PPROXY_CERTIFY`), timeout constants
 - **`scenario.rs`** — hardcoded oracle scenarios (backward compatibility; no TOML files needed)
-- **`schema.rs`** — TOML scenario schema (version 1), loader, validator. Maps scenarios to A2 composition IDs
+- **`schema.rs`** — TOML scenario schema (version 1), loader, validator. Maps scenarios to composition-matrix IDs
 - **`observations.rs`** — `ProxyObservation` semantic capture model: bound addresses, exit codes, connection results, protocol replies, bytes transferred, auth results, timing, cleanup status. `compare_observations()` produces structured comparison results
 - **`probes.rs`** — Reusable protocol client probes: `socks5_tcp_connect`, `socks5_tcp_connect_auth`, `socks5_connect_refused`, `socks5_auth_failure`, `http_connect`, `http_connect_refused`, `http_forward_get`, `http_forward_post`, `socks4_connect`, `socks4a_connect`. Each returns `ProbeResult`
 - **`supervisor.rs`** — `SupervisedProcess` with process-group ownership (Unix), bounded stdout/stderr capture, artifact retention (logs saved on drop), `ReadinessProbe` enum (TcpPort, StdoutPattern, FixedDelay, FileExists), structured `ProcessExit`
@@ -237,8 +221,8 @@ cargo test -p eggress-protocol-socks --test fuzz_smoke
 # Benchmarks
 cargo bench --workspace
 
-# Load tests (ignored by default)
-cargo test -p eggress-runtime --test load -- --ignored
+# Load tests (ignored by default, requires the gate env var)
+EGRESS_REQUIRE_LOAD=1 cargo test -p eggress-runtime --test load -- --ignored
 
 # SSR/legacy compatibility tests
 cargo test -p eggress-protocol-shadowsocks legacy
@@ -255,16 +239,16 @@ EGRESS_RUN_PPROXY_DIFFERENTIAL=1 cargo test -p eggress-cli --test pproxy_differe
 # Scenario-driven oracle harness (gated, requires pproxy==2.7.9)
 EGRESS_PPROXY_CERTIFY=1 cargo test -p eggress-cli --test oracle -- --ignored
 
-# Python tests
-python -m pytest python/tests/test_pproxy_phase4_contract.py -v
-python -m pytest python/tests/test_pproxy_dropin.py -v
-python -m pytest python/tests/test_pproxy_differential.py -v
-python -m pytest python/tests/test_pproxy_compat.py -v
-python -m pytest python/tests/test_pproxy_redaction.py -v
-python -m pytest python/tests/test_pproxy_concurrency.py -v
-python -m pytest python/tests/test_performance_smoke.py -v
-python -m pytest python/tests/test_protocol_cipher.py -v
-python -m pytest python/tests -v  # all Python tests
+# Python tests (repo-root venv; pytest.ini forces --import-mode=importlib)
+.venv/bin/python -m pytest python/tests/test_pproxy_phase4_contract.py -v
+.venv/bin/python -m pytest python/tests/test_pproxy_dropin.py -v
+.venv/bin/python -m pytest python/tests/test_pproxy_differential.py -v
+.venv/bin/python -m pytest python/tests/test_pproxy_compat.py -v
+.venv/bin/python -m pytest python/tests/test_pproxy_redaction.py -v
+.venv/bin/python -m pytest python/tests/test_pproxy_concurrency.py -v
+.venv/bin/python -m pytest python/tests/test_performance_smoke.py -v
+.venv/bin/python -m pytest python/tests/test_protocol_cipher.py -v
+.venv/bin/python -m pytest python/tests tests/compat -q  # all Python tests
 
 # Clean-wheel top-level namespace smoke (requires the opt-in compat
 # distribution installed in the same environment: pip install --no-deps ./python-pproxy-compat)
@@ -335,7 +319,7 @@ Tests use local TCP echo servers (no public internet required).
 
 Python tests exercise the PyO3 bindings and pproxy compatibility layer:
 
-- `python/tests/test_pproxy_dropin.py` — Phase 40 PPProxyService, CompatibilityReport, start_pproxy tests
+- `python/tests/test_pproxy_dropin.py` — PPProxyService, CompatibilityReport, start_pproxy tests
 - `python/tests/test_pproxy_differential.py` — optional differential parity structural tests (gated)
 - `python/tests/test_pproxy_compat.py` — pproxy translation helpers
 - `python/tests/test_pproxy_redaction.py` — credential redaction in repr/diagnostics
@@ -346,7 +330,7 @@ Python tests exercise the PyO3 bindings and pproxy compatibility layer:
 - `python/tests/test_connection.py` — Connection contract and lifecycle tests (signatures, attributes, state machine, close semantics, resource ownership, context manager, GIL release)
 - `python/tests/test_connection_behavioral.py` — Connection behavioral tests (SOCKS5 proxy echo, multiple protocols, failure scenarios, concurrent lifecycle, resource cleanup, GIL release)
 - `python/tests/test_server_lifecycle.py` — Server lifecycle tests covering construction, start/stop, async, context managers, observability, reload, error tracking, resource management, concurrent sessions, thread safety, multi-server coexistence, TLS, auth, chains, UDP, IPv6, loop affinity, GIL release, FD leak detection, and pproxy examples
-- `python/tests/test_protocol_cipher.py` — Phase C4 protocol objects, cipher objects, and plugin bridge tests
+- `python/tests/test_protocol_cipher.py` — protocol objects, cipher objects, and plugin bridge tests
 - `python/tests/test_asyncio_semantic.py` — asyncio semantic compatibility covering loop affinity, bridge lifecycle, cancellation, close ordering, contextvars, exception chaining, debug mode, interpreter safety, version compatibility, stress/race behavior, representative pproxy async patterns, and manifest/doc agreement
 
 The development dependency set includes `pytest-asyncio`; install it before
@@ -354,7 +338,7 @@ running the async plugin and asyncio-semantic tests.
 
 Run:
 ```bash
-python -m pytest python/tests -v
+.venv/bin/python -m pytest python/tests -v
 ```
 
 For installed-wheel verification, use `--import-mode=importlib` and a clean
@@ -362,8 +346,8 @@ environment so source-tree imports cannot mask missing native extension or
 packaging errors:
 
 ```bash
-python -m pytest --import-mode=importlib python/tests -q
-python -m pytest --import-mode=importlib python/tests/test_proxy_connection.py python/tests/test_wheel_import_smoke.py -q
+.venv/bin/python -m pytest --import-mode=importlib python/tests -q
+.venv/bin/python -m pytest --import-mode=importlib python/tests/test_proxy_connection.py python/tests/test_wheel_import_smoke.py -q
 ```
 
 ## pproxy compatibility harness
@@ -419,7 +403,7 @@ current compatibility claim. Final closure references are maintained in
 `docs/parity/PPROXY_CLOSURE_SCENARIOS.md`. The external pproxy oracle is
 optional and is not a hosted-CI gate.
 
-## Phase C1: Python API Contract Tests
+## Python API contract tests
 
 The pproxy API contract is a machine-readable inventory of every public symbol
 in pproxy 2.7.9, with signatures, class hierarchies, async classifications,
@@ -435,22 +419,23 @@ and behavioral probes.
 | `python/compat/extract_api.py` | Contract extractor script |
 | `python/compat/behavioral_probes.py` | Behavioral probe runner |
 | `python/compat/classification.py` | Classification mapper |
-| `tests/compat/test_pproxy_api_contract.py` | 56 contract validation tests |
+| `tests/compat/test_pproxy_api_contract.py` | 59 contract validation tests |
 
 ### Running
 
 ```bash
-# Regenerate contract (requires pproxy==2.7.9 installed)
-python3.11 python/compat/extract_api.py
+# Regenerate contract (requires pproxy==2.7.9; the prebuilt
+# .venv-pproxy-279 at repo root already has it)
+.venv-pproxy-279/bin/python python/compat/extract_api.py
 
 # Run behavioral probes
-python3.11 python/compat/behavioral_probes.py
+.venv-pproxy-279/bin/python python/compat/behavioral_probes.py
 
 # Run classification
-python3.11 python/compat/classification.py
+.venv-pproxy-279/bin/python python/compat/classification.py
 
 # Run contract validation tests
-python3.11 -m pytest tests/compat/test_pproxy_api_contract.py -v
+.venv/bin/python -m pytest tests/compat/test_pproxy_api_contract.py -v
 ```
 
 ### Classification tiers
@@ -461,9 +446,9 @@ python3.11 -m pytest tests/compat/test_pproxy_api_contract.py -v
 - `intentional_non_parity`: with explicit rationale
 - `internal_observed`: publicly reachable but not stable API
 
-## Final pproxy compatibility closure
+## Compatibility closure
 
-The Phase 10 closure is governed by the active manifest and practical matrix,
+Compatibility is governed by the active manifest and practical matrix,
 with the compact paired scenarios in `docs/parity/PPROXY_CLOSURE_SCENARIOS.md`.
 The legacy strict-manifest/comparator modules remain in the testkit only as
 historical diagnostic tooling; they are not active release claims or required
@@ -474,7 +459,7 @@ validators, the canonical-manifest test, and the relevant paired pproxy or
 external interoperability suite. Skipped optional or external tests are not
 evidence of a pass.
 
-## Phase 2 convergence tests
+## Convergence tests
 
 - `crates/eggress-embed/tests/reload_convergence.rs` — file/string/native
   reload equivalence via canonical `apply_compiled_config` (routing accept,

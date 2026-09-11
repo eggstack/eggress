@@ -46,7 +46,7 @@ CONNECT request per stream.
 - Focused QUIC tests: `cargo test -p eggress-transport-quic` and
   `cargo test -p eggress-protocol-h3`.
 
-## Chain composition behavior (stream-native, Track B hard closure)
+## Chain composition behavior (stream-native)
 
 WS, WSS, Raw, and H2 upstream handlers now **consume the prior-hop stream** supplied by the chain executor instead of opening independent connections. This means:
 

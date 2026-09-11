@@ -16,7 +16,8 @@ Known boundaries:
 - Bounded pproxy SSR TCP framing/plugin path is feature-gated compatibility work.
 - macOS PF original-destination recovery and four unavailable legacy cipher names are intentional exclusions.
 
-See `docs/PPROXY_PARITY_SPEC.md` for the tier taxonomy.
+See `docs/parity/README.md` and `crates/eggress-pproxy-compat/src/tier.rs`
+for the tier taxonomy (`docs/PPROXY_PARITY_SPEC.md` is historical provenance only).
 
 ## Completed Milestones
 
@@ -114,10 +115,10 @@ See `docs/PPROXY_PARITY_SPEC.md` for the tier taxonomy.
 
 ### Phase 37: Parity capability manifest and validator — complete
 
-- [x] `docs/parity/pproxy_capability_manifest.toml` — 148 capabilities, 5 categories, 7 layers (updated by Track B/C closure)
-- [x] `docs/parity/README.md` — tiers, layers, evidence, 13 validation rules
-- [x] `docs/parity/PPROXY_PARITY_REPORT.md` — auto-generated from the manifest
-- [x] `scripts/validate_pproxy_parity_manifest.py` — Python validator, 13 rules, strict mode
+- [x] `docs/parity/pproxy_capability_manifest.toml` — per-capability inventory with status, evidence, and diagnostics (counts live in the manifest itself)
+- [x] `docs/parity/README.md` — tiers, layers, evidence, validation rules
+- [x] Parity report — generated from the manifest via `scripts/validate_pproxy_parity_manifest.py --write-report` (generated artifact, not a committed claim)
+- [x] `scripts/validate_pproxy_parity_manifest.py` — manifest validator with strict mode
 
 ### Phase 38: pproxy CLI native-equivalent closure — complete
 

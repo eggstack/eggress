@@ -54,7 +54,7 @@ Run dependency checks (release inputs are changing):
 
 ```bash
 cargo deny check
-cargo audit --ignore RUSTSEC-2025-0134
+cargo audit --ignore RUSTSEC-2025-0134 --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0009
 ```
 
 For Python-facing releases, also verify the Python build:

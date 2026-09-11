@@ -119,7 +119,7 @@ with the workspace (see the release skill); classifiers list Python 3.9–3.13;
 - `docs/PYPI_RELEASE.md` — tag-triggered publish procedure
 - `architecture/python-bindings.md`, `architecture/pproxy-compat.md`
 
-## AsyncBridge convergence (Phase 2)
+## AsyncBridge convergence
 
 One maintained pattern: `AsyncBridge` (loop-affinity first-use binding,
 contextvars, cancellation) + `CloseWaiter` (idempotent, multi-waiter

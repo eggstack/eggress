@@ -35,11 +35,15 @@ structured diagnostic).
 
 The transport implements pproxy 2.7.9's password and `:private-key-path`
 credentials, direct TCP and Unix channels, chained SSH hops, cached sessions,
-keepalive, and explicit remote TCP forwarding. It accepts all server host keys
-to match pproxy's `known_hosts=None`; keep this behavior isolated, warning
-visible, and never describe it as a native security feature. Do not add remote
-commands, SFTP, agent forwarding, or unbounded forwarding. Redact passwords in
-errors and diagnostics. Verify against the OpenSSH fixture with:
+keepalive, and explicit remote TCP forwarding. It uses `russh` (no
+C/OpenSSL dependency). SSH remains upstream-only (listener forms fail with a
+structured diagnostic).
+
+It accepts all server host keys to match pproxy's `known_hosts=None`; keep
+this behavior isolated, warning visible, and never describe it as a native
+security feature. Do not add remote commands, SFTP, agent forwarding, or
+unbounded forwarding. Redact passwords in errors and diagnostics. Verify
+against the OpenSSH fixture with:
 `cargo test -p eggress-transport-ssh --test openssh`.
 
 ## Adding a new protocol
@@ -107,10 +111,13 @@ Listens on a filesystem socket path for local-only deployments.
 - Oracle scenario schema: TOML files under `crates/eggress-testkit/tests/oracle/scenarios/` define declarative test scenarios with `client_actions` (e.g., Socks5TcpConnect, HttpConnect), `expected_observations`, and `composition_id` mapping to A2 composition matrix entries. Schema version 1, validated by `cargo test -p eggress-testkit --test oracle_scenario_files`
 - Always run: `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all -- --check`
 
-## Exit codes and diagnostics
-- Use exit code constants from `eggress-pproxy-compat::exit_codes` — never ad-hoc `process::exit` or raw numbers
-- Use `DiagnosticCode` enum for structured error/warning codes; wrap in `StructuredDiagnostic` for JSON output
-- `PproxyCheckOutput` struct drives `pproxy check --json` output
+## Exit codes, diagnostics, and ops surface
+
+See `.skills/cli-ops/skill.md` for the ten stable exit codes
+(`eggress-pproxy-compat::exit_codes`), `DiagnosticCode` /
+`StructuredDiagnostic`, `PproxyCheckOutput`, the native subcommands
+(`route`, `upstream test`, `pproxy translate|check|run`,
+`system-proxy inspect`), admin endpoints, metrics, and system-proxy rules.
 
 ## Verification checklist
 - [ ] `cargo check --workspace` passes

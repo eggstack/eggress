@@ -7,7 +7,9 @@ Use when adding new routing rules, matchers, schedulers, or modifying route sele
 - First-match-wins rule evaluation with configurable default action
 - Rules are compiled into a `CompiledRule` AST
 - `MatchExpr` supports recursive combinators: `all`, `any_of`, `not`
-- Leaf matchers: host (exact/suffix/regex), CIDR, port range, port set, listener, protocol, identity, source, transport
+- Leaf matchers: host exact/suffix/regex, destination CIDR, destination port
+  (range/set/regex), source CIDR, source port, listener, reverse listener,
+  protocol, identity, transport (`Tcp`/`Udp`/`ReverseTcp`)
 
 ## Adding a new matcher
 

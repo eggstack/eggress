@@ -147,7 +147,7 @@ cargo check -p eggress-cli --locked --no-default-features \
 
 | File | What it exercises |
 |---|---|
-| `cli_exit_codes.rs` | Exit codes 0/1/2/3/5 for various CLI invocations |
+| `cli_exit_codes.rs` | Stable exit codes (0–7, 130, 143) for various CLI invocations |
 | `cli_tests.rs` | General CLI flag parsing and behavior |
 | `integration.rs` | End-to-end proxy startup and forwarding |
 | `reply_order.rs` | HTTP reply ordering guarantees |

@@ -1,5 +1,14 @@
 # eggress Full-Parity Roadmap
 
+> **Status note.** This is the original project roadmap, retained for
+> provenance. The core milestones are complete and the Rust-native CLI and
+> runtime are production-ready; current compatibility truth lives in
+> `docs/parity/pproxy_capability_manifest.toml` and
+> `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`, with a completion
+> summary in `docs/ROADMAP.md`. Read the aspirational language below
+> ("should", "intended to") as the goals this project has since met, subject
+> to the documented platform and feature boundaries.
+
 ## Project definition
 
 **eggress** is a Rust-native, embeddable, multi-protocol proxy framework and CLI intended to reach practical and behavioral parity with Python's `pproxy` while preserving a nearly identical command-line and URI-driven usage model.
