@@ -38,6 +38,21 @@ pub const EXIT_SIGINT: i32 = 130;
 #[cfg(not(feature = "pproxy-compat"))]
 pub const EXIT_SIGTERM: i32 = 143;
 
+/// Map a runtime startup/serve error to its process exit code.
+///
+/// Listener and admin bind failures are [`EXIT_BIND_FAILURE`]; all other
+/// runtime errors are [`EXIT_RUNTIME_FAILURE`]. Shared by native startup
+/// and the compatibility execution facade so every entry point reports
+/// bind failures with the documented code instead of a generic runtime
+/// failure.
+pub fn runtime_error_exit_code(error: &eggress_runtime::RuntimeError) -> i32 {
+    match error {
+        eggress_runtime::RuntimeError::ListenerBind { .. }
+        | eggress_runtime::RuntimeError::AdminBind { .. } => EXIT_BIND_FAILURE,
+        _ => EXIT_RUNTIME_FAILURE,
+    }
+}
+
 /// Apply the optional Linux pproxy daemon transition after compatibility
 /// parsing and configuration validation. Re-exec keeps the transition safe
 /// under the workspace's `unsafe_code = "deny"` policy and leaves signal,
@@ -183,6 +198,12 @@ pub fn run_upstream_test(
 }
 
 /// Run upstream tests with an explicit mode ("proxy" or "tcp").
+///
+/// Invalid modes fail closed with [`EXIT_CLI_PARSE_ERROR`] instead of
+/// silently falling back to either probe path. Normal callers pass a value
+/// from the typed `UpstreamTestMode` CLI enum (`proxy`/`tcp`), so this is
+/// defense-in-depth at the library boundary (including programmatic and
+/// Python-facing callers).
 pub fn run_upstream_test_with_mode(
     rt: &eggress_config::compile::RuntimeConfig,
     target: Option<&str>,
@@ -190,6 +211,14 @@ pub fn run_upstream_test_with_mode(
     timeout: Duration,
     json_output: bool,
 ) -> i32 {
+    let is_proxy_mode = match mode {
+        "proxy" => true,
+        "tcp" => false,
+        other => {
+            eprintln!("invalid upstream test mode '{other}': expected 'proxy' or 'tcp'");
+            return EXIT_CLI_PARSE_ERROR;
+        }
+    };
     let target = match target {
         Some(t) => match t.parse::<TargetAddr>() {
             Ok(addr) => addr,
@@ -205,7 +234,6 @@ pub fn run_upstream_test_with_mode(
     };
 
     let target_string = target.to_string();
-    let is_proxy_mode = mode == "proxy";
     let mut results = Vec::new();
 
     for upstream in &rt.upstreams {
@@ -450,6 +478,50 @@ mod exit_code_mirror_tests {
 #[cfg(test)]
 mod production_registry_tests {
     use super::*;
+
+    /// Closed mode domain fails closed at the library boundary instead of
+    /// silently falling back to either probe path. The CLI parser already
+    /// rejects typos; this pins the defense-in-depth for programmatic and
+    /// Python-facing callers that bypass Clap.
+    #[test]
+    fn invalid_upstream_test_mode_fails_closed() {
+        let (rt, _) = eggress_config::validate_and_compile_toml_with_warnings(
+            "version = 1\n[[listeners]]\nname = \"http-in\"\nbind = \"127.0.0.1:0\"\nprotocols = [\"http\"]\n",
+        )
+        .expect("minimal config must compile");
+        let code = run_upstream_test_with_mode(&rt, None, "socks", Duration::from_secs(1), false);
+        assert_eq!(code, EXIT_CLI_PARSE_ERROR);
+    }
+
+    /// Bind failures map to the documented bind exit code on every entry
+    /// point (native `--config` startup and the compat facade share this
+    /// helper); all other runtime errors stay generic runtime failures.
+    #[test]
+    fn runtime_bind_errors_map_to_bind_failure() {
+        let io = |kind: std::io::ErrorKind| std::io::Error::new(kind, "test bind");
+        assert_eq!(
+            runtime_error_exit_code(&eggress_runtime::RuntimeError::ListenerBind {
+                addr: "127.0.0.1:8080".to_string(),
+                source: io(std::io::ErrorKind::AddrInUse),
+            }),
+            EXIT_BIND_FAILURE
+        );
+        assert_eq!(
+            runtime_error_exit_code(&eggress_runtime::RuntimeError::AdminBind {
+                addr: "127.0.0.1:9090".to_string(),
+                source: io(std::io::ErrorKind::PermissionDenied),
+            }),
+            EXIT_BIND_FAILURE
+        );
+        assert_eq!(
+            runtime_error_exit_code(&eggress_runtime::RuntimeError::Other("boom".to_string())),
+            EXIT_RUNTIME_FAILURE
+        );
+        assert_eq!(
+            runtime_error_exit_code(&eggress_runtime::RuntimeError::Config("bad".to_string())),
+            EXIT_RUNTIME_FAILURE
+        );
+    }
 
     /// Registry parity proof: Shadowsocks AEAD upstreams are production
     /// paths, but the old CLI-local test registry (HTTP/SOCKS4/SOCKS5 only)

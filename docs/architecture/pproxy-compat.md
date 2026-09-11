@@ -20,7 +20,7 @@ upstream `pproxy` distribution must not be installed alongside Eggress.
 
 | Type | Description |
 |---|---|
-| `PproxyArgs` | Parsed pproxy CLI arguments |
+| `PproxyArgs` | Parsed pproxy CLI arguments (typed fields per recognized option plus a legacy string bucket kept for back-compat) |
 | `PproxyUri` | Parsed pproxy URI |
 | `PproxyChain` | Parsed pproxy chain specification |
 | `ManifestTier` | Parity tier classification |
@@ -109,6 +109,16 @@ positional URIs, or long listener aliases such as `--listen` and `--remote`.
 Native Eggress configuration and migration-only translation helpers may accept
 separate extension names, but the executable parser rejects them before any
 listener, system-proxy, or runtime side effect.
+
+`PproxyArgs` stores every recognized value-taking option in a typed field
+(`ssl`, `pac`, `test_value`, `udp_listen`/`udp_remote`, `scheduler`, `alive`,
+`block_values`, `log_values`, `rulefile_values`, `get_values`) alongside the
+legacy `known_unsupported` string bucket, which stays populated for
+back-compat readers. Translation (`translate/`) and presentation (startup
+banner via `banner_lines()`, `--test` target) consume the typed fields and
+their accessors (`tls_requested()`, `pac_requested()`, `udp_listen_addrs()`,
+`test_target()`, ...), never string scans; whether an entry blocks startup
+is decided solely by the execution gate over the translation output.
 
 The translator parses combined protocols, fragment auth, local binding, canonical
 `tunnel{host:port}://listener`, `ws{host:port}://listener`, and

@@ -203,6 +203,9 @@ See `docs/EMBED_API.md` for full reference.
   via `default_log_level()` before startup and never enter the supervisor.
   Do not reimplement those semantics in Python.
 - Startup banner prints version, listeners, remotes, UDP, TLS, PAC to stderr
+  from typed `PproxyArgs` fields (`udp_listen`, `ssl`, `pac`, ...), never by
+  scanning the legacy `known_unsupported` string bucket (kept populated for
+  back-compat only).
 - Tests: `cargo test -p eggress-cli --test pproxy_binary` and
   `cargo test -p eggress-cli --test pproxy_run_process`
 

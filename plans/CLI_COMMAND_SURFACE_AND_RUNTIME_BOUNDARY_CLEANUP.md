@@ -2,7 +2,18 @@
 
 ## Status
 
-Implementation plan for handoff. This plan is the Phase 1 execution document referenced by `CLI_CLEANUP_AND_BINARY_DELIVERY_ROADMAP.md`.
+Complete. Phases A–I implemented (thin `main.rs` dispatch, global
+`--config`, typed Clap enums, `eggress-admin` route-explain client,
+production-registry upstream diagnostics shared with `pproxy --test`, one
+shared pproxy prepare/compile/execute facade, help/parser drift guard,
+single exit-code owner with bind failures mapped on every entry point).
+Follow-ups closed the remaining gaps: typed `PproxyArgs` fields own
+TLS/PAC/UDP/test/scheduler state (the legacy `known_unsupported` string
+bucket stays populated for back-compat but is never scanned), the shared
+upstream-test library rejects invalid modes fail-closed, and supervisor
+bind/admin-bind errors report exit 4 on both native and compat paths.
+This plan document is retained as historical record; the authoritative
+compat contract remains `docs/parity/`.
 
 ## Objective
 

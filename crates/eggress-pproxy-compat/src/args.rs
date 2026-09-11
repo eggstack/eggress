@@ -64,8 +64,50 @@ pub struct PproxyArgs {
     pub help: bool,
     /// `--version` was requested.
     pub version: bool,
-    /// Known-but-unsupported flags that require a translation decision.
+    /// Known pproxy flags that require a translation decision, kept as raw
+    /// `key=value` strings for back-compat.
+    ///
+    /// Legacy name: despite `unsupported` in the name, this bucket carries
+    /// supported/native-equivalent options too (`ssl=`, `pac=`,
+    /// `udp-listen=`, ...). It stays populated so existing API readers keep
+    /// working, but authoritative state lives in the structured fields
+    /// below. Internal translation and presentation code must consume the
+    /// structured fields/accessors, never scan these strings.
     pub known_unsupported: Vec<String>,
+    /// `--ssl CERT,KEY` raw value, if requested. Structured owner of the
+    /// `ssl=` legacy bucket entry; drives TLS translation and the startup
+    /// banner.
+    pub ssl: Option<String>,
+    /// `--pac PATH` raw value, if requested. Structured owner of the `pac=`
+    /// legacy bucket entry; drives admin PAC translation and the banner.
+    pub pac: Option<String>,
+    /// `--test URL` raw value, if this invocation is a diagnostic probe.
+    /// Structured owner of the `test=` legacy bucket entry.
+    pub test_value: Option<String>,
+    /// `-ul` UDP listener values in declaration order. Structured owner of
+    /// the `udp-listen=` legacy bucket entries.
+    pub udp_listen: Vec<String>,
+    /// `-ur` UDP upstream values in declaration order. Structured owner of
+    /// the `udp-remote=` legacy bucket entries.
+    pub udp_remote: Vec<String>,
+    /// `-s` scheduler value, if given. Structured owner of the `scheduler=`
+    /// legacy bucket entry.
+    pub scheduler: Option<String>,
+    /// `-a` alive/health-check interval value, if given. Structured owner of
+    /// the `alive=` legacy bucket entry.
+    pub alive: Option<String>,
+    /// `-b` block pattern values in declaration order. Structured owner of
+    /// the `block=` legacy bucket entries.
+    pub block_values: Vec<String>,
+    /// `--log` values in declaration order. Structured owner of the `log=`
+    /// legacy bucket entries.
+    pub log_values: Vec<String>,
+    /// `--rulefile` values in declaration order. Structured owner of the
+    /// `rulefile=` legacy bucket entries.
+    pub rulefile_values: Vec<String>,
+    /// `--get PATH,FILE` values in declaration order. Structured owner of
+    /// the `get=` legacy bucket entries.
+    pub get_values: Vec<String>,
     /// Unknown flags that are not recognized.
     pub unknown_flags: Vec<String>,
     /// Options accepted by the migration translator but not by the frozen
@@ -82,10 +124,9 @@ impl PproxyArgs {
 
     /// Return the target supplied to `--test`, preserving the parser's
     /// value-taking semantics for both compatibility execution entry points.
+    /// Reads the structured `--test` field, not the legacy string bucket.
     pub fn test_target(&self) -> Option<&str> {
-        self.known_unsupported
-            .iter()
-            .find_map(|flag| flag.strip_prefix("test="))
+        self.test_value.as_deref()
     }
 
     /// Authoritative inventory of every option the frozen 2.7.9 parser
@@ -119,36 +160,52 @@ impl PproxyArgs {
 
     /// Structured presentation state for the startup banner and diagnostics.
     ///
-    /// The `known_unsupported` bucket is a legacy parser-bucket name: it
-    /// carries every known pproxy flag that requires a translation decision,
-    /// including entries with full native support (`ssl=`, `pac=`,
-    /// `udp-listen=`). Presentation layers must consume these typed
-    /// accessors instead of scanning the bucket strings ad hoc.
+    /// These accessors read the typed parser fields. The legacy
+    /// `known_unsupported` string bucket stays populated for back-compat but
+    /// must not be scanned by internal code.
     ///
     /// Whether each entry blocks startup is decided separately by the
     /// execution gate over the translation output, never by these
     /// presentation helpers.
     ///
-    /// UDP listener addresses from `-ul` (`udp-listen=` entries).
+    /// UDP listener addresses from `-ul`, in declaration order.
     pub fn udp_listen_addrs(&self) -> Vec<&str> {
-        self.known_unsupported
-            .iter()
-            .filter_map(|flag| flag.strip_prefix("udp-listen="))
-            .collect()
+        self.udp_listen.iter().map(String::as_str).collect()
+    }
+
+    /// UDP upstream values from `-ur`, in declaration order.
+    pub fn udp_remote_addrs(&self) -> Vec<&str> {
+        self.udp_remote.iter().map(String::as_str).collect()
     }
 
     /// Whether TLS was requested on listeners via `--ssl`.
     pub fn tls_requested(&self) -> bool {
-        self.known_unsupported
-            .iter()
-            .any(|flag| flag.starts_with("ssl="))
+        self.ssl.is_some()
+    }
+
+    /// Raw `--ssl CERT,KEY` value, if requested.
+    pub fn tls_value(&self) -> Option<&str> {
+        self.ssl.as_deref()
     }
 
     /// Whether PAC serving was requested via `--pac`.
     pub fn pac_requested(&self) -> bool {
-        self.known_unsupported
-            .iter()
-            .any(|flag| flag.starts_with("pac="))
+        self.pac.is_some()
+    }
+
+    /// Raw `--pac` value, if requested.
+    pub fn pac_value(&self) -> Option<&str> {
+        self.pac.as_deref()
+    }
+
+    /// Raw `-s` scheduler value, if given.
+    pub fn scheduler_value(&self) -> Option<&str> {
+        self.scheduler.as_deref()
+    }
+
+    /// Raw `-a` alive interval value, if given.
+    pub fn alive_value(&self) -> Option<&str> {
+        self.alive.as_deref()
     }
 
     /// Create default pproxy args equivalent to running `pproxy` with no arguments.
@@ -169,6 +226,17 @@ impl PproxyArgs {
             help: false,
             version: false,
             known_unsupported: vec![],
+            ssl: None,
+            pac: None,
+            test_value: None,
+            udp_listen: vec![],
+            udp_remote: vec![],
+            scheduler: None,
+            alive: None,
+            block_values: vec![],
+            log_values: vec![],
+            rulefile_values: vec![],
+            get_values: vec![],
             unknown_flags: vec![],
             strict_violations: vec![],
         }
@@ -188,6 +256,17 @@ impl PproxyArgs {
         let mut help = false;
         let mut version = false;
         let mut known_unsupported = Vec::new();
+        let mut ssl: Option<String> = None;
+        let mut pac: Option<String> = None;
+        let mut test_value: Option<String> = None;
+        let mut udp_listen: Vec<String> = Vec::new();
+        let mut udp_remote: Vec<String> = Vec::new();
+        let mut scheduler: Option<String> = None;
+        let mut alive: Option<String> = None;
+        let mut block_values: Vec<String> = Vec::new();
+        let mut log_values: Vec<String> = Vec::new();
+        let mut rulefile_values: Vec<String> = Vec::new();
+        let mut get_values: Vec<String> = Vec::new();
         let mut unknown_flags = Vec::new();
         let mut strict_violations = Vec::new();
         let mut i = 0;
@@ -223,6 +302,7 @@ impl PproxyArgs {
                 "--log" | "-log" => {
                     let value = take_required_value(raw, &mut i, arg)?;
                     known_unsupported.push(format!("log={value}"));
+                    log_values.push(value);
                     strict_violations.push(arg.clone());
                 }
                 "-ul" | "--udp-listen" => {
@@ -231,6 +311,7 @@ impl PproxyArgs {
                     }
                     let value = take_required_value(raw, &mut i, arg)?;
                     known_unsupported.push(format!("udp-listen={value}"));
+                    udp_listen.push(value);
                 }
                 "-ur" | "--udp-remote" => {
                     if arg == "--udp-remote" {
@@ -238,10 +319,12 @@ impl PproxyArgs {
                     }
                     let value = take_required_value(raw, &mut i, arg)?;
                     known_unsupported.push(format!("udp-remote={value}"));
+                    udp_remote.push(value);
                 }
                 "--rulefile" | "-rulefile" => {
                     let value = take_required_value(raw, &mut i, arg)?;
                     known_unsupported.push(format!("rulefile={value}"));
+                    rulefile_values.push(value);
                     strict_violations.push(arg.clone());
                 }
                 "-v" | "-vv" | "-vvv" => {
@@ -286,26 +369,32 @@ impl PproxyArgs {
                         strict_violations.push(format!("-s {value}"));
                     }
                     known_unsupported.push(format!("scheduler={value}"));
+                    scheduler = Some(value.clone());
                 }
                 "-a" => {
                     let value = take_required_value(raw, &mut i, arg)?;
                     known_unsupported.push(format!("alive={value}"));
+                    alive = Some(value);
                 }
                 "--ssl" => {
                     let value = take_required_value(raw, &mut i, arg)?;
                     known_unsupported.push(format!("ssl={value}"));
+                    ssl = Some(value);
                 }
                 "-b" => {
                     let value = take_required_value(raw, &mut i, arg)?;
                     known_unsupported.push(format!("block={value}"));
+                    block_values.push(value);
                 }
                 "--pac" => {
                     let value = take_required_value(raw, &mut i, arg)?;
                     known_unsupported.push(format!("pac={value}"));
+                    pac = Some(value);
                 }
                 "--test" => {
                     let value = take_required_value(raw, &mut i, arg)?;
                     known_unsupported.push(format!("test={value}"));
+                    test_value = Some(value);
                 }
                 "--sys" => {
                     system_proxy = true;
@@ -316,6 +405,7 @@ impl PproxyArgs {
                 "--get" => {
                     let value = take_required_value(raw, &mut i, arg)?;
                     known_unsupported.push(format!("get={value}"));
+                    get_values.push(value);
                 }
                 "--auth" => {
                     let value = take_required_value(raw, &mut i, arg)?;
@@ -353,6 +443,17 @@ impl PproxyArgs {
             help,
             version,
             known_unsupported,
+            ssl,
+            pac,
+            test_value,
+            udp_listen,
+            udp_remote,
+            scheduler,
+            alive,
+            block_values,
+            log_values,
+            rulefile_values,
+            get_values,
             unknown_flags,
             strict_violations,
         })
@@ -376,7 +477,12 @@ impl PproxyArgs {
         TranslationOutput::new(String::new()).with_warnings(warnings)
     }
 
-    /// Check if there are any unknown or unsupported flags.
+    /// Check if there are any unknown or translation-decision flags.
+    ///
+    /// Legacy parser-bucket check: true when unknown flags, the legacy
+    /// `known_unsupported` translation bucket, or `--daemon` are present.
+    /// This is not the execution decision — startup blocking is owned by
+    /// [`crate::gate::evaluate`] over the translation output.
     pub fn has_unknown_or_unsupported(&self) -> bool {
         !self.unknown_flags.is_empty() || !self.known_unsupported.is_empty() || self.daemon
     }
@@ -398,6 +504,7 @@ impl PproxyArgs {
     /// Validate values whose upstream argparse `type=` callbacks run during
     /// parsing. URI failures therefore stay in the CLI-parse category rather
     /// than being reported as a later runtime/configuration failure.
+    /// Reads the structured parser fields, not the legacy string bucket.
     pub fn validate_strict_values(&self) -> Result<(), CompatError> {
         self.parse_local_uris()
             .map_err(|error| CompatError::InvalidArgs {
@@ -407,11 +514,7 @@ impl PproxyArgs {
             .map_err(|error| CompatError::InvalidArgs {
                 message: format!("invalid -r URI: {error}"),
             })?;
-        if let Some(scheduler) = self
-            .known_unsupported
-            .iter()
-            .find_map(|flag| flag.strip_prefix("scheduler="))
-        {
+        if let Some(scheduler) = self.scheduler.as_deref() {
             if !matches!(scheduler, "fa" | "rr" | "rc" | "lc") {
                 return Err(CompatError::InvalidArgs {
                     message: format!(
@@ -421,25 +524,20 @@ impl PproxyArgs {
                 });
             }
         }
-        if let Some(interval) = self
-            .known_unsupported
-            .iter()
-            .find_map(|flag| flag.strip_prefix("alive="))
-        {
+        if let Some(interval) = self.alive.as_deref() {
             interval
                 .parse::<i64>()
                 .map_err(|_| CompatError::InvalidArgs {
                     message: format!("-a value '{}' is not a valid integer", interval),
                 })?;
         }
-        for kind in ["udp-listen=", "udp-remote="] {
-            for value in self
-                .known_unsupported
-                .iter()
-                .filter_map(|flag| flag.strip_prefix(kind))
-            {
+        for (kind, values) in [
+            ("udp-listen", self.udp_listen.iter()),
+            ("udp-remote", self.udp_remote.iter()),
+        ] {
+            for value in values {
                 crate::uri::parse_pproxy_uri(value).map_err(|error| CompatError::InvalidArgs {
-                    message: format!("invalid {} URI: {error}", kind.trim_end_matches('=')),
+                    message: format!("invalid {kind} URI: {error}"),
                 })?;
             }
         }
@@ -637,6 +735,71 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(args.test_target(), Some("https://example.invalid/health"));
+        assert_eq!(
+            args.test_value.as_deref(),
+            Some("https://example.invalid/health")
+        );
+    }
+
+    #[test]
+    fn structured_fields_match_legacy_bucket() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "http://:8080".into(),
+            "--ssl".into(),
+            "cert.pem,key.pem".into(),
+            "--pac".into(),
+            "/proxy.pac".into(),
+            "--test".into(),
+            "http://example.com".into(),
+            "-ul".into(),
+            "socks5://:1081".into(),
+            "-ur".into(),
+            "socks5://proxy:1080".into(),
+            "-s".into(),
+            "rr".into(),
+            "-a".into(),
+            "10".into(),
+            "-b".into(),
+            ".*\\.example\\.com".into(),
+            "--log".into(),
+            "access.log".into(),
+            "--rulefile".into(),
+            "rules.txt".into(),
+            "--get".into(),
+            "/index.html,body.txt".into(),
+        ])
+        .unwrap();
+        // Structured state is authoritative; the banner and translation
+        // consume these accessors, never string scans.
+        assert!(args.tls_requested());
+        assert_eq!(args.tls_value(), Some("cert.pem,key.pem"));
+        assert!(args.pac_requested());
+        assert_eq!(args.pac_value(), Some("/proxy.pac"));
+        assert_eq!(args.test_target(), Some("http://example.com"));
+        assert_eq!(args.udp_listen_addrs(), vec!["socks5://:1081"]);
+        assert_eq!(args.udp_remote_addrs(), vec!["socks5://proxy:1080"]);
+        assert_eq!(args.scheduler_value(), Some("rr"));
+        assert_eq!(args.alive_value(), Some("10"));
+        assert_eq!(args.block_values, vec![".*\\.example\\.com".to_string()]);
+        assert_eq!(args.log_values, vec!["access.log".to_string()]);
+        assert_eq!(args.rulefile_values, vec!["rules.txt".to_string()]);
+        assert_eq!(args.get_values, vec!["/index.html,body.txt".to_string()]);
+        // The legacy bucket stays populated for back-compat readers.
+        for entry in [
+            "ssl=cert.pem,key.pem",
+            "pac=/proxy.pac",
+            "test=http://example.com",
+            "udp-listen=socks5://:1081",
+            "udp-remote=socks5://proxy:1080",
+            "scheduler=rr",
+            "alive=10",
+        ] {
+            assert!(
+                args.known_unsupported.contains(&entry.to_string()),
+                "legacy bucket must still carry '{entry}'"
+            );
+        }
     }
 
     #[test]

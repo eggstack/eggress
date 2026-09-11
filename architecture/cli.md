@@ -122,7 +122,7 @@ plus the numeric constants). `eggress-cli` re-exports them; without
 | 1 | `EXIT_RUNTIME_FAILURE` | Runtime error | supervisor/drain/serialize/daemon-spawn/update-verify failures |
 | 2 | `EXIT_CLI_PARSE_ERROR` | CLI parse error / unknown flag / bad closed-domain value / bad target | Clap rejections, strict gate, invalid release tag |
 | 3 | `EXIT_CONFIG_VALIDATION` | Config validation failure | TOML load/compile, empty upstream set |
-| 4 | `EXIT_BIND_FAILURE` | Listener bind failure | native bind-before-spawn |
+| 4 | `EXIT_BIND_FAILURE` | Listener bind failure | native bind-before-spawn, native `--config` startup and compat supervisor bind/admin-bind failures via `runtime_error_exit_code()` |
 | 5 | `EXIT_UNSUPPORTED_FEATURE` | Unsupported feature / composition | compat gate blockers |
 | 6 | `EXIT_PLATFORM_MISSING` | Required platform facility unavailable | `--daemon` off Linux, updater on unsupported target |
 | 7 | `EXIT_EXTERNAL_DEPENDENCY` | External dependency unavailable | updater discovery/download/tool failures |
@@ -134,7 +134,8 @@ plus the numeric constants). `eggress-cli` re-exports them; without
 | Function | Description |
 |---|---|
 | `run_upstream_test()` | Delegates to `run_upstream_test_with_mode` with `mode="proxy"` |
-| `run_upstream_test_with_mode()` | Shared impl: iterates upstreams, runs proxy or TCP test |
+| `run_upstream_test_with_mode()` | Shared impl: iterates upstreams, runs proxy or TCP test; invalid modes fail closed with `EXIT_CLI_PARSE_ERROR` instead of falling back |
+| `runtime_error_exit_code()` | Maps `RuntimeError::ListenerBind`/`AdminBind` to 4, everything else to 1; shared by native `--config` startup and the compat facade |
 | `build_test_chain_executor()` | Returns the **production** `eggress_server::build_chain_executor` registry |
 | `run_async_test()` | Spawns a dedicated Tokio runtime on a named thread `"eggress-cli-test"` |
 | `parse_pproxy_test_target()` | Parses URL-shaped `--test` value into `TargetAddr` |
@@ -154,8 +155,10 @@ Shadowsocks hop resolves to connection behavior, never "no handler".
 `PrintVersion`/`PrintHelp`/`Run(GatedRun)` or a typed `PrepareFailure`;
 `compile()` validates translated TOML in memory; `execute()` renders
 warnings, `--test`, daemon transition, and supervisor startup with a
-caller-supplied diagnostic prefix. Banner lines come from structured
-`PproxyArgs` accessors, not string scans.
+caller-supplied diagnostic prefix. Supervisor bind/admin-bind failures exit
+through `runtime_error_exit_code()` (4), matching native startup. Banner
+lines come from structured `PproxyArgs` accessors over typed parser fields
+(`udp_listen`, `ssl`, `pac`, ...), not string scans of the legacy bucket.
 
 ### Daemonize
 

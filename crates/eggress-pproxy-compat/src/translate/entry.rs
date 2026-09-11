@@ -45,11 +45,9 @@ pub fn translate_pproxy_args(args: &PproxyArgs) -> Result<TranslationOutput, Com
         }
     }
 
-    // Allow empty local_uris when -ul is present (standalone UDP mode)
-    let has_udp_listen = args
-        .known_unsupported
-        .iter()
-        .any(|f| f.starts_with("udp-listen="));
+    // Allow empty local_uris when -ul is present (standalone UDP mode).
+    // Reads the structured `-ul` field, not the legacy string bucket.
+    let has_udp_listen = !args.udp_listen.is_empty();
 
     if local_uris.is_empty() && !has_udp_listen {
         return Err(CompatError::InvalidArgs {
@@ -141,10 +139,9 @@ pub fn translate_pproxy_args_to_native(
         }
     }
 
-    let has_udp_listen = args
-        .known_unsupported
-        .iter()
-        .any(|f| f.starts_with("udp-listen="));
+    // Allow empty local_uris when -ul is present (standalone UDP mode).
+    // Reads the structured `-ul` field, not the legacy string bucket.
+    let has_udp_listen = !args.udp_listen.is_empty();
 
     if local_uris.is_empty() && !has_udp_listen {
         return Err(CompatError::InvalidArgs {

@@ -103,8 +103,8 @@ The `pproxy` compatibility binary is also available:
 
 ```bash
 pproxy -l http://:8080 -r socks5://proxy:1080
-pproxy translate -- -l http://:8080 -r socks5://proxy:1080
-pproxy check -- -l socks5://:1080 -r http://proxy:8080
+eggress pproxy translate -- -l http://:8080 -r socks5://proxy:1080
+eggress pproxy check -- -l socks5://:1080 -r http://proxy:8080
 ```
 
 See the [operations guide](https://github.com/eggstack/eggress/blob/main/docs/OPERATIONS.md) for full CLI reference, TOML configuration, reload behavior, admin endpoints, and system-proxy integration.

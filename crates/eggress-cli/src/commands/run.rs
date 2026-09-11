@@ -12,8 +12,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use eggress_cli::{
-    EXIT_BIND_FAILURE, EXIT_CLI_PARSE_ERROR, EXIT_CONFIG_VALIDATION, EXIT_RUNTIME_FAILURE,
-    EXIT_SIGINT, EXIT_SIGTERM, EXIT_SUCCESS,
+    EXIT_BIND_FAILURE, EXIT_CLI_PARSE_ERROR, EXIT_CONFIG_VALIDATION, EXIT_SIGINT, EXIT_SIGTERM,
+    EXIT_SUCCESS,
 };
 use eggress_core::listener::{TcpListener, TcpListenerConfig};
 use eggress_routing::{RouteActionSpec, RouteService, Router, SharedRoutingService};
@@ -44,12 +44,12 @@ pub async fn handle_native_startup(args: Cli, ctx: CliContext) -> i32 {
             Ok(mut supervisor) => {
                 if let Err(e) = supervisor.run() {
                     eprintln!("runtime error: {e}");
-                    return EXIT_RUNTIME_FAILURE;
+                    return eggress_cli::runtime_error_exit_code(&e);
                 }
             }
             Err(e) => {
                 eprintln!("runtime error: {e}");
-                return EXIT_RUNTIME_FAILURE;
+                return eggress_cli::runtime_error_exit_code(&e);
             }
         }
         return EXIT_SUCCESS;

@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use crate::{
     parse_pproxy_test_target, run_upstream_test, EXIT_CLI_PARSE_ERROR, EXIT_CONFIG_VALIDATION,
-    EXIT_RUNTIME_FAILURE, EXIT_SUCCESS, EXIT_UNSUPPORTED_FEATURE,
+    EXIT_SUCCESS, EXIT_UNSUPPORTED_FEATURE,
 };
 
 /// What a compatibility invocation should do after parsing.
@@ -261,12 +261,12 @@ pub fn execute(prepared: PreparedRun, diag_prefix: &str) -> i32 {
         Ok(mut supervisor) => {
             if let Err(e) = supervisor.run() {
                 eprintln!("{diag_prefix}runtime error: {e}");
-                std::process::exit(EXIT_RUNTIME_FAILURE);
+                std::process::exit(crate::runtime_error_exit_code(&e));
             }
         }
         Err(e) => {
             eprintln!("{diag_prefix}runtime error: {e}");
-            std::process::exit(EXIT_RUNTIME_FAILURE);
+            std::process::exit(crate::runtime_error_exit_code(&e));
         }
     }
     EXIT_SUCCESS

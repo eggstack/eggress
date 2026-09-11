@@ -124,138 +124,131 @@ pub(crate) fn build_intermediates(
         );
     }
 
-    // Process known-but-unsupported flags
-    for flag in &args.known_unsupported {
-        if let Some(addr) = flag.strip_prefix("udp-listen=") {
-            udp_listen_addr = Some(addr.to_string());
-        }
-        if let Some(remote) = flag.strip_prefix("udp-remote=") {
-            udp_remotes.push(remote.to_string());
-        }
-        if let Some(rulefile_path) = flag.strip_prefix("rulefile=") {
-            let patterns = load_pproxy_rule_file(rulefile_path, &mut output)?;
-            block_rules.push(combine_pproxy_patterns(&patterns));
-        }
-        if let Some(scheduler_value) = flag.strip_prefix("scheduler=") {
-            let mapped = match scheduler_value {
-                "fa" | "first_available" => Some("first-available".to_string()),
-                "rr" | "round_robin" => Some("round-robin".to_string()),
-                "rc" | "random_choice" => Some("random".to_string()),
-                "lc" | "least_connection" => Some("least-connections".to_string()),
-                _ => None,
-            };
-            if let Some(m) = mapped {
-                scheduler_override = Some(m);
-            } else {
-                output = output.with_warning(
-                    "scheduler",
-                    format!(
-                        "pproxy scheduler '{}' is not recognized; using first-available",
-                        scheduler_value
-                    ),
-                );
-            }
-        }
-        if let Some(interval) = flag.strip_prefix("alive=") {
-            health_interval = Some(format!("{}s", interval));
+    // Process known pproxy flags from the structured parser fields.
+    // (The legacy `known_unsupported` string bucket stays populated for
+    // back-compat but is never scanned here.) Order below is the stable
+    // canonical flag order, matching the previous per-flag chain.
+    for addr in &args.udp_listen {
+        udp_listen_addr = Some(addr.clone());
+    }
+    for remote in &args.udp_remote {
+        udp_remotes.push(remote.clone());
+    }
+    for rulefile_path in &args.rulefile_values {
+        let patterns = load_pproxy_rule_file(rulefile_path, &mut output)?;
+        block_rules.push(combine_pproxy_patterns(&patterns));
+    }
+    if let Some(scheduler_value) = args.scheduler.as_deref() {
+        let mapped = match scheduler_value {
+            "fa" | "first_available" => Some("first-available".to_string()),
+            "rr" | "round_robin" => Some("round-robin".to_string()),
+            "rc" | "random_choice" => Some("random".to_string()),
+            "lc" | "least_connection" => Some("least-connections".to_string()),
+            _ => None,
+        };
+        if let Some(m) = mapped {
+            scheduler_override = Some(m);
+        } else {
             output = output.with_warning(
-                "alive-check",
+                "scheduler",
                 format!(
-                    "pproxy -a {} (alive check interval) maps to eggress health probes; configure 'health.interval' on each [[upstreams]] entry (e.g., interval = \"{}s\")",
-                    interval, interval
+                    "pproxy scheduler '{}' is not recognized; using first-available",
+                    scheduler_value
                 ),
             );
         }
-        if let Some(ssl_value) = flag.strip_prefix("ssl=") {
-            let parts: Vec<&str> = ssl_value.splitn(2, ',').collect();
-            let cert = parts[0].to_string();
-            let key = if parts.len() > 1 {
-                Some(parts[1].to_string())
-            } else {
-                None
-            };
-            ssl_config = Some(TlsToml {
-                cert,
-                key,
-                alpn: None,
-            });
-        }
-        if let Some(block_value) = flag.strip_prefix("block=") {
-            if block_value.starts_with('{') && block_value.ends_with('}') {
-                let pattern = inline_pproxy_pattern(block_value);
-                if let Err(error) = crate::regex_compat::compile_block_pattern(&pattern) {
-                    return Err(CompatError::ConfigValidation {
-                        message: format!("block regex is invalid: {}", error),
-                    });
-                }
-                block_rules.push(pattern);
-            } else {
-                let patterns = load_pproxy_rule_file(block_value, &mut output)?;
-                block_rules.push(combine_pproxy_patterns(&patterns));
+    }
+    if let Some(interval) = args.alive.as_deref() {
+        health_interval = Some(format!("{}s", interval));
+        output = output.with_warning(
+            "alive-check",
+            format!(
+                "pproxy -a {} (alive check interval) maps to eggress health probes; configure 'health.interval' on each [[upstreams]] entry (e.g., interval = \"{}s\")",
+                interval, interval
+            ),
+        );
+    }
+    if let Some(ssl_value) = args.ssl.as_deref() {
+        let parts: Vec<&str> = ssl_value.splitn(2, ',').collect();
+        let cert = parts[0].to_string();
+        let key = if parts.len() > 1 {
+            Some(parts[1].to_string())
+        } else {
+            None
+        };
+        ssl_config = Some(TlsToml {
+            cert,
+            key,
+            alpn: None,
+        });
+    }
+    for block_value in &args.block_values {
+        if block_value.starts_with('{') && block_value.ends_with('}') {
+            let pattern = inline_pproxy_pattern(block_value);
+            if let Err(error) = crate::regex_compat::compile_block_pattern(&pattern) {
+                return Err(CompatError::ConfigValidation {
+                    message: format!("block regex is invalid: {}", error),
+                });
             }
+            block_rules.push(pattern);
+        } else {
+            let patterns = load_pproxy_rule_file(block_value, &mut output)?;
+            block_rules.push(combine_pproxy_patterns(&patterns));
         }
-        if let Some(value) = flag.strip_prefix("pac=") {
-            pac_enabled = true;
-            pac_path = Some(if value.starts_with('/') {
-                value.to_string()
-            } else {
-                format!("/{value}")
-            });
-            output = output.with_warning(
-                "pac-serving",
-                format!("pproxy --pac {value} maps to the Eggress admin PAC path"),
-            );
-        }
-        if let Some(value) = flag.strip_prefix("test=") {
-            output = output.with_warning(
-                "test-mode",
-                format!("pproxy --test {value} will run an upstream request and exit"),
-            );
-        }
-        if flag == "sys" {
-            // Handled via args.system_proxy above
-        }
-        if flag.starts_with("log=") {
-            output = output.with_warning(
-                "log-file",
-                "pproxy --log flag detected; eggress logs to stderr via tracing-subscriber; redirect stderr with shell redirection for file logging",
-            );
-        }
-        if flag == "reuse" {
-            // Handled via args.reuse_port below
-        }
-        if let Some(value) = flag.strip_prefix("get=") {
-            match value.split_once(',') {
-                Some((path, filename))
-                    if path.starts_with('/') && !path.contains("..") && !filename.is_empty() =>
-                {
-                    match std::fs::read_to_string(filename) {
-                        Ok(body) => static_content.push(StaticContentToml {
-                            path: path.to_string(),
-                            body,
-                        }),
-                        Err(error) => {
-                            output = output.with_unsupported(
-                                "get-file",
-                                format!("--get file '{filename}' could not be read: {error}"),
-                            )
-                        }
+    }
+    if let Some(value) = args.pac.as_deref() {
+        pac_enabled = true;
+        pac_path = Some(if value.starts_with('/') {
+            value.to_string()
+        } else {
+            format!("/{value}")
+        });
+        output = output.with_warning(
+            "pac-serving",
+            format!("pproxy --pac {value} maps to the Eggress admin PAC path"),
+        );
+    }
+    if let Some(value) = args.test_value.as_deref() {
+        output = output.with_warning(
+            "test-mode",
+            format!("pproxy --test {value} will run an upstream request and exit"),
+        );
+    }
+    for _value in &args.log_values {
+        output = output.with_warning(
+            "log-file",
+            "pproxy --log flag detected; eggress logs to stderr via tracing-subscriber; redirect stderr with shell redirection for file logging",
+        );
+    }
+    for value in &args.get_values {
+        match value.split_once(',') {
+            Some((path, filename))
+                if path.starts_with('/') && !path.contains("..") && !filename.is_empty() =>
+            {
+                match std::fs::read_to_string(filename) {
+                    Ok(body) => static_content.push(StaticContentToml {
+                        path: path.to_string(),
+                        body,
+                    }),
+                    Err(error) => {
+                        output = output.with_unsupported(
+                            "get-file",
+                            format!("--get file '{filename}' could not be read: {error}"),
+                        )
                     }
                 }
-                _ => {
-                    output = output.with_unsupported(
-                        "get-file",
-                        format!(
-                            "--get value '{value}' must be PATH,FILE with an absolute safe PATH"
-                        ),
-                    )
-                }
             }
-            output = output.with_warning(
-                "get-static-content",
-                format!("pproxy --get {value} is served as admin static content"),
-            );
+            _ => {
+                output = output.with_unsupported(
+                    "get-file",
+                    format!("--get value '{value}' must be PATH,FILE with an absolute safe PATH"),
+                )
+            }
         }
+        output = output.with_warning(
+            "get-static-content",
+            format!("pproxy --get {value} is served as admin static content"),
+        );
     }
 
     // Process local listeners
