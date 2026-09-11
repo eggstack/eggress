@@ -1,8 +1,11 @@
 # eggress
 
-A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
+[![crates.io](https://img.shields.io/crates/v/eggress-cli.svg)](https://crates.io/crates/eggress-cli)
+[![downloads](https://img.shields.io/crates/d/eggress-cli.svg)](https://crates.io/crates/eggress-cli)
+[![docs](https://img.shields.io/docsrs/eggress-cli.svg)](https://docs.rs/eggress-cli)
+[![license](https://img.shields.io/crates/l/eggress-cli.svg)](https://github.com/eggstack/eggress/blob/main/LICENSE)
 
-> **Status:** The Rust-native CLI and runtime are production-ready. Eggress provides broad, behavior-oriented compatibility with `pproxy==2.7.9` across HTTP/SOCKS, encrypted-proxy, routing, CLI, UDP, reverse, optional SSH/QUIC, and Python workflows. See the [compatibility matrix](https://github.com/eggstack/eggress/blob/main/docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md) and [capability manifest](https://github.com/eggstack/eggress/blob/main/docs/parity/pproxy_capability_manifest.toml).
+A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
 ## Design goals
 
@@ -21,10 +24,12 @@ A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting prac
 ### CLI
 
 ```bash
-cargo install --path crates/eggress-cli
+cargo install eggress-cli
 ```
 
 This installs both the `eggress` and `pproxy` binaries. The workspace declares Rust **MSRV 1.85**.
+
+From a repository checkout, the same binaries build via `cargo install --path crates/eggress-cli`.
 
 ### Lean local build
 
@@ -43,8 +48,10 @@ cargo build -p eggress-cli --features legacy-crypto,pproxy-daemon
 
 ```toml
 [dependencies]
-eggress-embed = { path = "crates/eggress-embed" }
+eggress-embed = "1"
 ```
+
+From a repository checkout, substitute `eggress-embed = { path = "crates/eggress-embed" }`.
 
 ### Python package
 
@@ -265,7 +272,6 @@ eggress/
 ├── python/               # Canonical Python package source (python/eggress)
 ├── python-pproxy-compat/ # Opt-in distribution owning the top-level `pproxy` namespace
 ├── docs/                 # Documentation, parity manifests, and release artifacts
-└── plans/                # Historical planning documents
 ```
 
 ## Documentation
@@ -289,5 +295,7 @@ eggress/
 | Threat model | [docs/security/THREAT_MODEL.md](https://github.com/eggstack/eggress/blob/main/docs/security/THREAT_MODEL.md) |
 | Dependency policy | [docs/DEPENDENCY_POLICY.md](https://github.com/eggstack/eggress/blob/main/docs/DEPENDENCY_POLICY.md) |
 | Capabilities | [docs/CAPABILITIES.md](https://github.com/eggstack/eggress/blob/main/docs/CAPABILITIES.md) |
+| Compatibility matrix | [docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md](https://github.com/eggstack/eggress/blob/main/docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md) |
+| Capability manifest | [docs/parity/pproxy_capability_manifest.toml](https://github.com/eggstack/eggress/blob/main/docs/parity/pproxy_capability_manifest.toml) |
 | Release process | [docs/release/RELEASE_PROCESS.md](https://github.com/eggstack/eggress/blob/main/docs/release/RELEASE_PROCESS.md) |
 | Roadmap | [docs/ROADMAP.md](https://github.com/eggstack/eggress/blob/main/docs/ROADMAP.md) |
