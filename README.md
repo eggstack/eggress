@@ -23,28 +23,31 @@ A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting prac
 
 ## Installation
 
-### CLI
+### Python / pproxy migration (primary Python distribution)
 
 ```bash
-cargo install eggress-cli
+pip install eggress
 ```
 
-This installs both the `eggress` and `pproxy` binaries. The workspace declares Rust **MSRV 1.85**.
+See [INSTALLATION.md](https://github.com/eggstack/eggress/blob/main/docs/INSTALLATION.md) for cipher extras, the opt-in top-level `pproxy` compatibility distribution, and supported Python versions/platforms.
 
-From a repository checkout, the same binaries build via `cargo install --path crates/eggress-cli`.
-
-### Lean local build
+### Standalone CLI (prebuilt binaries)
 
 ```bash
-# Lean HTTP/SOCKS local proxy
-cargo build -p eggress-cli --release --no-default-features --features common
-
-# Optional smallest optimization profile
-cargo build -p eggress-cli --profile release-small --no-default-features --features common
-
-# Optional pproxy legacy crypto and Linux daemon compatibility
-cargo build -p eggress-cli --features legacy-crypto,pproxy-daemon
+curl -fsSL https://github.com/eggstack/eggress/releases/latest/download/install.sh | bash
 ```
+
+This installs both the `eggress` and `pproxy` binaries from a version-aligned GitHub Release archive (default `eggress-cli` features). Windows uses `install.ps1`; pinned versions, custom directories, checksums, and troubleshooting live in [INSTALLATION.md](https://github.com/eggstack/eggress/blob/main/docs/INSTALLATION.md).
+
+Verify with `eggress version` and `pproxy --version`.
+
+### Cargo / source build (Rust/developer alternative)
+
+```bash
+cargo install eggress-cli --locked
+```
+
+For Rust users, unsupported prebuilt targets, Cargo-managed provenance, and custom features (e.g. `ssh`, `quic`, `legacy-crypto`). The workspace declares Rust **MSRV 1.85**. From a repository checkout: `cargo install --path crates/eggress-cli`. Lean and feature-gated build examples live in [INSTALLATION.md](https://github.com/eggstack/eggress/blob/main/docs/INSTALLATION.md).
 
 ### Rust library
 
@@ -291,6 +294,7 @@ eggress/
 | Testing | [docs/TESTING.md](https://github.com/eggstack/eggress/blob/main/docs/TESTING.md) |
 | Metrics | [docs/METRICS.md](https://github.com/eggstack/eggress/blob/main/docs/METRICS.md) |
 | Operations | [docs/OPERATIONS.md](https://github.com/eggstack/eggress/blob/main/docs/OPERATIONS.md) |
+| Installation | [docs/INSTALLATION.md](https://github.com/eggstack/eggress/blob/main/docs/INSTALLATION.md) |
 | Failure semantics | [docs/FAILURE_SEMANTICS.md](https://github.com/eggstack/eggress/blob/main/docs/FAILURE_SEMANTICS.md) |
 | Security review | [docs/SECURITY_REVIEW.md](https://github.com/eggstack/eggress/blob/main/docs/SECURITY_REVIEW.md) |
 | Secure configuration | [docs/security/SECURE_CONFIGURATION.md](https://github.com/eggstack/eggress/blob/main/docs/security/SECURE_CONFIGURATION.md) |

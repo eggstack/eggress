@@ -21,6 +21,8 @@ file), `--rules-file`, `--log-format pretty|compact|json`.
 
 Subcommands:
 
+- `version` — print `eggress X.Y.Z` deterministically (no network/config) and
+  exit 0. `eggress --version` remains functional.
 - `route <target> [-c config] [--listener] [--protocol] [--json] [--admin URL]` —
   explain the routing decision for a target (offline via config or live via
   admin `/-/route-explain`).
@@ -42,7 +44,15 @@ Frozen 2.7.9 flag parser with a fail-closed execution gate: unknown,
 unsupported, and non-equivalent options cannot start a partial service from
 either the standalone binary or `eggress pproxy run`. `--daemon` is fatal
 unless the `pproxy-daemon` feature is enabled (Linux safe re-exec).
-`--version` prints `eggress-pproxy-compat {VERSION}`.
+`--version` prints `eggress-pproxy-compat {VERSION}`. The standalone binary
+stays flat (no `pproxy translate/check/run` subcommands); nested migration
+tooling lives only under native `eggress`.
+
+Standalone install/update provenance lives in `docs/INSTALLATION.md`:
+prebuilt GitHub Release archives contain `eggress`+`pproxy` at one version
+(default features), the installers verify SHA-256 plus both staged versions
+before replacing either binary, and there is no `eggress update` command —
+updates are installer re-runs.
 
 ## Exit codes
 
@@ -119,6 +129,9 @@ settings on shutdown or failed startup. Test rollback paths with
 
 ```bash
 cargo test -p eggress-cli --test cli_exit_codes
+cargo test -p eggress-cli --test version
+cargo test -p eggress-cli --test release_contract
+bash packaging/tests/test-install.sh
 cargo test -p eggress-cli --test pproxy_binary
 cargo test -p eggress-cli --test pproxy_run_process
 cargo test -p eggress-cli --test pproxy_translation_golden

@@ -1,16 +1,32 @@
-# Manual Release Process
+# Release Process
 
-Egress releases are operator-driven. GitHub Actions does not publish crates, build release bundles, create GitHub Releases, push container images, or react to ordinary pushes.
+Egress releases are operator-driven. GitHub Actions does not publish crates, push container images, or react to ordinary pushes.
 
-The one automated publishing path is Python: `.github/workflows/publish-python.yml` fires on every `v*` tag push and publishes the `eggress` wheel and sdist to PyPI through the protected `pypi` GitHub environment. Pushing a version tag is therefore a deliberate release action, not bookkeeping.
+Two tag-triggered release workflows run on every `v*` tag push:
+
+- `.github/workflows/publish-python.yml` builds the `eggress` wheel and sdist and publishes to PyPI through the protected `pypi` GitHub environment.
+- `.github/workflows/release-binaries.yml` builds the five canonical `eggress-cli` target archives, smoke-tests both executables, and creates/updates the GitHub Release with archives, SHA-256 sidecars, and installers.
+
+Pushing a version tag is therefore a deliberate release action, not bookkeeping. The binary workflow is a narrow, explicitly approved exception to the older "no automated GitHub Release/artifacts" rule (see below).
 
 No release cadence is encoded in the repository. A maintainer releases when the code and version are ready.
 
+## Release channels
+
+```text
+PyPI             canonical Python distribution / pproxy migration package
+GitHub Releases  canonical prebuilt standalone CLI binaries
+crates.io        canonical Rust crate source distribution, published manually
+```
+
+All use the same repository version/tag invariant (`vX.Y.Z` == workspace
+version == Python package versions).
+
 ## Release target
 
-The primary Rust release channel is crates.io using local `cargo publish` commands. Git tags trigger the Python publish workflow (see below); a GitHub Release may optionally be created manually after publication.
+The primary Rust release channel is crates.io using local `cargo publish` commands. Git tags trigger the Python publish workflow and the CLI binary release workflow (see below).
 
-Python/PyPI distribution is a separate manual operation and must not be coupled to the Rust release workflow.
+Python/PyPI publishing is automated through its protected workflow and stays independent of the binary workflow: neither workflow republishes the other's channel.
 
 ## Prerequisites
 
@@ -83,7 +99,9 @@ Install the published top-level package into a clean temporary location:
 
 ```bash
 cargo install eggress-cli --version <version> --locked --root /tmp/eggress-release-check
+/tmp/eggress-release-check/bin/eggress version
 /tmp/eggress-release-check/bin/eggress --version
+/tmp/eggress-release-check/bin/pproxy --version
 /tmp/eggress-release-check/bin/pproxy --help
 ```
 
@@ -91,15 +109,26 @@ Use an equivalent temporary directory on platforms where `/tmp` is unavailable.
 
 If the release includes public libraries, create a minimal temporary consumer project and confirm that Cargo resolves the published versions without workspace paths.
 
-## 5. Tagging and the Python publish workflow
+## 5. Tagging, Python publishing, and CLI binary releases
 
-A `v*` tag push is a release action: it triggers `.github/workflows/publish-python.yml`.
+A `v*` tag push is a release action: it triggers both
+`.github/workflows/publish-python.yml` and
+`.github/workflows/release-binaries.yml`.
 
-The workflow:
+The Python workflow:
+
 1. Hard-fails unless the tag equals the workspace version (`v<version>` where `<version>` is `[workspace.package]` `version` in the root `Cargo.toml`).
 2. Builds five abi3 wheels (Linux x86_64/aarch64, macOS x86_64/arm64, Windows x86_64) plus one sdist.
 3. Smoke-tests each artifact in a clean environment (`scripts/release_artifact_smoke.py`, which imports both `eggress` and the top-level `pproxy` namespace from the opt-in compat package).
 4. Publishes to PyPI through the protected `pypi` GitHub environment via OIDC trusted publishers. TestPyPI is available only through manual workflow dispatch with `publish_target=testpypi`.
+
+The binary workflow (approved automation for canonical CLI artifacts only):
+
+1. Validates tag/version alignment with `scripts/release-preflight.sh` (tag form, lockstep versions, tag commit, clean tree). Manual dispatch requires an existing tag input and validates it identically; it never synthesizes an untagged production release.
+2. Builds the five canonical `eggress-cli` target archives with default features and `--locked` (Linux GNU via cargo-zigbuild + Zig at the documented glibc floor).
+3. Smoke-tests both executables natively (`eggress version`, `eggress --help`, `pproxy --version`, `pproxy --help`, plus a lightweight bind smoke) before packaging.
+4. Generates SHA-256 sidecars after the final archives are created.
+5. Creates (or updates) the GitHub Release for the existing tag only after all required target jobs succeed, attaching the five archives, five checksums, `install.sh`, and `install.ps1`. It never creates or moves tags and never publishes crates.io packages.
 
 ```bash
 git tag -a v<version> -m "Release v<version>"
@@ -110,22 +139,18 @@ Verify publication:
 
 ```bash
 gh run list --workflow=publish-python.yml --limit=1
+gh run list --workflow=release-binaries.yml --limit=1
 curl -s https://pypi.org/pypi/eggress/<version>/json | python -m json.tool | head -5
+gh release view v<version> --json assets --jq '.assets[].name'
 ```
 
-Do not push a production tag solely to test the workflow; use manual dispatch against TestPyPI with a version that is safe to reuse there.
+Do not push a production tag solely to test the workflows; use manual dispatch against TestPyPI (Python) or an existing tag input with fixture validation (binaries) where safe.
+
+The release procedure must verify both outcomes: the Python workflow succeeded and PyPI exposes the tagged version, and the binary workflow succeeded and the GitHub Release exposes the tagged assets.
 
 ## 6. Optional manual repository bookkeeping
 
-After crates.io verification, a maintainer may create a GitHub Release for notes or separately built binaries:
-
-```bash
-gh release create v<version> \
-  --title "eggress v<version>" \
-  --notes-file <release-notes-file>
-```
-
-This step is optional and must remain manual.
+After crates.io verification and automated publication, a maintainer may edit release notes or attach out-of-band artifacts manually. This step is optional and must remain manual.
 
 ## Roll-forward policy
 
@@ -145,10 +170,12 @@ The following must not be added back without an explicit project-level decision:
 
 - crates.io publishing on a tag or branch push;
 - crates.io tokens or trusted-publishing configuration in GitHub Actions;
-- automated GitHub Release creation;
+- automated GitHub Release creation **other than the approved canonical CLI binary workflow above**;
 - publishing anything other than the canonical `eggress` wheel/sdist from the tag-triggered Python workflow (the `eggress-pproxy-compat` distribution is published manually);
-- mandatory release artifact, checksum, SBOM, signature, or container jobs;
+- mandatory SBOM, signature, or container jobs;
 - a release workflow that repeats the ordinary CI suite;
-- release gates that require generated evidence unrelated to the changed release surface.
+- release gates that require generated evidence unrelated to the changed release surface;
+- automatic service deployment;
+- publishing noncanonical extra artifacts without an explicit project decision.
 
-Release correctness comes from a clean release commit, proportionate local verification, package dry runs, explicit operator publication, and post-publication installation checks.
+Checksum, archive, and installer attachment jobs are allowed for the canonical CLI binaries only. Release correctness comes from a clean release commit, proportionate local verification, package dry runs, explicit operator publication, and post-publication installation checks.

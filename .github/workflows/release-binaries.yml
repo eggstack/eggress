@@ -1,0 +1,524 @@
+name: Release CLI binaries
+
+# Release-only binary distribution for `eggress-cli` (prebuilt `eggress` and
+# `pproxy` executables). This workflow is separate from ordinary CI by design:
+# ordinary pushes never build this matrix.
+#
+# Triggers:
+#   - pushing a `vX.Y.Z` tag (production release);
+#   - manual dispatch against an existing tag (never synthesizes an untagged
+#     production release).
+#
+# The tag supplies the version namespace; archive names stay stable within a
+# release (`eggress-<target>.tar.gz`/`.zip`) and do not duplicate `X.Y.Z`.
+# Release binaries use the default `eggress-cli` feature set (the same as a
+# normal `cargo install eggress-cli`). Optional features (ssh, quic, legacy
+# crypto, pproxy legacy) remain opt-in source/Cargo build choices.
+#
+# Linux GNU artifacts target an explicit glibc 2.17 floor via cargo-zigbuild
+# + Zig (see scripts/install-zig.sh), matching the manylinux2014 Python wheel
+# floor. The floor is documented in docs/INSTALLATION.md; do not claim 2.17
+# unless the produced executables demonstrate it.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release (e.g. v1.2.3)"
+        required: true
+        type: string
+
+concurrency:
+  group: release-binaries-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  preflight:
+    name: Release preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release tag
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG="${{ inputs.tag }}"
+          fi
+          if [[ -z "$TAG" ]]; then
+            echo "::error::manual dispatch requires an existing tag input"
+            exit 1
+          fi
+          echo "release tag: $TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Run release preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          ./scripts/release-preflight.sh --tag "${{ steps.resolve.outputs.tag }}"
+
+      - name: Check installer syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n packaging/install.sh
+          bash -n scripts/release-preflight.sh
+          bash -n scripts/install-zig.sh
+          test -f packaging/install.ps1
+
+  linux-x86_64:
+    name: Linux x86_64
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.tag }}
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Install Zig + cargo-zigbuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/install-zig.sh
+          cargo install cargo-zigbuild --locked
+
+      - name: Build eggress-cli (default features, locked)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo zigbuild --release --locked -p eggress-cli --target x86_64-unknown-linux-gnu.2.17
+          mkdir -p stage
+          cp target/x86_64-unknown-linux-gnu/release/eggress stage/eggress
+          cp target/x86_64-unknown-linux-gnu/release/pproxy stage/pproxy
+          chmod +x stage/eggress stage/pproxy
+
+      - name: Native smoke checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED="${{ needs.preflight.outputs.version }}"
+          ./stage/eggress version | tee eggress-version.txt
+          grep -qx "eggress $EXPECTED" eggress-version.txt
+          ./stage/eggress --help >/dev/null
+          ./stage/pproxy --version | tee pproxy-version.txt
+          grep -q "$EXPECTED" pproxy-version.txt
+          ./stage/pproxy --help >/dev/null
+          # Lightweight bind smoke: the server must stay up (timeout kills it).
+          timeout 8 ./stage/eggress -l "http://127.0.0.1:18080" || code=$?
+          code=${code:-0}
+          if [[ "$code" -eq 124 ]]; then
+            echo "bind smoke passed (server stayed up until timeout)"
+          else
+            echo "::error::bind smoke failed with exit $code"
+            exit 1
+          fi
+
+      - name: Package archive + SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -czf "eggress-x86_64-unknown-linux-gnu.tar.gz" -C stage eggress pproxy
+          sha256sum "eggress-x86_64-unknown-linux-gnu.tar.gz" > "eggress-x86_64-unknown-linux-gnu.tar.gz.sha256"
+          cat "eggress-x86_64-unknown-linux-gnu.tar.gz.sha256"
+          sha256sum -c "eggress-x86_64-unknown-linux-gnu.tar.gz.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-linux-x86_64
+          path: |
+            eggress-x86_64-unknown-linux-gnu.tar.gz
+            eggress-x86_64-unknown-linux-gnu.tar.gz.sha256
+          if-no-files-found: error
+
+  linux-aarch64:
+    name: Linux AArch64
+    needs: preflight
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.tag }}
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Install Zig + cargo-zigbuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/install-zig.sh
+          cargo install cargo-zigbuild --locked
+
+      - name: Build eggress-cli (default features, locked)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo zigbuild --release --locked -p eggress-cli --target aarch64-unknown-linux-gnu.2.17
+          mkdir -p stage
+          cp target/aarch64-unknown-linux-gnu/release/eggress stage/eggress
+          cp target/aarch64-unknown-linux-gnu/release/pproxy stage/pproxy
+          chmod +x stage/eggress stage/pproxy
+
+      - name: Native smoke checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED="${{ needs.preflight.outputs.version }}"
+          ./stage/eggress version | tee eggress-version.txt
+          grep -qx "eggress $EXPECTED" eggress-version.txt
+          ./stage/eggress --help >/dev/null
+          ./stage/pproxy --version | tee pproxy-version.txt
+          grep -q "$EXPECTED" pproxy-version.txt
+          ./stage/pproxy --help >/dev/null
+          timeout 8 ./stage/eggress -l "http://127.0.0.1:18080" || code=$?
+          code=${code:-0}
+          if [[ "$code" -eq 124 ]]; then
+            echo "bind smoke passed (server stayed up until timeout)"
+          else
+            echo "::error::bind smoke failed with exit $code"
+            exit 1
+          fi
+
+      - name: Package archive + SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -czf "eggress-aarch64-unknown-linux-gnu.tar.gz" -C stage eggress pproxy
+          sha256sum "eggress-aarch64-unknown-linux-gnu.tar.gz" > "eggress-aarch64-unknown-linux-gnu.tar.gz.sha256"
+          cat "eggress-aarch64-unknown-linux-gnu.tar.gz.sha256"
+          sha256sum -c "eggress-aarch64-unknown-linux-gnu.tar.gz.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-linux-aarch64
+          path: |
+            eggress-aarch64-unknown-linux-gnu.tar.gz
+            eggress-aarch64-unknown-linux-gnu.tar.gz.sha256
+          if-no-files-found: error
+
+  macos-x86_64:
+    name: macOS Intel
+    needs: preflight
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.tag }}
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+
+      - name: Build eggress-cli (default features, locked)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --locked -p eggress-cli --target x86_64-apple-darwin
+          mkdir -p stage
+          cp target/x86_64-apple-darwin/release/eggress stage/eggress
+          cp target/x86_64-apple-darwin/release/pproxy stage/pproxy
+          chmod +x stage/eggress stage/pproxy
+
+      - name: Native smoke checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED="${{ needs.preflight.outputs.version }}"
+          ./stage/eggress version | tee eggress-version.txt
+          grep -qx "eggress $EXPECTED" eggress-version.txt
+          ./stage/eggress --help >/dev/null
+          ./stage/pproxy --version | tee pproxy-version.txt
+          grep -q "$EXPECTED" pproxy-version.txt
+          ./stage/pproxy --help >/dev/null
+          timeout 8 ./stage/eggress -l "http://127.0.0.1:18080" || code=$?
+          code=${code:-0}
+          # macOS timeout(1) is not GNU; gtimeout may be absent. Fall back:
+          # if `timeout` is missing the command above fails; use a background probe instead.
+          if [[ "$code" -eq 124 ]]; then
+            echo "bind smoke passed (server stayed up until timeout)"
+          elif [[ "$code" -eq 127 ]]; then
+            ./stage/eggress -l "http://127.0.0.1:18081" & pid=$!
+            sleep 3
+            if kill -0 $pid 2>/dev/null; then
+              echo "bind smoke passed (server alive after 3s)"
+              kill -TERM $pid
+              wait $pid || true
+            else
+              echo "::error::bind smoke failed: server exited early"
+              wait $pid || exit 1
+            fi
+          else
+            echo "::error::bind smoke failed with exit $code"
+            exit 1
+          fi
+
+      - name: Package archive + SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -czf "eggress-x86_64-apple-darwin.tar.gz" -C stage eggress pproxy
+          shasum -a 256 "eggress-x86_64-apple-darwin.tar.gz" > "eggress-x86_64-apple-darwin.tar.gz.sha256"
+          cat "eggress-x86_64-apple-darwin.tar.gz.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-macos-x86_64
+          path: |
+            eggress-x86_64-apple-darwin.tar.gz
+            eggress-x86_64-apple-darwin.tar.gz.sha256
+          if-no-files-found: error
+
+  macos-aarch64:
+    name: macOS Apple Silicon
+    needs: preflight
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.tag }}
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Build eggress-cli (default features, locked)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --locked -p eggress-cli --target aarch64-apple-darwin
+          mkdir -p stage
+          cp target/aarch64-apple-darwin/release/eggress stage/eggress
+          cp target/aarch64-apple-darwin/release/pproxy stage/pproxy
+          chmod +x stage/eggress stage/pproxy
+
+      - name: Native smoke checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED="${{ needs.preflight.outputs.version }}"
+          ./stage/eggress version | tee eggress-version.txt
+          grep -qx "eggress $EXPECTED" eggress-version.txt
+          ./stage/eggress --help >/dev/null
+          ./stage/pproxy --version | tee pproxy-version.txt
+          grep -q "$EXPECTED" pproxy-version.txt
+          ./stage/pproxy --help >/dev/null
+          ./stage/eggress -l "http://127.0.0.1:18081" & pid=$!
+          sleep 3
+          if kill -0 $pid 2>/dev/null; then
+            echo "bind smoke passed (server alive after 3s)"
+            kill -TERM $pid
+            wait $pid || true
+          else
+            echo "::error::bind smoke failed: server exited early"
+            wait $pid || exit 1
+          fi
+
+      - name: Package archive + SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -czf "eggress-aarch64-apple-darwin.tar.gz" -C stage eggress pproxy
+          shasum -a 256 "eggress-aarch64-apple-darwin.tar.gz" > "eggress-aarch64-apple-darwin.tar.gz.sha256"
+          cat "eggress-aarch64-apple-darwin.tar.gz.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-macos-aarch64
+          path: |
+            eggress-aarch64-apple-darwin.tar.gz
+            eggress-aarch64-apple-darwin.tar.gz.sha256
+          if-no-files-found: error
+
+  windows-x86_64:
+    name: Windows x86_64
+    needs: preflight
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.tag }}
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Build eggress-cli (default features, locked)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          cargo build --release --locked -p eggress-cli --target x86_64-pc-windows-msvc
+          New-Item -ItemType Directory -Force -Path stage | Out-Null
+          Copy-Item target\x86_64-pc-windows-msvc\release\eggress.exe stage\eggress.exe
+          Copy-Item target\x86_64-pc-windows-msvc\release\pproxy.exe stage\pproxy.exe
+
+      - name: Check installer script parses
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.PSParser]::Tokenize((Get-Content packaging/install.ps1 -Raw), [ref]$errors)
+          if ($errors.Count -ne 0) { throw "install.ps1 has syntax errors: $($errors | Out-String)" }
+          Write-Output "install.ps1 parses cleanly"
+
+      - name: Native smoke checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $expected = "${{ needs.preflight.outputs.version }}"
+          $eggressVersion = & .\stage\eggress.exe version
+          Write-Output "eggress version: $eggressVersion"
+          if ($eggressVersion -ne "eggress $expected") { throw "eggress version mismatch: '$eggressVersion' != 'eggress $expected'" }
+          & .\stage\eggress.exe --help | Out-Null
+          $pproxyVersion = & .\stage\pproxy.exe --version
+          Write-Output "pproxy version: $pproxyVersion"
+          if (-not ($pproxyVersion -match [regex]::Escape($expected))) { throw "pproxy --version mismatch: '$pproxyVersion' does not contain '$expected'" }
+          & .\stage\pproxy.exe --help | Out-Null
+          # Lightweight bind smoke: start a listener, confirm the process stays up, then stop it.
+          $proc = Start-Process -FilePath (Join-Path $PWD "stage\eggress.exe") -ArgumentList @("-l", "http://127.0.0.1:18080") -PassThru
+          Start-Sleep -Seconds 4
+          if ($proc.HasExited) { throw "bind smoke failed: eggress exited early with code $($proc.ExitCode)" }
+          Write-Output "bind smoke passed (server alive after 4s)"
+          Stop-Process -Id $proc.Id -Force
+          $proc.WaitForExit(10000) | Out-Null
+
+      - name: Package archive + SHA-256
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Compress-Archive -Path stage\eggress.exe, stage\pproxy.exe -DestinationPath eggress-x86_64-pc-windows-msvc.zip -Force
+          $hash = (Get-FileHash eggress-x86_64-pc-windows-msvc.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  eggress-x86_64-pc-windows-msvc.zip" | Out-File -Encoding ascii eggress-x86_64-pc-windows-msvc.zip.sha256
+          Get-Content eggress-x86_64-pc-windows-msvc.zip.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-windows-x86_64
+          path: |
+            eggress-x86_64-pc-windows-msvc.zip
+            eggress-x86_64-pc-windows-msvc.zip.sha256
+          if-no-files-found: error
+
+  assemble-release:
+    name: Assemble GitHub Release
+    needs: [preflight, linux-x86_64, linux-aarch64, macos-x86_64, macos-aarch64, windows-x86_64]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.tag }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: release-assets/
+          merge-multiple: true
+
+      - name: Verify complete artifact set
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -la release-assets/
+          python3 - <<'PY'
+          from pathlib import Path
+          assets = Path("release-assets")
+          expected = [
+              "eggress-x86_64-unknown-linux-gnu.tar.gz",
+              "eggress-x86_64-unknown-linux-gnu.tar.gz.sha256",
+              "eggress-aarch64-unknown-linux-gnu.tar.gz",
+              "eggress-aarch64-unknown-linux-gnu.tar.gz.sha256",
+              "eggress-x86_64-apple-darwin.tar.gz",
+              "eggress-x86_64-apple-darwin.tar.gz.sha256",
+              "eggress-aarch64-apple-darwin.tar.gz",
+              "eggress-aarch64-apple-darwin.tar.gz.sha256",
+              "eggress-x86_64-pc-windows-msvc.zip",
+              "eggress-x86_64-pc-windows-msvc.zip.sha256",
+          ]
+          missing = [name for name in expected if not (assets / name).is_file()]
+          if missing:
+              raise SystemExit(f"::error::release job refuses incomplete artifact set; missing: {missing}")
+          # Refuse debug artifacts leaking into a production release.
+          debug = [p.name for p in assets.iterdir() if "debug" in p.name.lower()]
+          if debug:
+              raise SystemExit(f"::error::debug artifact found: {debug}")
+          print("complete artifact set verified (5 archives + 5 checksums)")
+          for name in expected:
+              print(f"  {name}")
+          PY
+          # Verify each checksum against its archive before publishing.
+          (cd release-assets && sha256sum -c eggress-x86_64-unknown-linux-gnu.tar.gz.sha256)
+          (cd release-assets && sha256sum -c eggress-aarch64-unknown-linux-gnu.tar.gz.sha256)
+          (cd release-assets && sha256sum -c eggress-x86_64-apple-darwin.tar.gz.sha256)
+          (cd release-assets && sha256sum -c eggress-aarch64-apple-darwin.tar.gz.sha256)
+          # The Windows sidecar uses the same "<sha>  <file>" format; verify with sha256sum too.
+          (cd release-assets && sha256sum -c eggress-x86_64-pc-windows-msvc.zip.sha256)
+
+      - name: Stage installer assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f packaging/install.sh
+          test -f packaging/install.ps1
+          bash -n packaging/install.sh
+          cp packaging/install.sh release-assets/install.sh
+          cp packaging/install.ps1 release-assets/install.ps1
+          ls -la release-assets/install.sh release-assets/install.ps1
+
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.preflight.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Never create or move tags here; the tag already exists (push or dispatch input).
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG exists; uploading assets"
+          else
+            echo "creating release $TAG"
+            gh release create "$TAG" --title "eggress $TAG" --notes "Prebuilt CLI binaries for $TAG. See docs/INSTALLATION.md for install, checksum, and update guidance."
+          fi
+          gh release upload "$TAG" release-assets/* --clobber
+          echo "attached:"
+          gh release view "$TAG" --json assets --jq '.assets[].name'

@@ -12,12 +12,40 @@ maintain a second exhaustive supported/unsupported inventory. Where a feature
 example is needed below, consult the matrix/manifest for the authoritative
 status.
 
-Install the `eggress` distribution. `from eggress import pproxy` is the explicit
-migration-helper path. For a bounded top-level `pproxy` import, additionally
-install the optional `eggress-pproxy-compat` distribution from a repository
-checkout (`pip install ./python-pproxy-compat`). Uninstall upstream `pproxy`
-first because it owns the same import namespace as the compatibility
-distribution.
+### Python migration
+
+Install the `eggress` distribution from PyPI (the primary Python path).
+`from eggress import pproxy` is the explicit migration-helper path. For a
+bounded top-level `pproxy` import, additionally install the optional
+`eggress-pproxy-compat` distribution from a repository checkout
+(`pip install ./python-pproxy-compat`). Uninstall upstream `pproxy` first
+because it owns the same import namespace as the compatibility distribution.
+
+### CLI-only migration
+
+Users replacing a `pproxy` command on a host can install the standalone
+release binaries and receive both executables at one version (see
+[INSTALLATION.md](INSTALLATION.md)):
+
+```bash
+curl -fsSL https://github.com/eggstack/eggress/releases/latest/download/install.sh | bash
+```
+
+```text
+eggress
+pproxy
+```
+
+The direct `pproxy` facade (`pproxy -l ... -r ...`) remains the closest
+command-line replacement path; it stays flat and never gains nested
+Eggress-native subcommands. The nested native migration tooling lives only
+under `eggress`:
+
+```bash
+eggress pproxy translate -- ...
+eggress pproxy check -- ...
+eggress pproxy run -- ...
+```
 
 ## Quick Start
 

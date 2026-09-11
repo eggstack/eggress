@@ -6,13 +6,14 @@ This document is the source of truth for repository verification. It supersedes 
 
 Egress uses deliberately small hosted CI. GitHub Actions is a smoke signal for ordinary development, not a release engine, compatibility evidence archive, or substitute for focused local testing.
 
-The repository has three hosted workflows:
+The repository has four hosted workflows:
 
 - `.github/workflows/ci.yml`: one Ubuntu Rust job running format, Clippy, the default workspace test suite, one bounded optional-compat compile check, and fuzz-target compilation.
 - `.github/workflows/python-test.yml`: one path-scoped Ubuntu/Python 3.12 smoke job for the Python binding and compatibility packages.
 - `.github/workflows/publish-python.yml`: a real release path, not a smoke job. It fires on every `v*` tag push, validates the tag against the workspace version, builds five-platform abi3 wheels plus an sdist, smoke-tests them, and publishes to PyPI through the protected `pypi` GitHub environment (TestPyPI only via manual dispatch).
+- `.github/workflows/release-binaries.yml`: a real release path, not a smoke job. It fires on every `v*` tag push (or manual dispatch against an existing tag), validates the tag with `scripts/release-preflight.sh`, builds the five canonical `eggress-cli` target archives with default features, smoke-tests both executables natively, and creates/updates the GitHub Release with archives, SHA-256 sidecars, and installers. Ordinary CI never builds this matrix.
 
-There are no crates-publishing workflows, artifact assembly workflows, cross-platform Rust release matrices, or mandatory compatibility-evidence uploads. Pushing a version tag is a release action; ordinary pushes never publish anything.
+There are no crates-publishing workflows, cross-platform ordinary-CI matrices, or mandatory compatibility-evidence uploads. Pushing a version tag is a release action; ordinary pushes never publish anything.
 
 ## Routine development
 
@@ -93,7 +94,7 @@ Compatibility claims must still be backed by the applicable oracle or interopera
 
 Rust crates.io publication is entirely manual: the release operator runs local checks and `cargo publish` in dependency order. See `docs/release/RELEASE_PROCESS.md`.
 
-The single exception to "no publishing automation" is Python: pushing a `v*` tag triggers `publish-python.yml`, which publishes the `eggress` wheel and sdist to PyPI through the protected `pypi` environment. The workflow hard-fails on a tag/version mismatch, so a tag push must always be a deliberate release act. GitHub Actions still does not publish crates, create GitHub Releases, push container images, or build release bundles.
+The exceptions to "no publishing automation" are the two tag-triggered release paths: pushing a `v*` tag triggers `publish-python.yml` (PyPI wheel/sdist via the protected `pypi` environment) and `release-binaries.yml` (prebuilt CLI archives + GitHub Release). Both hard-fail on a tag/version mismatch, so a tag push must always be a deliberate release act. GitHub Actions still does not publish crates, push container images, or duplicate the ordinary suite inside release jobs. See `docs/release/RELEASE_PROCESS.md`.
 
 ## Design rationale
 

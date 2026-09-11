@@ -247,11 +247,13 @@ feature-gated transport story.
 
 One crate installing two binaries that converge on the same
 `ServiceSupervisor` and differ only in how arguments reach config. Native
-`eggress`: `-l`/`-r`/`--config`/`--rules-file`, `route`, `upstream test`,
-`pproxy translate|check|run`, `system-proxy inspect`, stable exit codes
-(0–7, 130, 143), lean `--no-default-features --features common` builds.
-Compat `pproxy`: frozen 2.7.9 flag parser with fail-closed gate and Linux
-`--daemon` re-exec behind `pproxy-daemon`.
+`eggress`: `-l`/`-r`/`--config`/`--rules-file`, `version`, `route`,
+`upstream test`, `pproxy translate|check|run`, `system-proxy inspect`,
+stable exit codes (0–7, 130, 143), lean
+`--no-default-features --features common` builds. Prebuilt release archives
+contain both binaries at one version (default features;
+`docs/INSTALLATION.md`). Compat `pproxy`: frozen 2.7.9 flag parser with
+fail-closed gate and Linux `--daemon` re-exec behind `pproxy-daemon`.
 
 #### Embed API — `eggress-embed` → [embed.md](embed.md)
 
@@ -310,8 +312,13 @@ summary of the discrete pieces:
   `run_strict_pproxy_*`), evidence/validation
   (`validate_pproxy_parity_manifest.py`, `compare_observations.py`,
   regression-injection demos), release smoke (`release_artifact_smoke.py`,
-  `test_wheel.sh`), perf/soak (`scripts/perf/`), snapshots
-  (`snapshot_pproxy_api.py`, `pproxy_surface_probe.py`).
+  `test_wheel.sh`), release preflight/portability
+  (`release-preflight.sh`, `install-zig.sh`), perf/soak (`scripts/perf/`),
+  snapshots (`snapshot_pproxy_api.py`, `pproxy_surface_probe.py`).
+- **Installers — `packaging/`.** `install.sh` (Unix) + `install.ps1`
+  (Windows) bootstrap the prebuilt `eggress`+`pproxy` pair from a GitHub
+  Release with SHA-256 and staged-version verification; behavior is pinned by
+  `packaging/tests/test-install.sh` plus the `release_contract` CLI test.
 - **Frozen oracle — `compat/pproxy-2.7.9/`.** Immutable reference data:
   provenance/hashes, known defects, CLI + namespace baselines, fixture
   manifest, recorded observations, oracle tests/examples. Prebuilt venvs
@@ -322,11 +329,17 @@ summary of the discrete pieces:
   mutations. Python tiers 0–5 live under `python/tests/`
   (`TEST_TAXONOMY.md`); `pytest.ini` forces `--import-mode=importlib` so the
   source tree can't shadow the built extension.
-- **CI — exactly 3 workflows.** `ci.yml` (Ubuntu Rust smoke: fmt, clippy,
+- **CI — exactly 4 workflows.** `ci.yml` (Ubuntu Rust smoke: fmt, clippy,
   workspace tests, bounded optional-compat compile gate, fuzz-target
   compilation), `python-test.yml` (path-scoped 3.12 wheel smoke),
-  `publish-python.yml` (fires on every `v*` tag push — tags publish to PyPI).
-  Policy: `docs/CI_STATUS.md`; suite inventory: `docs/TESTING.md`.
+  `publish-python.yml` (fires on every `v*` tag push — tags publish to PyPI),
+  `release-binaries.yml` (fires on every `v*` tag push or manual dispatch
+  against an existing tag — preflight gate, five target archives with native
+  smoke, then a `contents: write` assemble job attaching archives, SHA-256
+  sidecars, and installers).
+  Policy: `docs/CI_STATUS.md`; suite inventory: `docs/TESTING.md`; release
+  policy: `docs/release/RELEASE_PROCESS.md`; install guide:
+  `docs/INSTALLATION.md`.
 - **Container — `Containerfile`.** Multi-stage
   `rust:1.85-slim` → distroless nonroot; ports 8080/1080/9090; entrypoint
   `/eggress`.
@@ -406,11 +419,12 @@ eggress/
 ├── python/                 # canonical Python package (eggress/) + pproxy shim sources
 ├── python-pproxy-compat/   # opt-in distribution owning top-level `pproxy`
 ├── architecture/           # THIS directory: overview + per-component reviews
-├── docs/                   # canonical reference docs (ARCHITECTURE, parity manifests, specs)
+├── docs/                   # canonical reference docs (ARCHITECTURE, INSTALLATION, parity manifests, specs)
+├── packaging/              # install.sh / install.ps1 + fixture-based installer tests
 ├── tests/                  # cross-implementation Python tests (tests/compat)
 ├── fuzz/                   # standalone libfuzzer workspace (11 targets)
 ├── benches/                # Criterion benchmarks (root pkg eggress-bench)
-├── scripts/                # interop/certification/probe/evidence tooling
+├── scripts/                # interop/certification/probe/evidence/release-preflight tooling
 ├── compat/pproxy-2.7.9/    # frozen oracle provenance + baselines
 ├── .skills/                # task-specific agent guides (mirrored into .agents/ + .opencode/)
 └── example-config.toml     # annotated configuration tour

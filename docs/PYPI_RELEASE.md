@@ -1,5 +1,11 @@
 # Python Release Procedure
 
+> Authoritative path: pushing a `v*` tag triggers
+> `.github/workflows/publish-python.yml`, which builds the wheels/sdist,
+> smoke-tests them, and publishes to PyPI via OIDC trusted publishers (see
+> `docs/release/RELEASE_PROCESS.md`). The local `twine` steps below are a
+> manual-build reference only, not the release path.
+
 Build, test, and publish the `eggress` Python package locally. Python
 publication is separate from crates.io and must not be coupled to the Rust
 release workflow.

@@ -1,5 +1,40 @@
 # Operations
 
+## Version
+
+```bash
+eggress version
+pproxy --version
+```
+
+`eggress version` prints `eggress X.Y.Z` deterministically (no network, no
+config loading) and exits 0; `eggress --version` remains functional. The
+standalone `pproxy` binary keeps its flat pproxy-style surface with
+`pproxy --version` (`eggress-pproxy-compat X.Y.Z`). Both binaries ship in one
+version-aligned release archive; see [INSTALLATION.md](INSTALLATION.md) for
+install, checksum, and update provenance (installer re-runs replace both
+binaries together, never escalate privilege, never run background update
+checks, and leave the current install untouched when verification fails).
+
+## CLI reference
+
+Native `eggress` subcommands (see `eggress --help`):
+
+```text
+eggress version
+eggress route <target> [-c config] [--listener] [--protocol] [--json] [--admin URL]
+eggress upstream test [-i id] [-t HOST:PORT] [-c config] [--timeout 5] [--mode proxy] [--json]
+eggress pproxy translate -- <pproxy args> [--annotate]
+eggress pproxy check -- <pproxy args> [--json]
+eggress pproxy run -- <pproxy args>
+eggress system-proxy inspect [--json]
+```
+
+`--config` is incompatible with `-l`/`-r`. The standalone `pproxy`
+compatibility binary stays flat (`pproxy -l ... -r ...`, `pproxy --version`,
+`pproxy --help`); nested `eggress pproxy translate/check/run` tooling lives
+only under native `eggress`, never as `pproxy translate`.
+
 ## Running the Service
 
 ### CLI Mode (URI-based)

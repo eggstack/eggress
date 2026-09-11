@@ -1,7 +1,7 @@
 # Release Process
 
 ## When to use
-Use when cutting a new release — bumping versions, verifying the release candidate, publishing Python packages to PyPI, and optionally publishing Rust crates to crates.io.
+Use when cutting a new release — bumping versions, verifying the release candidate, publishing Python packages to PyPI, publishing prebuilt CLI binaries to GitHub Releases, and optionally publishing Rust crates to crates.io.
 
 ## Version convention
 
@@ -94,20 +94,32 @@ published artifact from TestPyPI in a clean environment and run the same smoke
 script. Record the run URL and artifact filenames in the corrective plan before
 production use. Do not push a production tag solely to test the workflow.
 
-### 6. Publish Python package (trusted publisher)
+### 6. Publish Python package + CLI binaries (tag push)
 
-Push a version tag to trigger the `publish-python.yml` workflow:
+Push a version tag to trigger both release workflows (`publish-python.yml`
+and `release-binaries.yml`):
 
 ```bash
 git tag -a v<new_version> -m "Release v<new_version>"
 git push origin v<new_version>
 ```
 
-The workflow builds prebuilt wheels for Linux (x86_64, aarch64), macOS (x86_64, arm64), and Windows (x86_64), plus one source distribution, then publishes to PyPI via OIDC trusted publishers. Production publication enforces version coherence and fails on existing versions rather than skipping.
+The Python workflow builds prebuilt wheels for Linux (x86_64, aarch64), macOS (x86_64, arm64), and Windows (x86_64), plus one source distribution, then publishes to PyPI via OIDC trusted publishers. Production publication enforces version coherence and fails on existing versions rather than skipping.
+
+The binary workflow (`release-binaries.yml`) validates the tag with `scripts/release-preflight.sh`, builds the five canonical `eggress-cli` archives with default features (`eggress`+`pproxy` per archive), smoke-tests `eggress version` / `pproxy --version` natively, and creates/updates the GitHub Release with archives, SHA-256 sidecars, and `packaging/install.sh` / `packaging/install.ps1`. It never publishes crates.io packages and never reruns the ordinary suite.
 
 Verify publication:
-- Check the workflow run: `gh run list --workflow=publish-python.yml --limit=1`
+- Check the workflow runs: `gh run list --workflow=publish-python.yml --limit=1` and `gh run list --workflow=release-binaries.yml --limit=1`
 - Verify on PyPI: `curl -s https://pypi.org/pypi/eggress/<new_version>/json | python -m json.tool | head -5`
+- Verify the GitHub Release: `gh release view v<new_version> --json assets --jq '.assets[].name'`
+- Smoke the public installer against the new release (see `docs/INSTALLATION.md`).
+
+Before tagging, validate lockstep versions locally:
+
+```bash
+./scripts/release-preflight.sh --check-versions-only
+bash packaging/tests/test-install.sh
+```
 
 ### 7. Publish Rust crates to crates.io (manual)
 
@@ -135,7 +147,8 @@ cargo publish -p eggress-cli
 Verify:
 ```bash
 cargo install eggress-cli --version <new_version> --locked --root /tmp/eggress-release-check
-/tmp/eggress-release-check/bin/eggress --version
+/tmp/eggress-release-check/bin/eggress version
+/tmp/eggress-release-check/bin/pproxy --version
 /tmp/eggress-release-check/bin/pproxy --help
 ```
 
@@ -156,6 +169,14 @@ Do not delete or retag an existing version to simulate replacement.
 - The workflow hard-fails if the tag does not equal the workspace version
 - Check that the protected `pypi` environment exists in repo settings
 - Verify trusted publisher configuration on PyPI matches: repo `eggstack/eggress`, workflow `publish-python.yml`
+
+### Binary release workflow didn't trigger / failed early
+- Same tag rule: the tag must be `vX.Y.Z` and equal the workspace version; run `./scripts/release-preflight.sh --tag v<version>` on the tagged commit to reproduce
+- Manual dispatch requires an existing tag input and validates it identically; it never synthesizes an untagged release
+- The workflow builds from the tag commit, never from the default-branch head; fetch tags and check out the exact tag locally to reproduce
+- A mismatched `python-pproxy-compat` `eggress==` pin or internal `=x.y.z` pin fails preflight before any matrix build
+- The assemble job refuses incomplete artifact sets (all five archives + checksums required) and re-verifies each SHA-256 before `gh release upload`
+- Installer logic is exercised without production releases via `bash packaging/tests/test-install.sh` (file:// fixtures)
 
 ### Maturin build fails in CI
 - Ensure `rust-toolchain.toml` specifies a valid toolchain

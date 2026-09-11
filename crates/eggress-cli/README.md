@@ -2,11 +2,28 @@
 
 > Part of [eggress](https://github.com/eggstack/eggress) — a Rust-native, embeddable, multi-protocol proxy framework targeting compatibility with Python `pproxy==2.7.9`.
 
-Command-line interface: the `eggress` binary and the `pproxy` compatibility binary. Install via `cargo install eggress-cli`.
+Command-line interface: the `eggress` binary and the `pproxy` compatibility binary.
+
+## Installation
+
+Prebuilt GitHub Release binaries are the preferred normal CLI install:
+
+```bash
+curl -fsSL https://github.com/eggstack/eggress/releases/latest/download/install.sh | bash
+```
+
+This installs both `eggress` and `pproxy` from one version-aligned archive.
+Canonical binary releases use the default crate features. See
+[docs/INSTALLATION.md](https://github.com/eggstack/eggress/blob/main/docs/INSTALLATION.md)
+for Windows, pinned versions, install directories, and checksums.
+
+`cargo install eggress-cli --locked` remains the Rust/developer path (custom
+features, unsupported targets, Cargo-managed provenance). Custom feature
+builds require Cargo/source.
 
 ## When to use this crate
 
-Use `eggress-cli` when you want to run eggress as a standalone proxy from the command line. This crate produces the `eggress` and `pproxy` binaries.
+Use `eggress-cli` when you want to run eggress as a standalone proxy from the command line. This crate produces the `eggress` and `pproxy` binaries (both installed by either path).
 
 ## Feature flags
 
@@ -29,9 +46,14 @@ eggress -l socks5://:1080 -r http://proxy.example:8080
 pproxy -l http://:8080 -r socks5://proxy:1080
 ```
 
+`eggress version` prints the installed release version (`eggress X.Y.Z`);
+the `pproxy` compatibility binary retains its flat surface with
+`pproxy --version` and does not gain Eggress-native subcommands.
+
 ## Documentation
 
 - [Workspace README](https://github.com/eggstack/eggress/blob/main/README.md)
+- [Installation](https://github.com/eggstack/eggress/blob/main/docs/INSTALLATION.md)
 - [Operations](https://github.com/eggstack/eggress/blob/main/docs/OPERATIONS.md)
 - [Config reference](https://github.com/eggstack/eggress/blob/main/docs/CONFIG_REFERENCE.md)
 - [pproxy migration](https://github.com/eggstack/eggress/blob/main/docs/PPROXY_MIGRATION.md)

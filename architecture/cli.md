@@ -2,6 +2,9 @@
 
 Installs two executables from one crate. Both end at the same
 `ServiceSupervisor`; they differ only in how arguments reach config.
+Prebuilt GitHub Release archives (`release-binaries.yml`) ship both binaries
+at one version with default features; standalone install is
+`docs/INSTALLATION.md` (binary installer preferred, Cargo for custom builds).
 
 ## Module map
 
@@ -34,6 +37,7 @@ Clap-derived parser (`src/main.rs:24-44`):
 
 | Subcommand | Feature gate | Description |
 |---|---|---|
+| `version` | — | Print `eggress X.Y.Z` deterministically, no runtime init |
 | `route <target>` | — | Offline or live route-explain (via `--admin`) |
 | `upstream test` | — | Connectivity probe against upstreams (`--mode proxy\|tcp`) |
 | `pproxy translate` | `pproxy-compat` | pproxy args to TOML |
@@ -143,11 +147,13 @@ cargo check -p eggress-cli --locked --no-default-features \
   --bins
 ```
 
-## Test suite (17 integration files)
+## Test suite (19 integration files)
 
 | File | What it exercises |
 |---|---|
 | `cli_exit_codes.rs` | Stable exit codes (0–7, 130, 143) for various CLI invocations |
+| `version.rs` | `eggress version` stable line, `eggress --version`, `pproxy --version` |
+| `release_contract.rs` | Installer/workflow/docs drift checks (targets, archives, checksums, no-sudo, default-features builds) |
 | `cli_tests.rs` | General CLI flag parsing and behavior |
 | `integration.rs` | End-to-end proxy startup and forwarding |
 | `reply_order.rs` | HTTP reply ordering guarantees |
@@ -204,4 +210,7 @@ Opt-in suites are gated by env vars (`EGRESS_REQUIRE_EXTERNAL_INTEROP=1`,
 ## Review entry points
 
 - `cargo test -p eggress-cli --test cli_exit_codes`
+- `cargo test -p eggress-cli --test version`
+- `cargo test -p eggress-cli --test release_contract`
+- `bash packaging/tests/test-install.sh`
 - `cargo test -p eggress-cli --test pproxy_translation_golden`

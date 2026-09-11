@@ -49,6 +49,8 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum SubCommand {
+    /// Print the installed eggress version (`eggress X.Y.Z`) and exit.
+    Version,
     Route(RouteExplain),
     Upstream(UpstreamCommand),
     #[cfg(feature = "pproxy-compat")]
@@ -1108,6 +1110,13 @@ async fn main() -> ExitCode {
 
 async fn run() -> i32 {
     let args = Cli::parse();
+
+    if matches!(args.command, Some(SubCommand::Version)) {
+        // Single version source: the built package version. No runtime
+        // initialization, config loading, or network access.
+        println!("eggress {}", env!("CARGO_PKG_VERSION"));
+        return EXIT_SUCCESS;
+    }
 
     if let Some(SubCommand::Route(explain_args)) = args.command {
         handle_route_explain(&explain_args);
