@@ -1,20 +1,28 @@
 # Operations
 
-## Version
+## Version and update
 
 ```bash
 eggress version
+eggress update
 pproxy --version
 ```
 
 `eggress version` prints `eggress X.Y.Z` deterministically (no network, no
 config loading) and exits 0; `eggress --version` remains functional. The
 standalone `pproxy` binary keeps its flat pproxy-style surface with
-`pproxy --version` (`eggress-pproxy-compat X.Y.Z`). Both binaries ship in one
-version-aligned release archive; see [INSTALLATION.md](INSTALLATION.md) for
-install, checksum, and update provenance (installer re-runs replace both
-binaries together, never escalate privilege, never run background update
-checks, and leave the current install untouched when verification fails).
+`pproxy --version` (`eggress-pproxy-compat X.Y.Z`) and gains no
+Eggress-native subcommands. Both binaries ship in one version-aligned
+release archive; see [INSTALLATION.md](INSTALLATION.md) for install,
+checksum, and update provenance.
+
+`eggress update` self-updates a standalone installation to the latest stable
+GitHub Release and exits 0. It verifies the archive SHA-256 and both staged
+executable versions before replacing `eggress` and its sibling `pproxy` as
+one unit; verification or replacement failures leave the current install
+untouched. It never escalates privilege, runs no background update checks,
+does not touch Python environments (`pip` owns those), and has no
+Cargo/source fallback. Installer re-runs remain a supported equivalent.
 
 ## CLI reference
 
@@ -22,18 +30,28 @@ Native `eggress` subcommands (see `eggress --help`):
 
 ```text
 eggress version
-eggress route <target> [-c config] [--listener] [--protocol] [--json] [--admin URL]
-eggress upstream test [-i id] [-t HOST:PORT] [-c config] [--timeout 5] [--mode proxy] [--json]
+eggress update
+eggress route <target> [--listener] [--protocol http|socks4|socks5] [--json] [--admin URL]
+eggress upstream test [-i id] [-t HOST:PORT] [--timeout 5] [--mode proxy|tcp] [--json]
 eggress pproxy translate -- <pproxy args> [--annotate]
 eggress pproxy check -- <pproxy args> [--json]
 eggress pproxy run -- <pproxy args>
 eggress system-proxy inspect [--json]
 ```
 
-`--config` is incompatible with `-l`/`-r`. The standalone `pproxy`
-compatibility binary stays flat (`pproxy -l ... -r ...`, `pproxy --version`,
-`pproxy --help`); nested `eggress pproxy translate/check/run` tooling lives
-only under native `eggress`, never as `pproxy translate`.
+`--config` is a single global option (usable before or after the
+subcommand) and is incompatible with `-l`/`-r` for native startup. The
+standalone `pproxy` compatibility binary stays flat (`pproxy -l ... -r ...`,
+`pproxy --version`, `pproxy --help`); nested
+`eggress pproxy translate/check/run` tooling lives only under native
+`eggress`, never as `pproxy translate`.
+
+Exit codes follow one shared mapping (`eggress-pproxy-compat::exit_codes`):
+0 success, 1 runtime failure, 2 CLI parse error, 3 config validation,
+4 listener bind failure, 5 unsupported feature, 6 required platform facility
+unavailable (e.g. Linux-only `--daemon` off Linux, updater on an unsupported
+target), 7 external dependency unavailable (e.g. updater network/tool
+failure), 130 SIGINT, 143 SIGTERM.
 
 ## Running the Service
 

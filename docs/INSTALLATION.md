@@ -183,22 +183,52 @@ See `crates/eggress-cli/README.md` for the full feature list.
 
 ## Updating
 
-There is no background update check and no `eggress update` self-update
-command in this release. Update by re-running the installer (latest or
-pinned); it replaces `eggress` and `pproxy` together after re-verifying
-checksums and staged versions:
+Standalone binary installs self-update from the same verified release
+assets the installer uses:
+
+```bash
+eggress update
+```
+
+Behavior:
+
+- Discovers only the latest stable GitHub Release (never a prerelease or
+  floating branch build); if the installed version is already current it
+  reports `eggress X.Y.Z is already the latest stable version` and changes
+  nothing.
+- Verifies the archive SHA-256, extracts to a temporary directory, executes
+  both staged executables, and requires both staged versions to equal the
+  release tag exactly and agree with one another — before replacing
+  anything. A checksum, extraction, or candidate-version failure leaves the
+  current installation untouched with no fallback to another source.
+- Replaces `eggress` and the sibling `pproxy` next to it as one release
+  unit (with backups and rollback on failure). If no matching sibling
+  `pproxy` exists it fails with a repair message instead of replacing only
+  `eggress`.
+- Never invokes `sudo`, never mutates shell/PATH state, performs no
+  background update checks, and never falls back to Cargo/source builds.
+  Unwritable destinations and unsupported prebuilt targets fail before
+  mutation with an actionable message.
+- Does not touch a Python environment. There is no background update check.
+
+Re-running the installer (latest or pinned) remains a supported equivalent;
+it replaces `eggress` and `pproxy` together after re-verifying checksums
+and staged versions:
 
 ```bash
 curl -fsSL https://github.com/eggstack/eggress/releases/latest/download/install.sh | bash
 ```
 
-Python installs are separate and unaffected by the binary installer:
+Python installs are separate and unaffected by the binary installer or
+`eggress update`:
 
 ```bash
 python -m pip install --upgrade eggress
 ```
 
-Cargo-managed installs stay Cargo-managed if preferred:
+Cargo-managed installs stay Cargo-managed if preferred (`eggress update`
+installs canonical GitHub Release binaries and therefore moves a
+Cargo-installed pair to release-binary provenance):
 
 ```bash
 cargo install eggress-cli --locked --force
@@ -249,5 +279,8 @@ glibc the build runner happens to provide.
 - Need for optional features (`ssh`, `quic`, legacy crypto, SSR plugins) not
   present in the default binary: use a Cargo/source build with the documented
   opt-in features.
-- `eggress update` not found: expected — standalone updates are installer
-  re-runs in this release; Python users update with `pip`.
+- `eggress update` reports an unsupported target: that host has no prebuilt
+  archive — use a Cargo/source build with the documented opt-in features.
+- `eggress update` reports a missing/mismatched sibling `pproxy`: reinstall
+  with the bootstrap installer to repair the version-aligned pair, then
+  update normally.

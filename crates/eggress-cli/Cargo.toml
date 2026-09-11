@@ -44,6 +44,7 @@ path = "src/pproxy_main.rs"
 required-features = ["pproxy-compat"]
 
 [dependencies]
+eggress-admin.workspace = true
 eggress-core.workspace = true
 eggress-server.workspace = true
 eggress-uri.workspace = true

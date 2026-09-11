@@ -47,8 +47,11 @@ pproxy -l http://:8080 -r socks5://proxy:1080
 ```
 
 `eggress version` prints the installed release version (`eggress X.Y.Z`);
-the `pproxy` compatibility binary retains its flat surface with
-`pproxy --version` and does not gain Eggress-native subcommands.
+`eggress update` self-updates a standalone installation from verified GitHub
+Release assets (both binaries as one unit; never touches a Python
+environment). The `pproxy` compatibility binary retains its flat surface
+with `pproxy --version` and does not gain Eggress-native subcommands
+(including `update`).
 
 ## Documentation
 

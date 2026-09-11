@@ -942,6 +942,7 @@ dependencies = [
  "assert_cmd",
  "base64",
  "clap",
+ "eggress-admin",
  "eggress-config",
  "eggress-core",
  "eggress-metrics",

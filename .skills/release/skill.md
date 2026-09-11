@@ -113,6 +113,7 @@ Verify publication:
 - Verify on PyPI: `curl -s https://pypi.org/pypi/eggress/<new_version>/json | python -m json.tool | head -5`
 - Verify the GitHub Release: `gh release view v<new_version> --json assets --jq '.assets[].name'`
 - Smoke the public installer against the new release (see `docs/INSTALLATION.md`).
+- From a binary install of the new release, `eggress update` must report already-latest and change nothing; `eggress update` is the same verified-asset path the release workflow smoke-tests (`eggress version` / `pproxy --version` agreement).
 
 Before tagging, validate lockstep versions locally:
 

@@ -263,6 +263,87 @@ fn preflight_enforces_tag_and_lockstep_versions() {
 }
 
 #[test]
+fn update_targets_match_release_matrix() {
+    // The updater's target list must stay identical to the workflow's
+    // published matrix; otherwise `eggress update` would request assets
+    // the release never builds.
+    let target_rs = read_repo("crates/eggress-cli/src/update/target.rs");
+    let workflow = read_repo(".github/workflows/release-binaries.yml");
+    for target in UNIX_TARGETS
+        .iter()
+        .map(|s| s.to_string())
+        .chain(std::iter::once(WINDOWS_TARGET.to_string()))
+    {
+        assert!(
+            target_rs.contains(&format!("\"{target}\"")),
+            "src/update/target.rs must list prebuilt target {target}"
+        );
+        assert!(
+            workflow.contains(&format!("eggress-{target}")),
+            "release workflow must publish assets for updater target {target}"
+        );
+    }
+    let installer = read_repo("packaging/install.sh");
+    for target in UNIX_TARGETS {
+        assert!(
+            installer.contains(target),
+            "install.sh and the updater must cover the same Unix targets ({target})"
+        );
+    }
+}
+
+#[test]
+fn update_documented_with_accurate_provenance() {
+    let installation = read_repo("docs/INSTALLATION.md");
+    assert!(
+        installation.contains("eggress update"),
+        "docs/INSTALLATION.md must document `eggress update`"
+    );
+    assert!(
+        installation.contains("Does not touch a Python environment"),
+        "update docs must state Python environments are untouched"
+    );
+    assert!(
+        installation.contains("Never invokes `sudo`"),
+        "update docs must state there is no privilege escalation"
+    );
+    assert!(
+        installation.contains("no background update check")
+            || installation.contains("No background update check")
+            || installation.contains("There is no background update check"),
+        "update docs must state there are no background update checks"
+    );
+    let operations = read_repo("docs/OPERATIONS.md");
+    assert!(
+        operations.contains("eggress update"),
+        "docs/OPERATIONS.md must list `eggress update`"
+    );
+}
+
+#[test]
+fn updater_never_escalates_or_falls_back() {
+    for rel in [
+        "crates/eggress-cli/src/update/mod.rs",
+        "crates/eggress-cli/src/update/install.rs",
+        "crates/eggress-cli/src/update/download.rs",
+    ] {
+        let content = read_repo(rel);
+        for line in content.lines() {
+            let code = line.split("//").next().unwrap_or("");
+            assert!(
+                !code.contains("sudo"),
+                "{rel} must never invoke sudo: {line}"
+            );
+        }
+        assert!(
+            !content.contains("cargo install eggress-cli --force")
+                && !content.contains("cargo-install-fallback"),
+            "{rel} must not fall back to Cargo/source builds"
+        );
+    }
+}
+
+#[test]
 fn install_docs_reference_real_assets() {
     let installation = read_repo("docs/INSTALLATION.md");
     assert!(

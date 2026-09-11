@@ -247,11 +247,12 @@ feature-gated transport story.
 
 One crate installing two binaries that converge on the same
 `ServiceSupervisor` and differ only in how arguments reach config. Native
-`eggress`: `-l`/`-r`/`--config`/`--rules-file`, `version`, `route`,
-`upstream test`, `pproxy translate|check|run`, `system-proxy inspect`,
-stable exit codes (0–7, 130, 143), lean
-`--no-default-features --features common` builds. Prebuilt release archives
-contain both binaries at one version (default features;
+`eggress`: `-l`/`-r`/global `--config`/`--rules-file`, `version`, `update`
+(verified GitHub Release self-update), `route`, `upstream test`,
+`pproxy translate|check|run` (run shares one facade with the standalone
+binary), `system-proxy inspect`, one shared exit-code owner (0–7, 130,
+143), lean `--no-default-features --features common` builds. Prebuilt
+release archives contain both binaries at one version (default features;
 `docs/INSTALLATION.md`). Compat `pproxy`: frozen 2.7.9 flag parser with
 fail-closed gate and Linux `--daemon` re-exec behind `pproxy-daemon`.
 

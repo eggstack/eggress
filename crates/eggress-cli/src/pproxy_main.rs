@@ -1,10 +1,16 @@
-use std::process::ExitCode;
-use std::time::Duration;
+//! Standalone `pproxy` compatibility binary: thin facade over the shared
+//! [`eggress_cli::pproxy_exec`] pipeline.
+//!
+//! This binary keeps its exact pproxy-style `--version`/`--help` surface
+//! and gains no Eggress-native subcommands. Business decisions (parse,
+//! gate, translate, compile, test, supervise) are owned by the facade so
+//! this entry point cannot diverge from `eggress pproxy run`; only
+//! presentation (the `pproxy: ` diagnostic prefix, the startup banner)
+//! lives here.
 
-use eggress_cli::{
-    EXIT_CLI_PARSE_ERROR, EXIT_CONFIG_VALIDATION, EXIT_RUNTIME_FAILURE, EXIT_SUCCESS,
-    EXIT_UNSUPPORTED_FEATURE,
-};
+use std::process::ExitCode;
+
+use eggress_cli::pproxy_exec::{self, PreparedAction};
 
 const VERSION: &str = concat!("eggress-pproxy-compat ", env!("CARGO_PKG_VERSION"));
 
@@ -54,6 +60,9 @@ NOTE:
     'eggress pproxy check -- <args>' to see compatibility details.
 ";
 
+/// Diagnostic prefix applied by the shared facade to entry-point messages.
+const DIAG_PREFIX: &str = "pproxy: ";
+
 fn print_version() {
     println!("{VERSION}");
 }
@@ -68,170 +77,44 @@ fn main() -> ExitCode {
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
 
-    let pproxy_args = if eggress_pproxy_compat::PproxyArgs::has_args(&args) {
-        match eggress_pproxy_compat::PproxyArgs::parse(&args) {
-            Ok(a) => a,
-            Err(e) => {
-                eprintln!("pproxy: error: {e}");
-                std::process::exit(EXIT_CLI_PARSE_ERROR);
+    match pproxy_exec::prepare(&args) {
+        Ok(PreparedAction::PrintVersion) => {
+            print_version();
+            return ExitCode::SUCCESS;
+        }
+        Ok(PreparedAction::PrintHelp) => {
+            print_help();
+            return ExitCode::SUCCESS;
+        }
+        Ok(PreparedAction::Run(gated)) => {
+            if gated.test_target.is_none() {
+                print_startup_banner(&gated.args);
             }
-        }
-    } else {
-        eggress_pproxy_compat::PproxyArgs::default_args()
-    };
 
-    // Handle actions through the same parsed compatibility IR used by the
-    // nested and Python entry points. This preserves parser ordering for
-    // malformed values that precede an action flag.
-    if pproxy_args.version {
-        print_version();
-        return ExitCode::SUCCESS;
-    }
-    if pproxy_args.help {
-        print_help();
-        return ExitCode::SUCCESS;
-    }
-
-    if let Some(flag) = pproxy_args.strict_parser_violations().first() {
-        eprintln!("pproxy: error: unknown option or positional argument '{flag}'");
-        std::process::exit(EXIT_CLI_PARSE_ERROR);
-    }
-
-    if let Err(e) = pproxy_args.validate_strict_values() {
-        eprintln!("pproxy: error: {e}");
-        std::process::exit(EXIT_CLI_PARSE_ERROR);
-    }
-
-    let output = match eggress_pproxy_compat::translate_pproxy_args(&pproxy_args) {
-        Ok(o) => o,
-        Err(e) => {
-            eprintln!("pproxy: error: {e}");
-            std::process::exit(EXIT_CONFIG_VALIDATION);
-        }
-    };
-
-    // Fatal gating: unknown flags and unsupported features stop startup.
-    // The shared gate is the single source of truth for the fail-closed
-    // policy applied by every compatibility execution entry point.
-    let gate = eggress_pproxy_compat::evaluate_execution_gate(&pproxy_args, &output);
-    if !gate.allows_start() {
-        for blocker in &gate.blockers {
-            match blocker {
-                eggress_pproxy_compat::BlockReason::UnknownFlag(flag) => {
-                    eprintln!("pproxy: error: unknown option '{flag}'");
+            let prepared = match pproxy_exec::compile(*gated) {
+                Ok(prepared) => prepared,
+                Err(failure) => {
+                    eprintln!("{DIAG_PREFIX}error: {}", failure.message);
+                    std::process::exit(failure.code);
                 }
-                eggress_pproxy_compat::BlockReason::Unsupported(u) => {
-                    eprintln!("pproxy: error: {u}");
-                }
-            }
+            };
+
+            // `-d`/`-v` log policy is resolved here before runtime
+            // construction via `default_log_level()` with explicit
+            // `RUST_LOG` precedence. The generic supervisor consumes
+            // ordinary tracing only.
+            init_logging(&prepared.args);
+
+            let code = pproxy_exec::execute(prepared, DIAG_PREFIX);
+            std::process::exit(code);
         }
-        eprintln!();
-        if gate
-            .blockers
-            .iter()
-            .any(|b| matches!(b, eggress_pproxy_compat::BlockReason::UnknownFlag(_)))
-        {
-            eprintln!("Run 'eggress pproxy check -- <args>' for supported options.");
-            std::process::exit(EXIT_CLI_PARSE_ERROR);
-        }
-        eprintln!("These features are not supported by eggress and prevent startup.");
-        eprintln!("Run 'eggress pproxy check -- <args>' for detailed compatibility report.");
-        std::process::exit(EXIT_UNSUPPORTED_FEATURE);
-    }
-
-    for w in &gate.warnings {
-        eprintln!("pproxy: note: {w}");
-    }
-
-    let test_target = pproxy_args.test_target();
-
-    if test_target.is_none() {
-        print_startup_banner(&pproxy_args, &output);
-    }
-
-    // Parse translated TOML into a validated RuntimeConfig in-memory.
-    // No temporary file is created; the config lives entirely in process memory.
-    let (rt_config, _warnings) =
-        match eggress_config::validate_and_compile_toml_with_warnings(&output.toml) {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("pproxy: config error: {e}");
-                std::process::exit(EXIT_CONFIG_VALIDATION);
-            }
-        };
-
-    if let Some(target) = test_target {
-        let timeout = Duration::from_secs(10);
-        let target = match eggress_cli::parse_pproxy_test_target(target) {
-            Ok(target) => target.to_string(),
-            Err(error) => {
-                eprintln!("pproxy: error: {error}");
-                std::process::exit(EXIT_CLI_PARSE_ERROR);
-            }
-        };
-        if rt_config.upstreams.is_empty() {
-            std::process::exit(EXIT_SUCCESS);
-        }
-        let exit_code = eggress_cli::run_upstream_test(&rt_config, Some(&target), timeout, false);
-        std::process::exit(exit_code);
-    }
-
-    #[cfg(feature = "pproxy-daemon")]
-    if let Err(error) = eggress_cli::maybe_daemonize(pproxy_args.daemon) {
-        eprintln!("pproxy: error: {error}");
-        std::process::exit(EXIT_UNSUPPORTED_FEATURE);
-    }
-
-    // `-d`/`-v` log policy is resolved here before runtime construction
-    // via `default_log_level()` with explicit `RUST_LOG` precedence. The
-    // generic supervisor consumes ordinary tracing only.
-    init_logging(&pproxy_args);
-
-    tracing::info!("starting eggress with pproxy-compatible config");
-    // Deterministic verbosity markers for process-level regression tests.
-    // `debug` is visible at `-d`/`-v`/`-vv` and above; `trace` only at `-vvv`
-    // and above. Explicit `RUST_LOG` remains authoritative via `init_logging`.
-    tracing::debug!("compatibility debug verbosity active");
-    tracing::trace!("compatibility trace verbosity active");
-
-    #[cfg(feature = "ssh")]
-    if !eggress_runtime::ssh_insecure_acknowledged() {
-        tracing::warn!(
-            "compatibility mode would disable SSH host-key verification; \
-             keeping known_hosts verification enabled. To explicitly \
-             accept unverified SSH host keys (MITM risk), set \
-             EGRESS_SSH_INSECURE_HOST_KEYS=1"
-        );
-    }
-
-    // Start from the in-memory RuntimeConfig. No config file path is provided,
-    // so SIGHUP reload is disabled (there is no stable user-authored config
-    // file to reload from in compatibility mode).
-    //
-    // Ownership: the facade interprets pproxy args (auth timeout default,
-    // `--sys` opt-in, SSH env opt-in) and hands runtime only typed hooks.
-    // `AuthReuseCache` stays bounded/process-local/monotonic as documented in
-    // `eggress-server::accept`.
-    let hooks = eggress_runtime::CompatibilityRuntimeHooks::from_facade(
-        pproxy_args.effective_auth_timeout(),
-        pproxy_args.system_proxy,
-        eggress_runtime::ssh_insecure_acknowledged(),
-    );
-    match eggress_runtime::ServiceSupervisor::start_from_config_with_compatibility(
-        rt_config, None, hooks,
-    ) {
-        Ok(mut supervisor) => {
-            if let Err(e) = supervisor.run() {
-                eprintln!("pproxy: runtime error: {e}");
-                std::process::exit(EXIT_RUNTIME_FAILURE);
-            }
-        }
-        Err(e) => {
-            eprintln!("pproxy: runtime error: {e}");
-            std::process::exit(EXIT_RUNTIME_FAILURE);
+        Err(failure) => {
+            eprintln!("{DIAG_PREFIX}error: {}", failure.message);
+            std::process::exit(failure.code);
         }
     }
 
+    #[allow(unreachable_code)]
     ExitCode::SUCCESS
 }
 
@@ -247,61 +130,13 @@ fn init_logging(pproxy_args: &eggress_pproxy_compat::PproxyArgs) {
         .init();
 }
 
-fn print_startup_banner(
-    pproxy_args: &eggress_pproxy_compat::PproxyArgs,
-    _output: &eggress_pproxy_compat::TranslationOutput,
-) {
+fn print_startup_banner(pproxy_args: &eggress_pproxy_compat::PproxyArgs) {
     eprintln!("{VERSION}");
-
-    for local in &pproxy_args.local {
-        eprintln!("  listen:   {}", redact_uri(local));
+    for line in pproxy_exec::banner_lines(pproxy_args) {
+        eprintln!("{line}");
     }
-    for remote in &pproxy_args.remotes {
-        eprintln!("  remote:   {}", redact_uri(remote));
-    }
-
-    let has_udp = pproxy_args
-        .known_unsupported
-        .iter()
-        .any(|f| f.starts_with("udp-listen="));
-    if has_udp {
-        for flag in &pproxy_args.known_unsupported {
-            if let Some(addr) = flag.strip_prefix("udp-listen=") {
-                eprintln!("  udp:      {addr}");
-            }
-        }
-    }
-
-    let has_ssl = pproxy_args
-        .known_unsupported
-        .iter()
-        .any(|f| f.starts_with("ssl="));
-    if has_ssl {
-        eprintln!("  tls:      enabled");
-    }
-
-    let has_pac = pproxy_args
-        .known_unsupported
-        .iter()
-        .any(|f| f.starts_with("pac="));
-    if has_pac {
-        eprintln!("  pac:      enabled");
-    }
-
-    if pproxy_args.reuse_port {
-        eprintln!("  reuse:    SO_REUSEPORT");
-    }
-
     eprintln!();
     eprintln!("pproxy started, waiting for connections...");
-}
-
-fn redact_uri(uri: &str) -> String {
-    eggress_uri::parse_proxy_chain(uri)
-        .map(|chain| eggress_uri::RedactedUri::new(&chain).to_string())
-        // Listener URIs may use an empty host as a bind address, while
-        // outbound proxy hops reject empty hosts during parsing.
-        .unwrap_or_else(|_| eggress_uri::redact_proxy_uri(uri))
 }
 
 #[cfg(test)]
@@ -324,9 +159,26 @@ mod tests {
         assert!(HELP_TEXT.contains("--daemon"));
     }
 
+    /// Help/parser drift guard: every option the frozen parser recognizes
+    /// must appear in the static help text, so the two cannot silently
+    /// diverge. Help text stays custom (exact pproxy compatibility), but
+    /// its inventory is pinned to the parser metadata.
+    #[test]
+    fn help_covers_every_recognized_option() {
+        for option in eggress_pproxy_compat::PproxyArgs::recognized_option_names() {
+            assert!(
+                HELP_TEXT.contains(option),
+                "help text drifted from the parser: missing option '{option}'"
+            );
+        }
+    }
+
     #[test]
     fn test_version_string() {
         assert!(VERSION.contains("eggress-pproxy-compat"));
+        // The binary version line and the shared facade version string are
+        // the same compatibility surface.
+        assert_eq!(VERSION, eggress_pproxy_compat::PproxyArgs::version_string());
     }
 
     #[test]
@@ -376,5 +228,27 @@ mod tests {
             "translated TOML should be valid: {:?}",
             result.err()
         );
+    }
+
+    #[test]
+    fn shared_facade_prepares_equivalent_config_for_both_entry_points() {
+        // Both binaries delegate to `pproxy_exec::prepare`; the prepared
+        // runtime configuration and failure classification must be
+        // identical regardless of entry point.
+        let args = vec![
+            "-l".to_string(),
+            "http://127.0.0.1:0".to_string(),
+            "-r".to_string(),
+            "http://127.0.0.1:8080".to_string(),
+        ];
+        let action = pproxy_exec::prepare(&args).expect("supported args must prepare");
+        match action {
+            PreparedAction::Run(gated) => {
+                assert!(gated.warnings.is_empty());
+                let prepared = pproxy_exec::compile(*gated).expect("translated TOML must compile");
+                assert_eq!(prepared.rt_config.listeners.len(), 1);
+            }
+            _ => panic!("expected a prepared run"),
+        }
     }
 }

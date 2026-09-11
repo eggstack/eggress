@@ -88,6 +88,69 @@ impl PproxyArgs {
             .find_map(|flag| flag.strip_prefix("test="))
     }
 
+    /// Authoritative inventory of every option the frozen 2.7.9 parser
+    /// recognizes, adjacent to the parser itself. The standalone help text
+    /// and the help/parser drift test consume this metadata so recognized
+    /// options cannot silently drift away from documented ones.
+    pub fn recognized_option_names() -> &'static [&'static str] {
+        &[
+            "-l",
+            "-r",
+            "-ul",
+            "-ur",
+            "-b",
+            "-a",
+            "-s",
+            "-d",
+            "-v",
+            "--ssl",
+            "--pac",
+            "--test",
+            "--sys",
+            "--reuse",
+            "--auth",
+            "--get",
+            "--daemon",
+            "--version",
+            "-h",
+            "--help",
+        ]
+    }
+
+    /// Structured presentation state for the startup banner and diagnostics.
+    ///
+    /// The `known_unsupported` bucket is a legacy parser-bucket name: it
+    /// carries every known pproxy flag that requires a translation decision,
+    /// including entries with full native support (`ssl=`, `pac=`,
+    /// `udp-listen=`). Presentation layers must consume these typed
+    /// accessors instead of scanning the bucket strings ad hoc.
+    ///
+    /// Whether each entry blocks startup is decided separately by the
+    /// execution gate over the translation output, never by these
+    /// presentation helpers.
+    ///
+    /// UDP listener addresses from `-ul` (`udp-listen=` entries).
+    pub fn udp_listen_addrs(&self) -> Vec<&str> {
+        self.known_unsupported
+            .iter()
+            .filter_map(|flag| flag.strip_prefix("udp-listen="))
+            .collect()
+    }
+
+    /// Whether TLS was requested on listeners via `--ssl`.
+    pub fn tls_requested(&self) -> bool {
+        self.known_unsupported
+            .iter()
+            .any(|flag| flag.starts_with("ssl="))
+    }
+
+    /// Whether PAC serving was requested via `--pac`.
+    pub fn pac_requested(&self) -> bool {
+        self.known_unsupported
+            .iter()
+            .any(|flag| flag.starts_with("pac="))
+    }
+
     /// Create default pproxy args equivalent to running `pproxy` with no arguments.
     ///
     /// Real pproxy defaults to a mixed HTTP/SOCKS4/SOCKS5 listener on `:8080`

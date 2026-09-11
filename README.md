@@ -39,7 +39,9 @@ curl -fsSL https://github.com/eggstack/eggress/releases/latest/download/install.
 
 This installs both the `eggress` and `pproxy` binaries from a version-aligned GitHub Release archive (default `eggress-cli` features). Windows uses `install.ps1`; pinned versions, custom directories, checksums, and troubleshooting live in [INSTALLATION.md](https://github.com/eggstack/eggress/blob/main/docs/INSTALLATION.md).
 
-Verify with `eggress version` and `pproxy --version`.
+Verify with `eggress version` and `pproxy --version`. Standalone installs
+self-update with `eggress update` (GitHub Release binaries only; Python
+users update with `pip`).
 
 ### Cargo / source build (Rust/developer alternative)
 

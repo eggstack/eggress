@@ -1,29 +1,93 @@
 use std::time::{Duration, Instant};
 
-/// Stable process exit codes. These are part of the compatibility surface:
-/// both the `eggress` and `pproxy` binaries must agree on them.
+// Single exit-code owner: `eggress-pproxy-compat::exit_codes` defines the
+// numeric process contract. This crate re-exports it so both binaries and
+// every nested command agree on one mapping instead of maintaining
+// overlapping constant tables.
+#[cfg(feature = "pproxy-compat")]
+pub use eggress_pproxy_compat::exit_codes::exit_code_name;
+#[cfg(feature = "pproxy-compat")]
+pub use eggress_pproxy_compat::exit_codes::{
+    ProcessExit, EXIT_BIND_FAILURE, EXIT_CLI_PARSE_ERROR, EXIT_CONFIG_VALIDATION,
+    EXIT_EXTERNAL_DEPENDENCY, EXIT_PLATFORM_MISSING, EXIT_RUNTIME_FAILURE, EXIT_SIGINT,
+    EXIT_SIGTERM, EXIT_SUCCESS, EXIT_UNSUPPORTED_FEATURE,
+};
+
+// Without `pproxy-compat` there is no shared owner available, so the same
+// numeric contract is mirrored here. The values must match
+// `eggress-pproxy-compat::exit_codes` exactly; `exit_code_mirror_matches_owner`
+// (run with the feature enabled) pins that invariant.
+#[cfg(not(feature = "pproxy-compat"))]
 pub const EXIT_SUCCESS: i32 = 0;
+#[cfg(not(feature = "pproxy-compat"))]
 pub const EXIT_RUNTIME_FAILURE: i32 = 1;
+#[cfg(not(feature = "pproxy-compat"))]
 pub const EXIT_CLI_PARSE_ERROR: i32 = 2;
+#[cfg(not(feature = "pproxy-compat"))]
 pub const EXIT_CONFIG_VALIDATION: i32 = 3;
+#[cfg(not(feature = "pproxy-compat"))]
+pub const EXIT_BIND_FAILURE: i32 = 4;
+#[cfg(not(feature = "pproxy-compat"))]
 pub const EXIT_UNSUPPORTED_FEATURE: i32 = 5;
+#[cfg(not(feature = "pproxy-compat"))]
+pub const EXIT_PLATFORM_MISSING: i32 = 6;
+#[cfg(not(feature = "pproxy-compat"))]
+pub const EXIT_EXTERNAL_DEPENDENCY: i32 = 7;
+#[cfg(not(feature = "pproxy-compat"))]
 pub const EXIT_SIGINT: i32 = 130;
+#[cfg(not(feature = "pproxy-compat"))]
 pub const EXIT_SIGTERM: i32 = 143;
 
 /// Apply the optional Linux pproxy daemon transition after compatibility
 /// parsing and configuration validation. Re-exec keeps the transition safe
 /// under the workspace's `unsafe_code = "deny"` policy and leaves signal,
 /// listener, and system-proxy rollback ownership with the child process.
+/// Why a `--daemon` transition failed.
 #[cfg(feature = "pproxy-daemon")]
-pub fn maybe_daemonize(requested: bool) -> Result<(), String> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DaemonizeError {
+    /// `--daemon` was requested on a platform without daemon support.
+    /// Maps to [`EXIT_PLATFORM_MISSING`].
+    UnsupportedPlatform,
+    /// The Linux re-exec could not be started. Maps to
+    /// [`EXIT_RUNTIME_FAILURE`].
+    Spawn(String),
+}
+
+#[cfg(feature = "pproxy-daemon")]
+impl DaemonizeError {
+    /// Numeric exit code for this failure.
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            DaemonizeError::UnsupportedPlatform => EXIT_PLATFORM_MISSING,
+            DaemonizeError::Spawn(_) => EXIT_RUNTIME_FAILURE,
+        }
+    }
+}
+
+#[cfg(feature = "pproxy-daemon")]
+impl std::fmt::Display for DaemonizeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DaemonizeError::UnsupportedPlatform => {
+                f.write_str("--daemon compatibility is only available on Linux")
+            }
+            DaemonizeError::Spawn(reason) => write!(f, "{reason}"),
+        }
+    }
+}
+
+#[cfg(feature = "pproxy-daemon")]
+pub fn maybe_daemonize(requested: bool) -> Result<(), DaemonizeError> {
     const CHILD_MARKER: &str = "EGGRESS_PPROXY_DAEMON_CHILD";
     if !requested || std::env::var_os(CHILD_MARKER).is_some() {
         return Ok(());
     }
     #[cfg(target_os = "linux")]
     {
-        let executable = std::env::current_exe()
-            .map_err(|error| format!("cannot resolve executable for --daemon: {error}"))?;
+        let executable = std::env::current_exe().map_err(|error| {
+            DaemonizeError::Spawn(format!("cannot resolve executable for --daemon: {error}"))
+        })?;
         std::process::Command::new(executable)
             .args(std::env::args_os().skip(1))
             .env(CHILD_MARKER, "1")
@@ -32,17 +96,22 @@ pub fn maybe_daemonize(requested: bool) -> Result<(), String> {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
-            .map_err(|error| format!("cannot start --daemon child: {error}"))?;
+            .map_err(|error| {
+                DaemonizeError::Spawn(format!("cannot start --daemon child: {error}"))
+            })?;
         std::process::exit(0);
     }
     #[cfg(not(target_os = "linux"))]
     {
-        Err("--daemon compatibility is only available on Linux".to_string())
+        Err(DaemonizeError::UnsupportedPlatform)
     }
 }
 
-use eggress_core::chain::{ChainExecutor, HopHandler};
-use eggress_core::{BoxStream, TargetAddr, TargetHost};
+#[cfg(feature = "pproxy-compat")]
+pub mod pproxy_exec;
+
+use eggress_core::chain::ChainExecutor;
+use eggress_core::{TargetAddr, TargetHost};
 
 #[derive(serde::Serialize)]
 pub struct UpstreamTestResult {
@@ -126,7 +195,7 @@ pub fn run_upstream_test_with_mode(
             Ok(addr) => addr,
             Err(e) => {
                 eprintln!("invalid target: {e}");
-                return 2;
+                return EXIT_CLI_PARSE_ERROR;
             }
         },
         None => TargetAddr {
@@ -187,7 +256,7 @@ pub fn run_upstream_test_with_mode(
 
     if results.is_empty() {
         eprintln!("no upstreams found matching criteria");
-        return 3;
+        return EXIT_CONFIG_VALIDATION;
     }
 
     if json_output {
@@ -195,7 +264,7 @@ pub fn run_upstream_test_with_mode(
             Ok(json) => println!("{json}"),
             Err(e) => {
                 eprintln!("failed to serialize results: {e}");
-                return 1;
+                return EXIT_RUNTIME_FAILURE;
             }
         }
     } else {
@@ -205,9 +274,9 @@ pub fn run_upstream_test_with_mode(
     }
 
     if results.iter().any(|r| r.reachable) {
-        0
+        EXIT_SUCCESS
     } else {
-        1
+        EXIT_RUNTIME_FAILURE
     }
 }
 
@@ -278,118 +347,28 @@ async fn test_upstream_proxy(
     }
 }
 
-struct HttpHopHandler;
-
-impl HopHandler for HttpHopHandler {
-    fn protocol(&self) -> eggress_uri::ProtocolSpec {
-        eggress_uri::ProtocolSpec::Http
-    }
-
-    fn handshake<'a>(
-        &'a self,
-        stream: BoxStream,
-        target: &'a TargetAddr,
-        hop: &'a eggress_uri::ProxyHopSpec,
-        _hop_index: usize,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = Result<BoxStream, Box<dyn std::error::Error + Send + Sync>>,
-                > + Send
-                + 'a,
-        >,
-    > {
-        let auth = hop
-            .credentials
-            .as_ref()
-            .map(|c| (c.username.as_str(), c.password.as_str()));
-        Box::pin(async move {
-            eggress_protocol_http::http_connect(stream, target, auth, &Default::default())
-                .await
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
-        })
-    }
-}
-
-struct Socks5HopHandler;
-
-impl HopHandler for Socks5HopHandler {
-    fn protocol(&self) -> eggress_uri::ProtocolSpec {
-        eggress_uri::ProtocolSpec::Socks5
-    }
-
-    fn handshake<'a>(
-        &'a self,
-        stream: BoxStream,
-        target: &'a TargetAddr,
-        hop: &'a eggress_uri::ProxyHopSpec,
-        _hop_index: usize,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = Result<BoxStream, Box<dyn std::error::Error + Send + Sync>>,
-                > + Send
-                + 'a,
-        >,
-    > {
-        let socks_addr = target_to_socks_addr(target);
-        let auth = hop
-            .credentials
-            .as_ref()
-            .map(|c| (c.username.as_str(), c.password.as_str()));
-        Box::pin(async move {
-            eggress_protocol_socks::socks5::client::socks5_connect(stream, &socks_addr, auth)
-                .await
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
-        })
-    }
-}
-
-struct Socks4HopHandler;
-
-impl HopHandler for Socks4HopHandler {
-    fn protocol(&self) -> eggress_uri::ProtocolSpec {
-        eggress_uri::ProtocolSpec::Socks4
-    }
-
-    fn handshake<'a>(
-        &'a self,
-        stream: BoxStream,
-        target: &'a TargetAddr,
-        hop: &'a eggress_uri::ProxyHopSpec,
-        _hop_index: usize,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = Result<BoxStream, Box<dyn std::error::Error + Send + Sync>>,
-                > + Send
-                + 'a,
-        >,
-    > {
-        let user_id = hop.credentials.as_ref().map(|c| c.username.as_str());
-        Box::pin(async move {
-            eggress_protocol_socks::socks4_connect(stream, target, user_id)
-                .await
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
-        })
-    }
-}
-
+/// Build the upstream-test chain executor from the production connector
+/// registry (`eggress-server::build_chain_executor`), not a CLI-local
+/// reimplementation.
+///
+/// Diagnostic coverage therefore tracks live connection support: adding a
+/// production-supported upstream protocol never requires a separate
+/// registration in CLI test code. Both `eggress upstream test --mode proxy`
+/// and `pproxy --test` execute through this path.
 pub fn build_test_chain_executor() -> ChainExecutor {
-    let handlers: Vec<Box<dyn HopHandler>> = vec![
-        Box::new(HttpHopHandler),
-        Box::new(Socks5HopHandler),
-        Box::new(Socks4HopHandler),
-    ];
-    ChainExecutor::new(handlers)
-}
-
-fn target_to_socks_addr(target: &TargetAddr) -> eggress_protocol_socks::socks5::server::SocksAddr {
-    use eggress_protocol_socks::socks5::server::SocksAddr;
-    match &target.host {
-        TargetHost::Ip(std::net::IpAddr::V4(ip)) => SocksAddr::IPv4(ip.octets(), target.port),
-        TargetHost::Ip(std::net::IpAddr::V6(ip)) => SocksAddr::IPv6(ip.octets(), target.port),
-        TargetHost::Domain(d) => SocksAddr::Domain(d.clone(), target.port),
+    // `None` arguments are polymorphic over the feature-gated parameter
+    // types (`Option<Arc<ShadowsocksMetrics>>` vs `Option<()>`), so this
+    // call tracks the production signature without mirroring its cfg gates.
+    // The `ssh` cfg matches the workspace feature-forwarding chain
+    // (`eggress-cli/ssh` -> `eggress-runtime/ssh` -> `eggress-server/ssh`)
+    // under Cargo feature unification.
+    #[cfg(feature = "ssh")]
+    {
+        eggress_server::build_chain_executor(None, None, None)
+    }
+    #[cfg(not(feature = "ssh"))]
+    {
+        eggress_server::build_chain_executor(None, None)
     }
 }
 
@@ -438,5 +417,66 @@ pub async fn test_upstream_tcp(host: &str, port: u16, timeout: Duration) -> Upst
             failure: None,
             failed_hop: None,
         },
+    }
+}
+
+#[cfg(all(test, feature = "pproxy-compat"))]
+mod exit_code_mirror_tests {
+    /// The non-`pproxy-compat` constant mirror in this crate must stay
+    /// numerically identical to the single owner in
+    /// `eggress-pproxy-compat::exit_codes`.
+    #[test]
+    fn exit_code_mirror_matches_owner() {
+        use eggress_pproxy_compat::exit_codes as owner;
+        assert_eq!(super::EXIT_SUCCESS, owner::EXIT_SUCCESS);
+        assert_eq!(super::EXIT_RUNTIME_FAILURE, owner::EXIT_RUNTIME_FAILURE);
+        assert_eq!(super::EXIT_CLI_PARSE_ERROR, owner::EXIT_CLI_PARSE_ERROR);
+        assert_eq!(super::EXIT_CONFIG_VALIDATION, owner::EXIT_CONFIG_VALIDATION);
+        assert_eq!(super::EXIT_BIND_FAILURE, owner::EXIT_BIND_FAILURE);
+        assert_eq!(
+            super::EXIT_UNSUPPORTED_FEATURE,
+            owner::EXIT_UNSUPPORTED_FEATURE
+        );
+        assert_eq!(super::EXIT_PLATFORM_MISSING, owner::EXIT_PLATFORM_MISSING);
+        assert_eq!(
+            super::EXIT_EXTERNAL_DEPENDENCY,
+            owner::EXIT_EXTERNAL_DEPENDENCY
+        );
+        assert_eq!(super::EXIT_SIGINT, owner::EXIT_SIGINT);
+        assert_eq!(super::EXIT_SIGTERM, owner::EXIT_SIGTERM);
+    }
+}
+
+#[cfg(test)]
+mod production_registry_tests {
+    use super::*;
+
+    /// Registry parity proof: Shadowsocks AEAD upstreams are production
+    /// paths, but the old CLI-local test registry (HTTP/SOCKS4/SOCKS5 only)
+    /// reported them as "no handler". The production registry must accept
+    /// the hop and fail only on connection, never on handler lookup.
+    #[test]
+    fn test_chain_executor_covers_production_shadowsocks() {
+        let executor = build_test_chain_executor();
+        let spec = eggress_uri::parse_proxy_chain("ss://aes-128-gcm:testpass@127.0.0.1:18388")
+            .expect("shadowsocks test URI must parse");
+        let target = TargetAddr {
+            host: TargetHost::Domain("example.com".to_string()),
+            port: 443,
+        };
+        let outcome = run_async_test(move || {
+            let hops = spec.hops.clone();
+            let target = target.clone();
+            Box::pin(async move {
+                match executor.execute(&hops, &target).await {
+                    Ok(_) => "reachable".to_string(),
+                    Err(e) => e.to_string(),
+                }
+            })
+        });
+        assert!(
+            !outcome.contains("no handler"),
+            "production registry must cover Shadowsocks (got: {outcome})"
+        );
     }
 }

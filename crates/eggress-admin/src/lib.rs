@@ -1,3 +1,4 @@
+pub mod client;
 pub mod pac;
 pub mod reverse;
 pub mod routes;
