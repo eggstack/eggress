@@ -10,8 +10,8 @@
 | 3 | `EXIT_CONFIG_VALIDATION` | config_validation | Config validation error |
 | 4 | `EXIT_BIND_FAILURE` | bind_failure | Bind/listen startup failure |
 | 5 | `EXIT_UNSUPPORTED_FEATURE` | unsupported_feature | Unsupported pproxy compatibility feature |
-| 6 | `EXIT_PLATFORM_MISSING` | platform_missing | Platform capability missing |
-| 7 | `EXIT_EXTERNAL_DEPENDENCY` | external_dependency | External dependency missing (for tests/diagnostics) |
+| 6 | `EXIT_PLATFORM_MISSING` | platform_missing | Platform capability missing (e.g. updater on unsupported target) |
+| 7 | `EXIT_EXTERNAL_DEPENDENCY` | external_dependency | External dependency missing (e.g. updater discovery/download/tool failure) |
 | 130 | `EXIT_SIGINT` | interrupted_by_sigint | Interrupted by SIGINT |
 | 143 | `EXIT_SIGTERM` | terminated_by_sigterm | Terminated by SIGTERM |
 
@@ -32,6 +32,24 @@ let name = exit_code_name(5); // returns "unsupported_feature"
 The `exit_code_name()` function maps any code to its canonical name (returns `"unknown"` for unrecognized values).
 
 ## Usage in Subcommands
+
+### `eggress version`
+- Always exits 0; prints `eggress X.Y.Z` deterministically (no network, no
+  config loading). `eggress --version` remains functional.
+
+### `eggress update`
+- Exit 0: already latest (`eggress X.Y.Z is already the latest stable version`)
+  or successfully updated (`updated eggress X.Y.Z -> A.B.C`).
+- Exit 6: unsupported prebuilt target (no release archive for this host).
+- Exit 7: release discovery/download/tool failure (network, missing `curl`,
+  missing asset).
+- Exit 2: invalid release metadata (malformed `vX.Y.Z` tag).
+- Exit 1: verification, staging, or replacement failure (checksum mismatch,
+  extraction failure, staged-version mismatch, sibling mismatch, permission
+  or rollback failure). The current installation is untouched or restored.
+
+The standalone `pproxy` binary keeps its flat pproxy-style surface and gains
+no Eggress-native subcommands (including `update`).
 
 ### `eggress pproxy translate`
 - Exit 0: Translation successful, all features compatible or supported
