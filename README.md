@@ -4,6 +4,8 @@
 [![downloads](https://img.shields.io/crates/d/eggress-cli.svg)](https://crates.io/crates/eggress-cli)
 [![docs](https://img.shields.io/docsrs/eggress-cli.svg)](https://docs.rs/eggress-cli)
 [![license](https://img.shields.io/crates/l/eggress-cli.svg)](https://github.com/eggstack/eggress/blob/main/LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/eggress.svg)](https://pypi.org/project/eggress/)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/eggress?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/eggress)
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
