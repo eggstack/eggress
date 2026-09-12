@@ -15,6 +15,18 @@ import pytest
 pproxy = pytest.importorskip("pproxy", reason="requires upstream pproxy package")
 
 
+def _expected_eggress_version() -> str:
+    """Installed `eggress` distribution version (tracks release bumps)."""
+    try:
+        from importlib.metadata import version
+
+        return version("eggress")
+    except Exception:
+        import eggress
+
+        return eggress.__version__
+
+
 # ---------------------------------------------------------------------------
 # Namespace tests
 # ---------------------------------------------------------------------------
@@ -63,7 +75,7 @@ class TestPproxyNamespace:
         if not hasattr(pproxy, "__version__"):
             pytest.skip("pproxy.__version__ not available (system pproxy, not compat wheel)")
         v = pproxy.__version__
-        assert v == "1.0.4"
+        assert v == _expected_eggress_version()
 
 
 # ---------------------------------------------------------------------------

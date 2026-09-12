@@ -94,7 +94,7 @@ publish_one() {
     if [[ -z "$DRY_RUN" ]]; then
         local version
         version=$(cargo read-manifest --manifest-path "crates/${crate}/Cargo.toml" 2>/dev/null \
-            | python3 -c "import sys, json; print(json.load(sys.stdin)['version'])" 2>/dev/null || echo "1.0.4")
+            | python3 -c "import sys, json; print(json.load(sys.stdin)['version'])" 2>/dev/null || grep '^version = ' Cargo.toml | head -1 | cut -d'"' -f2)
         wait_for_index "$crate" "$version"
         # Sleep between publishes to stay under the crates.io rate limit.
         sleep "$PUBLISH_DELAY_SECONDS"

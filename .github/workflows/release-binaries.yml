@@ -108,7 +108,9 @@ jobs:
         run: |
           set -euo pipefail
           ./scripts/install-zig.sh
-          cargo install cargo-zigbuild --locked
+          # Pinned to the newest track whose MSRV fits the repo toolchain
+          # (1.85); newer tracks require rustc 1.88+ and break this step.
+          cargo install cargo-zigbuild --version 0.21.8 --locked
 
       - name: Build eggress-cli (default features, locked)
         shell: bash
@@ -178,7 +180,9 @@ jobs:
         run: |
           set -euo pipefail
           ./scripts/install-zig.sh
-          cargo install cargo-zigbuild --locked
+          # Pinned to the newest track whose MSRV fits the repo toolchain
+          # (1.85); newer tracks require rustc 1.88+ and break this step.
+          cargo install cargo-zigbuild --version 0.21.8 --locked
 
       - name: Build eggress-cli (default features, locked)
         shell: bash

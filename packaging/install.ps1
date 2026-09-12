@@ -122,7 +122,7 @@ try {
   # Never mutate PATH registry/profile state automatically; advise instead.
   $pathEntries = ($env:PATH -split ';') | ForEach-Object { $_.TrimEnd('\') }
   if ($pathEntries -notcontains $InstallDir.TrimEnd('\')) {
-    Write-Warning "$InstallDir is not in PATH. Add it to use eggress without a full path, e.g.: `$env:PATH += ';$InstallDir'`"
+    Write-Warning "$InstallDir is not in PATH. Add it to use eggress without a full path, e.g.: `$env:PATH += ';$InstallDir'"
   }
 } finally {
   Remove-Item $TempDir -Recurse -Force -ErrorAction SilentlyContinue
