@@ -193,7 +193,41 @@ pub async fn relay(client: BoxStream, server: BoxStream) -> RelayResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    struct FailingReadStream {
+        kind: io::ErrorKind,
+    }
+
+    impl AsyncRead for FailingReadStream {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            _buf: &mut tokio::io::ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            Poll::Ready(Err(io::Error::new(self.kind, "injected relay failure")))
+        }
+    }
+
+    impl AsyncWrite for FailingReadStream {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            Poll::Ready(Ok(buf.len()))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
 
     #[test]
     fn relay_error_during_drain_takes_precedence_over_close_reason() {
@@ -323,6 +357,56 @@ mod tests {
         assert_eq!(result.termination_reason, TerminationReason::ClientClosed);
 
         upstream_jh.abort();
+    }
+
+    #[tokio::test]
+    async fn test_relay_server_half_close_first() {
+        let upstream = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_addr = upstream.local_addr().unwrap();
+
+        let upstream_jh = tokio::spawn(async move {
+            let (mut stream, _) = upstream.accept().await.unwrap();
+            let mut buf = [0u8; 1024];
+            let n = stream.read(&mut buf).await.unwrap();
+            stream.write_all(&buf[..n]).await.unwrap();
+            stream.shutdown().await.unwrap();
+        });
+
+        let proxy_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_addr = proxy_listener.local_addr().unwrap();
+
+        let proxy_jh = tokio::spawn(async move {
+            let (client_stream, _) = proxy_listener.accept().await.unwrap();
+            let server_stream = tokio::net::TcpStream::connect(upstream_addr).await.unwrap();
+            relay(Box::new(client_stream), Box::new(server_stream)).await
+        });
+
+        let mut client = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
+        client.write_all(b"data").await.unwrap();
+
+        let mut buf = [0u8; 4];
+        client.read_exact(&mut buf).await.unwrap();
+        assert_eq!(&buf, b"data");
+
+        let result = tokio::time::timeout(std::time::Duration::from_secs(5), proxy_jh)
+            .await
+            .expect("server-first close should complete")
+            .unwrap();
+        assert_eq!(result.bytes_upstream, 4);
+        assert_eq!(result.bytes_downstream, 4);
+        assert_eq!(result.termination_reason, TerminationReason::ServerClosed);
+
+        upstream_jh.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_relay_io_error_maps_to_error() {
+        let (client_side, _peer) = tokio::io::duplex(1024);
+        let failing: BoxStream = Box::new(FailingReadStream {
+            kind: io::ErrorKind::ConnectionReset,
+        });
+        let result = relay(Box::new(client_side), failing).await;
+        assert_eq!(result.termination_reason, TerminationReason::Error);
     }
 
     #[tokio::test]
