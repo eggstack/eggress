@@ -1002,6 +1002,7 @@ name = "eggress-core"
 version = "1.0.6"
 dependencies = [
  "bytes",
+ "eggress-relay",
  "eggress-uri",
  "pin-project-lite",
  "rustls",

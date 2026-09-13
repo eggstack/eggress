@@ -240,6 +240,7 @@ name = "eggress-core"
 version = "1.0.6"
 dependencies = [
  "bytes",
+ "eggress-relay",
  "eggress-uri",
  "pin-project-lite",
  "rustls",
@@ -366,6 +367,13 @@ dependencies = [
  "tokio-tungstenite",
  "tracing",
  "zeroize",
+]
+
+[[package]]
+name = "eggress-relay"
+version = "1.0.6"
+dependencies = [
+ "tokio",
 ]
 
 [[package]]
