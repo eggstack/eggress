@@ -51,7 +51,8 @@ Client → TcpListener (optional TLS unwrap, Unix/transparent variants)
           Upstream: ChainExecutor — each HopHandler consumes prior stream;
                     PendingLease → ActiveLease on success
       → deferred success reply to client
-      → relay() both directions with half-close + byte counts
+      → relay() (core compatibility facade: 64 KiB buffers, one-second
+        bounded post-half-close drain) both directions with byte counts
       → SessionReport { outcome, failure category, bytes, rule/group/upstream }
   → SessionMetrics recorded exactly once
 ```
@@ -80,9 +81,19 @@ drain/cancel → admin last. Details: [runtime.md](runtime.md).
 Root dependency of nearly every crate. Defines the universal `BoxStream`
 boundary, typed destinations (`TargetAddr`/`TargetHost`), client identity,
 semaphore-bounded `TcpListener`, `DirectConnector` with DNS-rebinding
-defense, `ReplayStream`/`ProtocolDispatcher` sniffing, bidirectional `relay()`,
-`ChainExecutor`/`HopHandler` multi-hop execution, and static TCP/UDP
-capability classification.
+defense, `ReplayStream`/`ProtocolDispatcher` sniffing, the `relay()`
+compatibility facade over `eggress-relay` (legacy 64 KiB / one-second
+bounded-drain behavior), `ChainExecutor`/`HopHandler` multi-hop execution,
+and static TCP/UDP capability classification.
+
+#### Byte relay engine — `eggress-relay` → [relay.md](relay.md)
+
+Leaf crate with no eggress dependencies. Generic single-task bidirectional
+copy for any `AsyncRead + AsyncWrite + Unpin` streams, with explicit
+`RelayOptions` (bounded buffer, `HalfClosePolicy::Drain` default vs
+`DrainFor`), rich `RelayReport`/`RelayFailure` (direction, `io::Error`,
+byte counts, drain-timeout distinction), and no spawned tasks. `eggress-core`
+calls it with legacy options; external consumers use it directly.
 
 #### URI grammar — `eggress-uri` → [uri.md](uri.md)
 
@@ -306,7 +317,8 @@ summary of the discrete pieces:
   `cargo check --manifest-path fuzz/Cargo.toml --bins`.
 - **Benchmarks — `benches/` (root package `eggress-bench`, Criterion).**
   Four suites: `route_match` (decision latency), `tcp_relay` (1 KiB/64 KiB
-  throughput), `udp_relay` (codec), `http_connect_upstream` (CONNECT lifecycle).
+  end-to-end throughput through the relay engine plus a
+  `copy_bidirectional` baseline), `udp_relay` (codec), `http_connect_upstream` (CONNECT lifecycle).
 - **Scripts — `scripts/`.** Grouped helpers: strict pproxy probes
   (`strict_*_probe.py`), interop runners (`compat_shadowsocks.sh`,
   `compat_udp_pproxy.sh`), certification (`run_pproxy_certification.sh`,
@@ -416,7 +428,7 @@ product-relevant optional surface.
 
 ```
 eggress/
-├── crates/                 # 26 workspace crates (see index above)
+├── crates/                 # 27 workspace crates (see index above)
 ├── python/                 # canonical Python package (eggress/) + pproxy shim sources
 ├── python-pproxy-compat/   # opt-in distribution owning top-level `pproxy`
 ├── architecture/           # THIS directory: overview + per-component reviews
@@ -436,7 +448,7 @@ eggress/
 Pick one component, read its 2–4 sentence summary above, then open the
 linked deep dive — each follows the same shape (module map → API → control
 flow → tests → gotchas → see-also). Suggested order for a first pass:
-[core.md](core.md) → [uri.md](uri.md) → [config.md](config.md) →
+[core.md](core.md) → [relay.md](relay.md) → [uri.md](uri.md) → [config.md](config.md) →
 [routing.md](routing.md) → [server.md](server.md) → [runtime.md](runtime.md),
 then the protocol/transport of interest, then [cli.md](cli.md) /
 [embed.md](embed.md) / [python-bindings.md](python-bindings.md) /

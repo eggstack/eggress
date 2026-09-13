@@ -2,7 +2,7 @@
 
 > Part of [eggress](https://github.com/eggstack/eggress) — a Rust-native, embeddable, multi-protocol proxy framework targeting compatibility with Python `pproxy==2.7.9`.
 
-Core types, traits, and infrastructure shared across all eggress crates: relay abstractions, stream boundaries, error types, and protocol-level building blocks.
+Core types, traits, and infrastructure shared across all eggress crates: stream boundaries, error types, protocol-level building blocks, and the relay compatibility facade.
 
 ## When to use this crate
 
@@ -11,11 +11,19 @@ Use `eggress-core` directly when implementing a custom protocol handler or trans
 ## Quick example
 
 ```rust
-use eggress_core::{Relay, RelayDirection};
+use eggress_core::relay::{relay, RelayResult, TerminationReason};
 
-// Relay traits are implemented by protocol handlers
-// to shuttle bytes between client and upstream.
+// Bidirectional copy between two boxed streams with historical Eggress
+// behavior (64 KiB buffers, one-second bounded post-half-close drain).
+// Directional I/O failures collapse to `TerminationReason::Error`.
+async fn bridge(client: eggress_core::BoxStream, server: eggress_core::BoxStream) -> RelayResult {
+    relay(client, server).await
+}
 ```
+
+For raw Tokio duplex streams outside the Eggress `BoxStream` architecture —
+generic `AsyncRead + AsyncWrite + Unpin` with an explicit half-close policy
+and rich directional errors — use `eggress-relay` directly instead.
 
 ## Documentation
 

@@ -3,6 +3,17 @@
 ## When to use
 Use when implementing new proxy protocols, transport wrappers, or modifying core relay/chain behavior.
 
+## Byte relay ownership
+- `eggress-relay` owns the generic single-task bidirectional copy engine
+  (explicit `HalfClosePolicy::Drain` default vs `DrainFor`, rich
+  `RelayReport`/`RelayFailure`, no spawned tasks, no `Send`/`'static`/`BoxStream`
+  bounds). Reuse it directly for raw Tokio duplex streams.
+- `eggress-core::relay` is the compatibility facade preserving historical
+  server behavior (64 KiB buffers, one-second bounded drain, collapsed
+  `TerminationReason::Error`). `eggress-server` stays on the facade; do not
+  change the server drain policy inside an engine refactor.
+- Deep dive: `architecture/relay.md` (engine) + `architecture/core.md` (facade).
+
 ## Key conventions
 - Edition 2021, MSRV 1.85, `unsafe_code = "deny"` everywhere
 - Async runtime: Tokio. Errors: `thiserror`. CLI: `clap` derive.

@@ -186,6 +186,20 @@ support opt-in server-authenticated TLS with optional mTLS
 (`[[reverse_servers.tls]]` / `[[reverse_clients.tls]]`); `pproxy_compat` wire
 remains plaintext.
 
+### Raw stream relay
+
+```toml
+[dependencies]
+eggress-relay = "1"
+```
+
+For applications that only need to shuttle bytes between two
+already-connected Tokio duplex streams — no listeners, routing, TLS, or
+protocol handling — `eggress-relay` provides a small generic engine with an
+explicit half-close policy (`HalfClosePolicy::Drain` default) and
+directional errors. `eggress-embed` above remains the recommended way to
+embed a full proxy service.
+
 See the [Embed API reference](https://github.com/eggstack/eggress/blob/main/docs/EMBED_API.md) for full API docs, lifecycle details, feature groups, and limitations.
 
 ## Python library

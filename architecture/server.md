@@ -62,7 +62,9 @@ pub trait UdpService: Send + Sync { /* create_association, is_enabled, active_co
 5. **Dispatch** — `execute()` on `AcceptedSession`: Tunnel → `execute_tunnel`, HttpForward → `execute_http_forward`, UdpAssociate → `execute_udp_associate`, Echo → `execute_echo`.
 6. **Route open** — `open_route()` calls `routing.route()` then `DirectConnector.connect_with_options()` (direct) or `ChainExecutor.execute()` (upstream). Wrapped in `tokio::time::timeout(connect_timeout, ...)` (`execute.rs:349`). Does NOT cover HTTP body upload (`execute.rs:640-643`).
 7. **Deferred success reply** — sent only after route opens: HTTP 200, SOCKS4 granted, SOCKS5 REP=0x00, Shadowsocks/Trojan/Raw: no reply.
-8. **Relay** — `eggress_core::relay::relay()` bidirectional half-close-aware copy.
+8. **Relay** — `eggress_core::relay::relay()` (compatibility facade over
+   `eggress-relay`: 64 KiB buffers, one-second bounded post-half-close drain;
+   any directional I/O failure collapses to legacy `TerminationReason::Error`).
 9. **Failure reply** — `send_tunnel_failure()` (`reply.rs:58`) maps `SessionOpenError` to per-protocol codes.
 10. **Metrics end** — exactly one `record_session(&report)` before returning (`lib.rs:192`). Every code path reaches this block.
 
@@ -204,7 +206,8 @@ Run: `cargo test -p eggress-server`
 
 ## See also
 
-- [core.md](core.md) — relay, BoxStream, chain executor, hop handler trait
+- [core.md](core.md) — relay facade, BoxStream, chain executor, hop handler trait
+- [relay.md](relay.md) — generic relay engine behind the core facade
 - [protocols-http.md](protocols-http.md) — HTTP CONNECT/forward, hop-by-hop filtering
 - [protocols-socks.md](protocols-socks.md) — SOCKS4/5 protocol details
 - [routing.md](routing.md) — rule evaluation and upstream selection

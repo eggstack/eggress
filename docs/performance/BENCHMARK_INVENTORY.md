@@ -8,7 +8,7 @@ Phase 34 — Performance, Soak, and Regression Gates
 
 | Benchmark | File | Purpose | Duration | Gating tier |
 |-----------|------|---------|----------|-------------|
-| `tcp_relay` | `benches/tcp_relay.rs` | TCP echo relay throughput (1KB, 64KB payloads) | ~30s | Tier 0 |
+| `tcp_relay` | `benches/tcp_relay.rs` | End-to-end TCP relay throughput via the `eggress-relay` engine (1KB, 64KB payloads) + `copy_bidirectional` baseline | ~30s | Tier 0 |
 | `udp_codec` | `benches/udp_relay.rs` | SOCKS5 UDP datagram encode/decode/roundtrip | ~15s | Tier 0 |
 | `route_match` | `benches/route_match.rs` | Route rule matching latency (7 scenarios, 9 rules) | ~20s | Tier 0 |
 | `http_connect_upstream` | `benches/http_connect_upstream.rs` | HTTP CONNECT upstream open latency (no auth, basic auth, 407) | ~20s | Tier 0 |

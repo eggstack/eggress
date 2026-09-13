@@ -55,7 +55,7 @@ Check with: `cargo check --manifest-path fuzz/Cargo.toml --bins`
 | File | What it measures |
 |---|---|
 | `route_match.rs` | Route decision latency across domain/IP targets, rule counts, and match strategies |
-| `tcp_relay.rs` | TCP echo relay throughput at 1KB and 64KB payload sizes |
+| `tcp_relay.rs` | End-to-end TCP relay throughput at 1KB and 64KB payload sizes: benchmark client → proxy listener → `eggress-relay` engine → upstream echo server, plus an equivalent-topology `tokio::io::copy_bidirectional` baseline (diagnostic, not a CI gate) |
 | `udp_relay.rs` | SOCKS5 UDP codec encode/decode performance (IPv4/IPv6/domain, small/large payloads) |
 | `http_connect_upstream.rs` | HTTP CONNECT upstream open/auth/407-response lifecycle |
 
@@ -128,13 +128,14 @@ Regression injection modules prove the differential harness catches mutations.
 `pytest.ini` forces `--import-mode=importlib` so `python/eggress` source tree
 cannot shadow the installed wheel's compiled `_eggress` extension.
 
-### CI (three workflows, no more without project decision)
+### CI (four workflows, no more without project decision)
 
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `ci.yml` | push/PR to main | Ubuntu Rust smoke: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --locked`, bounded optional-compat compile check (`full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon --bins`, no `insecure-quic`), fuzz-target compilation |
 | `python-test.yml` | PR/push (path-scoped: `crates/eggress-embed/**`, `crates/eggress-python/**`, `python/**`, `tests/compat/**`, `Cargo.toml`, `Cargo.lock`) | Ubuntu Python 3.12 smoke: build wheel with maturin, install `eggress-pproxy-compat`, run pytest |
 | `publish-python.yml` | `v*` tag push or manual dispatch | Validate tag/version coherence, build 5-platform wheels + sdist, smoke test, publish to PyPI via protected `pypi` environment |
+| `release-binaries.yml` | `v*` tag push or manual dispatch against an existing tag | Preflight tag/version gate, five target `eggress`+`pproxy` archives with native smoke + SHA-256, then a `contents: write` assemble job attaching archives and installers |
 
 Policy docs: `docs/CI_STATUS.md`, `docs/TESTING.md`.
 

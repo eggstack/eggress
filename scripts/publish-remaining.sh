@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publish all 26 eggress-* crates to crates.io in dependency order.
+# Publish all 27 eggress-* crates to crates.io in dependency order.
 #
 # Prerequisites:
 #   - crates.io credentials configured (`cargo login` or $CARGO_REGISTRY_TOKEN`).
@@ -9,11 +9,13 @@
 #
 # Tier 1 publishes eggress-testkit first: several crates dev-depend on the
 # testkit (resolved at publish time), and the testkit itself has no internal
-# normal dependencies. eggress-system-proxy follows eggress-uri in tier 2
+# normal dependencies. Tier 2 holds leaf libraries with no internal deps:
+# eggress-relay (before eggress-core, which depends on it) plus eggress-uri;
+# eggress-system-proxy follows eggress-uri in tier 2
 # (its only internal dependency), ahead of the runtime/CLI/Python facades
 # that enable it optionally or depend on it directly.
 #
-# Total: 26 crates. crates.io rate-limits new publishes to roughly one per 10
+# Total: 27 crates. crates.io rate-limits new publishes to roughly one per 10
 # minutes, so expect ~4h of wall time plus index-propagation waits.
 
 set -euo pipefail
@@ -40,7 +42,7 @@ fi
 # than the crate that depends on it.
 TIERS=(
     "eggress-testkit"
-    "eggress-uri eggress-system-proxy"
+    "eggress-relay eggress-uri eggress-system-proxy"
     "eggress-core"
     "eggress-protocol-raw eggress-protocol-http eggress-protocol-socks eggress-protocol-websocket eggress-transport-tls eggress-transport-ssh eggress-transport-quic eggress-protocol-reverse eggress-routing eggress-protocol-shadowsocks"
     "eggress-protocol-trojan eggress-protocol-h3 eggress-udp"
