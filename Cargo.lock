@@ -929,6 +929,7 @@ dependencies = [
  "eggress-core",
  "eggress-protocol-http",
  "eggress-protocol-socks",
+ "eggress-relay",
  "eggress-routing",
  "ipnet",
  "regex",

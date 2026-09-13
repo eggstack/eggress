@@ -127,6 +127,7 @@ eggress-relay = { version = "=1.0.6", path = "crates/eggress-relay" }
 criterion.workspace = true
 tokio.workspace = true
 eggress-core.workspace = true
+eggress-relay.workspace = true
 eggress-routing.workspace = true
 eggress-protocol-socks.workspace = true
 eggress-protocol-http.workspace = true
