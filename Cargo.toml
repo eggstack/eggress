@@ -34,6 +34,7 @@ members = [
     "crates/eggress-protocol-h3",
     "crates/eggress-transport-quic",
     "crates/eggress-system-proxy",
+    "crates/eggress-relay",
 ]
 
 [workspace.package]
@@ -120,6 +121,7 @@ eggress-protocol-reverse = { version = "=1.0.6", path = "crates/eggress-protocol
 eggress-protocol-h3 = { version = "=1.0.6", path = "crates/eggress-protocol-h3", default-features = false }
 eggress-transport-quic = { version = "=1.0.6", path = "crates/eggress-transport-quic", default-features = false }
 eggress-system-proxy = { version = "=1.0.6", path = "crates/eggress-system-proxy" }
+eggress-relay = { version = "=1.0.6", path = "crates/eggress-relay" }
 
 [dependencies]
 criterion.workspace = true

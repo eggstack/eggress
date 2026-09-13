@@ -1238,6 +1238,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "eggress-relay"
+version = "1.0.6"
+dependencies = [
+ "tokio",
+]
+
+[[package]]
 name = "eggress-routing"
 version = "1.0.6"
 dependencies = [

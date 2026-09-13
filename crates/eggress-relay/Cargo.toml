@@ -1,0 +1,17 @@
+[package]
+name = "eggress-relay"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Generic async bidirectional stream relay with explicit half-close policy"
+keywords = ["proxy", "relay", "network"]
+categories = ["network-programming"]
+readme = "README.md"
+
+[dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true
