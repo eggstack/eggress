@@ -101,6 +101,13 @@ verified `SshSessionCache::new()` policy, while `from_pproxy_uri()` uses
 `new_compatibility()` only when both `ssh` and `pproxy-compat` are enabled.
 Direct mode does not allocate SSH state.
 
+The embed SSH regression provisions a temporary local OpenSSH daemon and
+exercises byte traversal, fail-closed redacted authentication failure, and
+native untrusted-host-key rejection. CI installs `openssh-server` and sets
+`EGRESS_REQUIRE_OPENSSH_TESTS=1`; with that variable set, missing tools and
+all fixture setup/readiness failures are fatal. Optional local runs may skip
+only when `sshd` or `ssh-keygen` is genuinely unavailable.
+
 ## How it works
 
 ### Async path (`start()`)
@@ -245,6 +252,9 @@ Inline tests (`src/lib.rs`):
   Python does not expose UDP associations; Rust is the supported surface.
 - No temp file exists; `EggressHandle._config_path` is always `None`.
   In-memory services never pretend to have a config file (SIGHUP disabled).
+- The published `1.0.6` release predates the corrected SSH outbound facade;
+  downstream fallback removal requires a newer Eggress release containing
+  this fix.
 
 ## See also
 

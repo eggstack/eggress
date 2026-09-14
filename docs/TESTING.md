@@ -50,6 +50,20 @@ cargo check -p eggress-embed --locked --no-default-features --features pproxy-co
 cargo check -p eggress-embed --locked --no-default-features --features ssh,pproxy-compat
 ```
 
+For the runtime contract behind those feature checks, CI installs the Ubuntu
+`openssh-server` package and runs the embed facade against a temporary local
+daemon. Reproduce the required gate locally with:
+
+```bash
+EGRESS_REQUIRE_OPENSSH_TESTS=1 \
+  cargo test -p eggress-embed --locked --no-default-features \
+  --features ssh,pproxy-compat --test ssh -- --nocapture
+```
+
+The fixture can skip only for genuinely missing OpenSSH tools when the
+required-mode variable is unset. Once tools are available, key generation,
+configuration, daemon startup, and readiness failures fail the test.
+
 ## Python binding and compatibility package
 
 For Python-facing changes:
@@ -165,8 +179,8 @@ cargo test -p eggress-runtime --test multihop_tcp
 cargo test -p eggress-runtime --test upstream_protocols
 cargo test -p eggress-embed --test proxy_traffic
 cargo test -p eggress-embed --test error_redaction
-cargo test -p eggress-transport-ssh --test openssh -- --ignored  # requires openssh
-cargo test -p eggress-embed --all-features --test ssh -- --nocapture  # requires sshd/ssh-keygen
+cargo test -p eggress-transport-ssh --locked --test openssh -- --nocapture  # requires openssh
+EGRESS_REQUIRE_OPENSSH_TESTS=1 cargo test -p eggress-embed --locked --no-default-features --features ssh,pproxy-compat --test ssh -- --nocapture  # requires openssh-server
 ```
 
 ## Test selection rule

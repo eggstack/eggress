@@ -152,6 +152,11 @@ Contract:
   host-key policy; enabling `pproxy-compat` never weakens native TOML SSH.
 - The connector owns the reusable SSH session cache for its lifetime, so
   callers do not construct `ChainExecutor` or SSH transport state themselves.
+- The SSH facade contract is covered by a required-mode local OpenSSH
+  regression: byte traversal, redacted fail-closed authentication failure,
+  and native untrusted-host-key rejection. CI provisions `openssh-server`;
+  local runs can use `EGRESS_REQUIRE_OPENSSH_TESTS=1` to make fixture setup
+  and readiness failures fatal.
 - The connector executes the chain in-process; it does not start a local
   listener, subprocess, or compatibility daemon.
 - Protocol availability remains feature-gated (`ssh`, `quic`, and similar
@@ -344,6 +349,10 @@ eggress-embed = { path = "crates/eggress-embed", default-features = false, featu
 
 The `from_pproxy_uri` method requires the `pproxy-compat` feature. Pproxy-style
 SSH through that constructor requires both `ssh` and `pproxy-compat`.
+
+The published `1.0.6` release predates the corrected SSH outbound facade.
+Downstream applications should not remove an SSH fallback until a newer
+Eggress release containing this correction is published.
 
 ## Python-binding readiness
 

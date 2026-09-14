@@ -52,3 +52,16 @@ redaction/reconnect behavior, and remote TCP forwarding:
 ```bash
 cargo test -p eggress-transport-ssh --test openssh -- --nocapture
 ```
+
+The embed facade has an additional required-mode regression for the
+listener-free `OutboundConnector` ownership boundary:
+
+```bash
+EGRESS_REQUIRE_OPENSSH_TESTS=1 cargo test -p eggress-embed --locked \
+  --no-default-features --features ssh,pproxy-compat \
+  --test ssh -- --nocapture
+```
+
+Optional local runs may skip only when `sshd` or `ssh-keygen` is unavailable;
+once the tools are found, fixture setup and readiness failures are fatal. CI
+installs `openssh-server` before this gate.

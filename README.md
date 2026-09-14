@@ -66,6 +66,13 @@ pproxy-style SSH requires both features. The connector owns SSH session state
 internally and keeps native known-host verification separate from the explicit
 pproxy compatibility policy.
 
+The embed SSH regression uses a temporary local OpenSSH server. Run it with
+`EGRESS_REQUIRE_OPENSSH_TESTS=1` when validating an SSH-enabled build; CI
+installs `openssh-server` and treats fixture setup failures as test failures.
+The published `1.0.6` release predates this facade correction, so downstreams
+must keep any SSH fallback until a newer Eggress release containing the fix is
+available.
+
 ### Python package
 
 ```bash

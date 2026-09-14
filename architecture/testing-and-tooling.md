@@ -132,7 +132,7 @@ cannot shadow the installed wheel's compiled `_eggress` extension.
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `ci.yml` | push/PR to main | Ubuntu Rust smoke: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --locked`, bounded optional-compat compile check (`full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon --bins`, no `insecure-quic`), no-default embed `ssh`, `pproxy-compat`, and combined compile checks, fuzz-target compilation |
+| `ci.yml` | push/PR to main | Ubuntu Rust smoke: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --locked`, bounded optional-compat compile check (`full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon --bins`, no `insecure-quic`), no-default embed `ssh`, `pproxy-compat`, and combined compile checks, required local OpenSSH embed runtime regression, fuzz-target compilation |
 | `python-test.yml` | PR/push (path-scoped: `crates/eggress-embed/**`, `crates/eggress-python/**`, `python/**`, `tests/compat/**`, `Cargo.toml`, `Cargo.lock`) | Ubuntu Python 3.12 smoke: build wheel with maturin, install `eggress-pproxy-compat`, run pytest |
 | `publish-python.yml` | `v*` tag push or manual dispatch | Validate tag/version coherence, build 5-platform wheels + sdist, smoke test, publish to PyPI via protected `pypi` environment |
 | `release-binaries.yml` | `v*` tag push or manual dispatch against an existing tag | Preflight tag/version gate, five target `eggress`+`pproxy` archives with native smoke + SHA-256, then a `contents: write` assemble job attaching archives and installers |
@@ -163,6 +163,11 @@ cargo test --workspace --locked
 cargo check -p eggress-cli --locked --no-default-features \
   --features full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon \
   --bins
+
+# Required embed SSH runtime regression (Ubuntu CI installs openssh-server)
+EGRESS_REQUIRE_OPENSSH_TESTS=1 cargo test -p eggress-embed --locked \
+  --no-default-features --features ssh,pproxy-compat \
+  --test ssh -- --nocapture
 
 # Python tests
 python3 -m venv .venv

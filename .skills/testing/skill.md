@@ -129,8 +129,14 @@ through `OutboundConnector`, invalid credentials remain fail-closed and
 redacted, and native TOML rejects an untrusted host key:
 
 ```bash
-cargo test -p eggress-embed --all-features --test ssh -- --nocapture
+EGRESS_REQUIRE_OPENSSH_TESTS=1 cargo test -p eggress-embed --locked \
+  --no-default-features --features ssh,pproxy-compat \
+  --test ssh -- --nocapture
 ```
+
+CI installs `openssh-server` before this gate. Without the required-mode
+environment variable, a machine genuinely lacking `sshd` or `ssh-keygen` may
+skip the fixture; any later setup or readiness failure remains fatal.
 
 ### UDP-specific tests
 - `crates/eggress-udp/tests/socks5_upstream.rs` — upstream relay scenarios

@@ -46,5 +46,16 @@ jobs:
           --features pproxy-compat &&
           cargo check -p eggress-embed --locked --no-default-features
           --features ssh,pproxy-compat
+      - name: Install OpenSSH test server
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends openssh-server
+          sudo mkdir -p /run/sshd
+      - name: Run embed SSH runtime regression
+        env:
+          EGRESS_REQUIRE_OPENSSH_TESTS: "1"
+        run: >-
+          cargo test -p eggress-embed --locked --no-default-features
+          --features ssh,pproxy-compat --test ssh -- --nocapture
       - name: Check fuzz targets
         run: cargo check --manifest-path fuzz/Cargo.toml --bins

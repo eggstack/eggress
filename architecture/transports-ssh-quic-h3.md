@@ -173,6 +173,19 @@ HTTP/3 CONNECT protocol layer over the QUIC transport.
 - QUIC: `cargo test -p eggress-transport-quic`
 - H3: `cargo test -p eggress-protocol-h3`
 
+The public embed boundary has a separate required runtime gate because its
+regression is ownership of the listener-free `OutboundConnector` executor:
+
+```bash
+EGRESS_REQUIRE_OPENSSH_TESTS=1 cargo test -p eggress-embed --locked \
+  --no-default-features --features ssh,pproxy-compat \
+  --test ssh -- --nocapture
+```
+
+That fixture may skip only for missing OpenSSH tools in optional local runs;
+once tools are found, setup and readiness errors fail the test. The Ubuntu CI
+job installs `openssh-server` before running the gate.
+
 ## See also
 
 - [server.md](server.md) — chain hop handler wiring

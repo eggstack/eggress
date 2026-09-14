@@ -338,7 +338,19 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
         });
     }
 
-    let (endpoint_part, path_part) = split_top_level(after_scheme, '/');
+    // A pproxy SSH private-key credential uses `user::/path/to/key@host`.
+    // The slash belongs to the credential, not to pproxy's optional path
+    // metadata, so defer endpoint/path splitting until after userinfo has
+    // been separated. Native compilation percent-encodes this path before
+    // handing it to the strict URI parser.
+    let ssh_private_key = scheme == "ssh"
+        && find_last_at_outside_brackets(after_scheme)
+            .is_some_and(|at_pos| after_scheme[..at_pos].contains("::"));
+    let (endpoint_part, path_part) = if ssh_private_key {
+        (after_scheme, None)
+    } else {
+        split_top_level(after_scheme, '/')
+    };
     let (credentials, endpoint_str) =
         if let Some(at_pos) = find_last_at_outside_brackets(endpoint_part) {
             let (user, pass) = parse_userinfo(&endpoint_part[..at_pos])?;
@@ -784,6 +796,15 @@ mod tests {
         assert_eq!(uri.password.as_deref(), Some("pass"));
         assert_eq!(uri.host, "proxy");
         assert_eq!(uri.port, 8080);
+    }
+
+    #[test]
+    fn test_ssh_private_key_path_stays_in_credentials() {
+        let uri = parse_pproxy_uri("ssh://user::/tmp/id_ed25519@proxy.example:22").unwrap();
+        assert_eq!(uri.username.as_deref(), Some("user"));
+        assert_eq!(uri.password.as_deref(), Some(":/tmp/id_ed25519"));
+        assert_eq!(uri.host, "proxy.example");
+        assert_eq!(uri.port, 22);
     }
 
     #[test]

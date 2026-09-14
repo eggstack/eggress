@@ -62,6 +62,11 @@ with:
 `eggress-embed::outbound::OutboundConnector` owns the reusable cache: native
 `from_toml()` uses verified state, and `from_pproxy_uri()` uses compatibility
 state only when both `ssh` and `pproxy-compat` are selected.
+The facade regression is exercised through a required local OpenSSH fixture:
+`EGRESS_REQUIRE_OPENSSH_TESTS=1 cargo test -p eggress-embed --locked
+--no-default-features --features ssh,pproxy-compat --test ssh -- --nocapture`.
+Only genuinely missing OpenSSH tools may produce an optional local skip; once
+the tools are present, fixture setup and readiness failures must fail the test.
 
 ## Adding a new protocol
 

@@ -18,47 +18,65 @@ struct OpenSsh {
 }
 
 impl OpenSsh {
-    async fn start() -> Option<Self> {
-        if !command_available("sshd") || !command_available("ssh-keygen") {
-            eprintln!("skipping embed SSH test: sshd/ssh-keygen unavailable");
-            return None;
+    async fn start() -> io::Result<Option<Self>> {
+        let sshd = command_path("sshd");
+        let ssh_keygen = command_path("ssh-keygen");
+        let missing_tools = [
+            ("sshd", sshd.is_none()),
+            ("ssh-keygen", ssh_keygen.is_none()),
+        ]
+        .into_iter()
+        .filter_map(|(command, missing)| missing.then_some(command))
+        .collect::<Vec<_>>();
+        if !missing_tools.is_empty() {
+            let message = format!(
+                "OpenSSH test tools unavailable: {}",
+                missing_tools.join(", ")
+            );
+            if require_openssh_tests() {
+                return Err(io::Error::new(io::ErrorKind::NotFound, message));
+            }
+            eprintln!("skipping embed SSH test: {message}");
+            return Ok(None);
         }
+        let sshd = sshd.expect("checked above");
+        let ssh_keygen = ssh_keygen.expect("checked above");
 
-        let dir = tempfile::tempdir().ok()?;
+        let dir = tempfile::tempdir()?;
         let host_key = dir.path().join("host_key");
         let private_key = dir.path().join("client_key");
         run_checked(
-            Command::new("ssh-keygen")
+            Command::new(&ssh_keygen)
                 .args(["-q", "-t", "ed25519", "-N", "", "-f"])
                 .arg(&host_key),
-        )
-        .ok()?;
+        )?;
         run_checked(
-            Command::new("ssh-keygen")
+            Command::new(&ssh_keygen)
                 .args(["-q", "-t", "ed25519", "-N", "", "-f"])
                 .arg(&private_key),
-        )
-        .ok()?;
+        )?;
 
         let authorized_keys = dir.path().join("authorized_keys");
-        std::fs::copy(private_key.with_extension("pub"), &authorized_keys).ok()?;
-        let port = ephemeral_port().await.ok()?;
-        let user = std::env::var("USER").ok().filter(|user| !user.is_empty())?;
+        std::fs::copy(private_key.with_extension("pub"), &authorized_keys)?;
+        let port = ephemeral_port().await?;
+        let user = std::env::var("USER")
+            .ok()
+            .filter(|user| !user.is_empty())
+            .ok_or_else(|| io::Error::other("USER is not set for the OpenSSH fixture"))?;
         let config = dir.path().join("sshd_config");
         let config_text = format!(
             "Port {port}\nListenAddress 127.0.0.1\nHostKey {}\nAuthorizedKeysFile {}\nPasswordAuthentication yes\nKbdInteractiveAuthentication no\nChallengeResponseAuthentication no\nUsePAM no\nPermitRootLogin yes\nPubkeyAuthentication yes\nAllowTcpForwarding yes\nAllowStreamLocalForwarding yes\nGatewayPorts no\nStrictModes no\nUseDNS no\nLogLevel QUIET\n",
             host_key.display(),
             authorized_keys.display()
         );
-        std::fs::write(&config, config_text).ok()?;
+        std::fs::write(&config, config_text)?;
 
-        let child = Command::new("sshd")
+        let child = Command::new(&sshd)
             .args(["-D", "-e", "-f"])
             .arg(&config)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .spawn()
-            .ok()?;
+            .spawn()?;
         let fixture = Self {
             _dir: dir,
             child,
@@ -66,10 +84,8 @@ impl OpenSsh {
             user,
             private_key,
         };
-        if !wait_for_port(fixture.addr).await {
-            return None;
-        }
-        Some(fixture)
+        wait_for_port(fixture.addr).await?;
+        Ok(Some(fixture))
     }
 
     fn key_uri(&self) -> String {
@@ -90,6 +106,10 @@ impl OpenSsh {
     }
 }
 
+fn require_openssh_tests() -> bool {
+    std::env::var_os("EGRESS_REQUIRE_OPENSSH_TESTS").is_some_and(|value| value == "1")
+}
+
 impl Drop for OpenSsh {
     fn drop(&mut self) {
         let _ = self.child.kill();
@@ -97,11 +117,17 @@ impl Drop for OpenSsh {
     }
 }
 
-fn command_available(command: &str) -> bool {
-    Command::new("sh")
-        .args(["-c", &format!("command -v {command} >/dev/null 2>&1")])
-        .status()
-        .is_ok_and(|status| status.success())
+fn command_path(command: &str) -> Option<PathBuf> {
+    let output = Command::new("sh")
+        .args(["-c", &format!("command -v {command}")])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let path = String::from_utf8_lossy(&output.stdout);
+    let path = path.lines().next()?.trim();
+    (!path.is_empty()).then(|| PathBuf::from(path))
 }
 
 fn run_checked(command: &mut Command) -> io::Result<()> {
@@ -120,14 +146,17 @@ async fn ephemeral_port() -> io::Result<u16> {
         .port())
 }
 
-async fn wait_for_port(addr: SocketAddr) -> bool {
+async fn wait_for_port(addr: SocketAddr) -> io::Result<()> {
     for _ in 0..100 {
         if tokio::net::TcpStream::connect(addr).await.is_ok() {
-            return true;
+            return Ok(());
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    false
+    Err(io::Error::new(
+        io::ErrorKind::TimedOut,
+        "OpenSSH fixture did not accept connections",
+    ))
 }
 
 async fn start_echo() -> (SocketAddr, tokio::task::JoinHandle<()>) {
@@ -155,7 +184,10 @@ async fn start_echo() -> (SocketAddr, tokio::task::JoinHandle<()>) {
 
 #[tokio::test]
 async fn pproxy_connector_ssh_transports_bytes() {
-    let Some(fixture) = OpenSsh::start().await else {
+    let Some(fixture) = OpenSsh::start()
+        .await
+        .expect("OpenSSH fixture setup failed")
+    else {
         return;
     };
     let (echo_addr, echo_task) = start_echo().await;
@@ -177,7 +209,10 @@ async fn pproxy_connector_ssh_transports_bytes() {
 
 #[tokio::test]
 async fn pproxy_connector_ssh_auth_failure_is_fail_closed_and_redacted() {
-    let Some(fixture) = OpenSsh::start().await else {
+    let Some(fixture) = OpenSsh::start()
+        .await
+        .expect("OpenSSH fixture setup failed")
+    else {
         return;
     };
     let (echo_addr, echo_task) = start_echo().await;
@@ -207,7 +242,10 @@ async fn pproxy_connector_ssh_auth_failure_is_fail_closed_and_redacted() {
 
 #[tokio::test]
 async fn native_toml_connector_rejects_untrusted_ssh_host_key() {
-    let Some(fixture) = OpenSsh::start().await else {
+    let Some(fixture) = OpenSsh::start()
+        .await
+        .expect("OpenSSH fixture setup failed")
+    else {
         return;
     };
     let (echo_addr, echo_task) = start_echo().await;
