@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION**
+**COMPLETE — VERIFIED 2026-09-14**
 
 ## Parent work
 
@@ -547,20 +547,20 @@ If the repository's documented verification contract changes before implementati
 
 A reviewer should explicitly verify:
 
-- [ ] `OutboundConnector` production logic remains architecturally unchanged unless a test exposed a real defect.
-- [ ] Native/TOML mode still uses verified SSH host-key policy.
-- [ ] Pproxy compatibility mode still uses compatibility policy only at that constructor boundary.
-- [ ] Direct mode still does not allocate SSH state.
-- [ ] `ssh`-only still does not activate `eggress-pproxy-compat`.
-- [ ] The OpenSSH fixture can skip only for genuinely missing optional tools in non-required mode.
-- [ ] Once tools are present/required, fixture setup failures fail the test.
-- [ ] GitHub CI installs/provisions OpenSSH and executes the embed runtime regression.
-- [ ] CI proves byte traversal, auth failure/redaction, and native host-key rejection.
-- [ ] No broad feature matrix or external network service was introduced.
-- [ ] No Eggpool-specific API or dependency was added.
-- [ ] Parent plan status is changed to complete only after CI-backed evidence exists.
-- [ ] This plan is marked complete only after the same evidence exists.
-- [ ] Release publication is not falsely claimed before a post-fix release/tag actually exists.
+- [x] `OutboundConnector` production logic remains architecturally unchanged unless a test exposed a real defect.
+- [x] Native/TOML mode still uses verified SSH host-key policy.
+- [x] Pproxy compatibility mode still uses compatibility policy only at that constructor boundary.
+- [x] Direct mode still does not allocate SSH state.
+- [x] `ssh`-only still does not activate `eggress-pproxy-compat`.
+- [x] The OpenSSH fixture can skip only for genuinely missing optional tools in non-required mode.
+- [x] Once tools are present/required, fixture setup failures fail the test.
+- [x] GitHub CI installs/provisions OpenSSH and executes the embed runtime regression.
+- [x] CI proves byte traversal, auth failure/redaction, and native host-key rejection.
+- [x] No broad feature matrix or external network service was introduced.
+- [x] No Eggpool-specific API or dependency was added.
+- [x] Parent plan status is changed to complete only after CI-backed evidence exists.
+- [x] This plan is marked complete only after the same evidence exists.
+- [x] Release publication is not falsely claimed before a post-fix release/tag actually exists.
 
 ---
 
@@ -590,3 +590,21 @@ This should be a small closure patch, not another feature pass. Prefer the small
 The critical distinction is between **compile-time feature correctness** and **runtime executor correctness**. The repository already has the former. This pass must make the latter persistent in CI, because the original missing-session-cache defect was invisible to parsing, construction, and compilation alone.
 
 Do not chase additional cleanup unless it is required to make that runtime proof reliable.
+
+## Closure record — 2026-09-14
+
+- Implementation and closure changes are in `5155116`; no production
+  `OutboundConnector` architecture change was needed in this pass.
+- GitHub Actions run [34890399207](https://github.com/eggstack/eggress/actions/runs/34890399207) passed in 8m12s, including the required OpenSSH installation and embed runtime gate.
+- The CI embed gate executed all 3 regressions successfully: pproxy SSH byte
+  traversal, fail-closed redacted invalid authentication, and native TOML
+  rejection of the untrusted fixture host key.
+- Local qualification also passed the full workspace suite (`2,886 passed,
+  151 ignored`), SSH transport fixture (`7 passed`), format, Clippy, all
+  workspace-target checks, the SSH-enabled CLI compile gate, fuzz-target
+  compilation, and the three embed feature slices.
+- Feature-tree inspection confirmed `ssh` alone contains
+  `eggress-transport-ssh` without `eggress-pproxy-compat`; the combined slice
+  contains both. No Eggpool-specific public surface was added.
+- The published `1.0.6` release predates the correction. Downstream fallback
+  removal remains a follow-up after a newer Eggress release is published.

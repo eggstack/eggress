@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION**
+**COMPLETE — VERIFIED 2026-09-14**
 
 ## Parent context
 
@@ -552,23 +552,23 @@ If the live OpenSSH test is skipped on the implementation host, do not claim run
 
 This corrective pass is complete when all of the following are true:
 
-- [ ] `OutboundConnector` installs the SSH session state required for real listener-free SSH execution.
-- [ ] `from_toml()` preserves verified native host-key policy.
-- [ ] `from_pproxy_uri()` preserves the explicit pproxy compatibility host-key policy.
-- [ ] SSH failure cannot silently become direct egress or a shorter chain.
-- [ ] A real embed-level pproxy SSH connection transports bytes through the OpenSSH fixture.
-- [ ] Authentication failure remains fail-closed and credential-safe.
-- [ ] Native host-key verification is covered by a deterministic regression.
-- [ ] `eggress-embed/ssh` no longer force-activates `eggress-pproxy-compat`.
-- [ ] `ssh`-only, `pproxy-compat`-only, and combined feature slices compile.
-- [ ] `ssh,pproxy-compat` still provides working pproxy SSH behavior.
-- [ ] Existing non-SSH `OutboundConnector` behavior remains green.
-- [ ] CI has a proportional guard for the important embed feature slices.
-- [ ] Embed README/API docs describe the feature contract accurately.
-- [ ] No consumer-specific feature, type, mode, or API was added.
-- [ ] No unnecessary public executor/session-cache surface was introduced.
-- [ ] Full repository qualification passes.
-- [ ] Closure evidence is appended to this plan.
+- [x] `OutboundConnector` installs the SSH session state required for real listener-free SSH execution.
+- [x] `from_toml()` preserves verified native host-key policy.
+- [x] `from_pproxy_uri()` preserves the explicit pproxy compatibility host-key policy.
+- [x] SSH failure cannot silently become direct egress or a shorter chain.
+- [x] A real embed-level pproxy SSH connection transports bytes through the OpenSSH fixture.
+- [x] Authentication failure remains fail-closed and credential-safe.
+- [x] Native host-key verification is covered by a deterministic regression.
+- [x] `eggress-embed/ssh` no longer force-activates `eggress-pproxy-compat`.
+- [x] `ssh`-only, `pproxy-compat`-only, and combined feature slices compile.
+- [x] `ssh,pproxy-compat` still provides working pproxy SSH behavior.
+- [x] Existing non-SSH `OutboundConnector` behavior remains green.
+- [x] CI has a proportional guard for the important embed feature slices.
+- [x] Embed README/API docs describe the feature contract accurately.
+- [x] No consumer-specific feature, type, mode, or API was added.
+- [x] No unnecessary public executor/session-cache surface was introduced.
+- [x] Full repository qualification passes.
+- [x] Closure evidence is appended to this plan.
 
 ---
 
@@ -628,3 +628,12 @@ Do not broaden this work into a new Eggress architecture project. In particular,
   added.
 
 The narrow architectural target is simple: the stable public outbound facade should completely own the internal state required to execute the capabilities it advertises, and optional Cargo features should not activate unrelated compatibility layers unless the consumer requests them.
+
+## Final closure-pass evidence — 2026-09-14
+
+- Closure implementation commit: `5155116` (`test(embed): close SSH outbound runtime gap`).
+- GitHub Actions run [34890399207](https://github.com/eggstack/eggress/actions/runs/34890399207) passed in 8m12s. It passed format, Clippy, workspace tests, the optional compatibility compile gate, all three embed feature-boundary checks, OpenSSH installation, the required embed SSH runtime regression, and fuzz-target compilation.
+- The required embed runtime regression passed all 3 cases in CI: pproxy byte traversal, fail-closed redacted authentication failure, and native TOML untrusted-host-key rejection.
+- The fixture now returns an optional skip only for genuinely missing `sshd`/`ssh-keygen` in non-required local runs; once tools are present or `EGRESS_REQUIRE_OPENSSH_TESTS=1` is set, setup and readiness failures are fatal.
+- The closure regression exposed and fixed parsing of the documented `user::/path/to/key@host` pproxy SSH URI form; the key path remains credential data through native percent-encoded compilation.
+- The repository is release-ready for this correction, but the published `1.0.6` release predates it. Downstream SSH fallback removal still requires a newer Eggress release containing this fix.
