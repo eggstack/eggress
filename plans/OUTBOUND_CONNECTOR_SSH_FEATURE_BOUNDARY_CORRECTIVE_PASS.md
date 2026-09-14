@@ -585,4 +585,46 @@ Do not broaden this work into a new Eggress architecture project. In particular,
 - remove protocols from default/full builds as a size optimization;
 - tune downstream release profiles from inside Eggress.
 
+## Closure evidence
+
+- Implementation commit: `4f6ec74` (`fix(embed): initialize SSH outbound connector state`).
+- Final `eggress-embed` feature definition:
+
+  ```toml
+  ssh = [
+      "dep:eggress-transport-ssh",
+      "eggress-runtime/ssh",
+      "eggress-pproxy-compat?/ssh",
+  ]
+  ```
+
+- `ssh`-only dependency-tree inspection contains `eggress-transport-ssh` and
+  does not activate `eggress-pproxy-compat`; the combined
+  `ssh,pproxy-compat` tree contains both and enables the compatibility crate.
+- The embed OpenSSH fixture executed locally: 3 passed (pproxy byte
+  traversal, fail-closed redacted authentication failure, and native TOML
+  untrusted-host-key rejection). The existing transport fixture also ran: 7
+  passed, with only its optional password-success case skipped because
+  `EGRESS_SSH_TEST_PASSWORD` was unset.
+- Native host-key policy regression passed: the verified native cache rejected
+  the fixture host without a known_hosts entry.
+- Authentication failure/redaction regression passed: the invalid SSH
+  password did not appear in the surfaced error and no direct fallback
+  occurred.
+- Verification passed locally:
+  - `cargo fmt --all -- --check`
+  - `cargo check --workspace --all-targets --locked`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo test --workspace --locked`
+  - focused no-default embed checks for `ssh`, `pproxy-compat`, and
+    `ssh,pproxy-compat`
+  - SSH-enabled CLI compile gate from `AGENTS.md`
+  - focused embed Clippy with SSH and compatibility features
+  - `cargo test -p eggress-embed --locked --all-features`
+- Footprint evidence was limited to the feature trees; no binary-size or
+  `cargo-bloat` measurement was performed.
+- No Eggpool/downstream-specific public API, feature, type, or mode was
+  introduced, and no public executor/session-cache construction surface was
+  added.
+
 The narrow architectural target is simple: the stable public outbound facade should completely own the internal state required to execute the capabilities it advertises, and optional Cargo features should not activate unrelated compatibility layers unless the consumer requests them.
