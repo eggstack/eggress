@@ -7,13 +7,13 @@
 #
 # Usage: scripts/publish-remaining.sh [--dry-run]
 #
-# Tier 1 publishes eggress-testkit first: several crates dev-depend on the
-# testkit (resolved at publish time), and the testkit itself has no internal
-# normal dependencies. Tier 2 holds leaf libraries with no internal deps:
-# eggress-relay (before eggress-core, which depends on it) plus eggress-uri;
-# eggress-system-proxy follows eggress-uri in tier 2
-# (its only internal dependency), ahead of the runtime/CLI/Python facades
-# that enable it optionally or depend on it directly.
+# Tier 1 holds leaf libraries with no internal deps: eggress-relay (before
+# eggress-core, which depends on it) plus eggress-uri; tier 2 holds crates
+# whose only internal edge points into tier 1: eggress-system-proxy (needs
+# eggress-uri) ahead of the runtime/CLI/Python facades that enable it
+# optionally or depend on it directly, plus eggress-testkit (needs
+# eggress-uri; its dev-deps on config/runtime/pproxy-compat are path-only and
+# excluded from the published manifest, so they do not constrain order).
 #
 # Total: 27 crates. crates.io rate-limits new publishes to roughly one per 10
 # minutes, so expect ~4h of wall time plus index-propagation waits.
@@ -41,8 +41,8 @@ fi
 # Tiered publish order. Every required internal dep appears in an earlier tier
 # than the crate that depends on it.
 TIERS=(
-    "eggress-testkit"
-    "eggress-relay eggress-uri eggress-system-proxy"
+    "eggress-relay eggress-uri"
+    "eggress-system-proxy eggress-testkit"
     "eggress-core"
     "eggress-protocol-raw eggress-protocol-http eggress-protocol-socks eggress-protocol-websocket eggress-transport-tls eggress-transport-ssh eggress-transport-quic eggress-protocol-reverse eggress-routing eggress-protocol-shadowsocks"
     "eggress-protocol-trojan eggress-protocol-h3 eggress-udp"

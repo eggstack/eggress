@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION**
+**IN PROGRESS — 2026-09-14: release candidate 1.0.7 prepared on `main`; publication pending (see progress note at end of file). Do NOT treat as complete: crates.io publication, tag push, and PyPI/binary workflow verification have not run.**
 
 ## Baseline
 
@@ -744,3 +744,139 @@ Prefer evidence over aesthetic cleanup. If a dependency is not demonstrably dead
 The highest-value outcome is a clean public release and a repository whose source-of-truth documents and planning state agree with reality.
 
 Once those conditions are satisfied, stop. Further feature work belongs in a new plan with a new justification.
+
+---
+
+# Progress note (2026-09-14, release candidate 1.0.7 on `main`)
+
+This pass executed Workstreams 0–6, 8 (partial), and 10 up to the
+publication boundary. Irreversible release actions (WS7: crates.io
+publication, `v1.0.7` tag push, PyPI/binary workflow verification) are
+pending operator execution and are NOT included in the release-candidate
+commit.
+
+## Baseline reconfirmed (WS0)
+
+- `main` at `3e689c9`; latest public release still `v1.0.6` (predates the
+  embed SSH facade correction); no open issues/PRs; SSH correction commits
+  (`4f6ec74`, `5155116`) in ancestry; no newer version reserved → `1.0.7`
+  selected.
+- `docs/CI_STATUS.md`, `docs/TESTING.md`, `docs/release/RELEASE_PROCESS.md`,
+  all four workflows, and both release scripts re-read; operator-driven
+  four-workflow model confirmed current.
+
+## Plan lifecycle inventory (WS1)
+
+```text
+plans reviewed: 84
+complete/verified: 63
+superseded: 11
+deferred/optional: 1 (+ 8 strict-line phases, not release-blocking)
+genuinely ready: 1 (this plan — publication remainder only)
+```
+
+16 stale plans annotated (status header + dated closure note, body intact):
+3 CI verification plans → SUPERSEDED (four-workflow model replaced the
+two-workflow/no-automation premise); 4 CLI roadmap/phase plans → COMPLETE;
+`OUTBOUND_CONNECTOR_PPROXY_CHAIN_CORRECTIVE_PASS` → COMPLETE
+(`parse_pproxy_chain` + multi-hop regressions); relay extraction →
+COMPLETE (`eggress-relay` + facade + benches); parity Phase 0 → COMPLETE
+(manifest/matrix authoritative); 6 Milestones A–C line plans → SUPERSEDED
+(practical parity replaced full drop-in). Zero misleading
+`READY FOR IMPLEMENTATION` markers remain. Strict-parity line (roadmap +
+phases 0–9, excluding already-complete 1/2/10) classified
+DEFERRED/OPTIONAL as a group; files carry no READY claim so were left
+untouched.
+
+## Documentation truth (WS2)
+
+- Durable `v1.0.7` SSH-correction wording in `README.md`,
+  `docs/EMBED_API.md`, `architecture/embed.md` (replaces temporary
+  `1.0.6`-predates warnings).
+- `docs/INSTALLATION.md` pin examples `1.0.4` → `1.0.7`.
+- `docs/release/RELEASE_PROCESS.md` step 1 now points SSH/embed releases at
+  the required OpenSSH embed regression (concise pointer, no duplication).
+- Verified: no remaining obsolete workflow claims, no `1.0.6`-contains-fix
+  statements, `AGENTS.md`/skills/architecture already current (no edits
+  needed). No changelog subsystem introduced.
+
+## Dependency/feature hygiene (WS3)
+
+- Duplicate transitive versions (`aead`/`aes`/`cipher`/`digest`/`rand`
+  dual stacks) are unavoidable transitive compatibility, not defects; no
+  removal justified, graph left alone.
+- `ssh` alone does not activate `eggress-pproxy-compat` (feature-tree
+  verified); combined slice builds; `insecure-quic` excluded from gates.
+- Security-driven patch bump only: `rustls 0.23.41 → 0.23.45`
+  (+ `rustls-webpki → 0.103.15`) for RUSTSEC-2026-0285 (reachable TLS
+  stack; 122 other deps unchanged). `cargo deny check` clean;
+  `cargo audit` clean (2 pre-existing allowed yanked warnings: `der`,
+  `wnaf`).
+
+## Publish graph (WS4)
+
+- Helper lists exactly the 27 publishable crates, no duplicates;
+  `eggress-bench` correctly excluded.
+- **Defect found and fixed**: `eggress-testkit` (tier 1) normally depends
+  on `eggress-uri` (tier 2) — the only topological violation, plus a false
+  helper comment claiming testkit has no internal normal deps. Fixed by
+  moving testkit to end of tier 2 (`scripts/publish-remaining.sh`) with a
+  corrected rationale. Re-validated: zero violations, `relay < core`,
+  `admin < runtime` hold; `--no-verify` absent (self-check intact).
+- Dry-run evidence: `eggress-relay`/`eggress-uri` 1.0.7 dry-runs pass with
+  full verification. All other crates fail ONLY with missing-index-version
+  errors (`=1.0.7` not yet published — resolved by ordered real
+  publication) or the dirty-tree guard (resolved by committing this exact
+  tree). No packaging defects.
+
+## Version bump (WS5)
+
+`1.0.6` → `1.0.7` in lockstep: root package + `[workspace.package]` + 26
+internal exact pins (`Cargo.toml`), both Python pyprojects +
+`eggress==1.0.7` compat pin, dev-only `python/pyproject.toml`, native
+fallback `__version__`, `Cargo.lock` (minimal offline update; only
+workspace members changed). `release-preflight.sh --check-versions-only`
+passes; `cargo metadata --locked` passes.
+
+## Qualification on the release candidate (WS6)
+
+- `cargo fmt --all -- --check`: pass.
+- `cargo clippy --workspace --all-targets -- -D warnings`: pass.
+- `cargo test --workspace --locked`: 131 suites ok (2886 passed, 151
+  ignored-explained, 0 failed) on the exact candidate tree.
+- Optional-compat compile gate + all three embed feature slices: pass.
+- Required SSH runtime (real local `sshd`, required mode): embed `ssh`
+  test 3/3 executed (byte traversal, fail-closed/redacted auth failure,
+  native untrusted-host rejection); transport `openssh` test 7/7.
+- `eggress-pproxy-compat`: 365 + 5 + 11 pass.
+- Python: `maturin develop` builds `eggress-1.0.7`; compat `1.0.7`
+  installed; `pytest python/tests tests/compat`: 2273 passed, 115
+  environment-gated skips.
+- `cargo check --manifest-path fuzz/Cargo.toml --bins`: pass.
+- External oracle/differential suites intentionally not re-run: this pass
+  changes no parser/behavior code (version/docs/plans/helper/security
+  patch only); focused compat tests + workspace suite cover the surface.
+
+## Pre-existing observations (not changed, out of scope)
+
+- One `rustc` `unreachable_patterns` warning in
+  `crates/eggress-embed/src/outbound.rs:793` under the
+  `ssh,pproxy-compat` no-default slice (catch-all after exhaustive
+  matches in that cfg); no gate covers that slice with `-D warnings`;
+  left intact rather than risk behavior change in a closure pass.
+
+## Pending operator actions (WS7–WS9, NOT done here)
+
+1. `scripts/publish-remaining.sh` (real run, dependency-first; DO NOT use
+   `--allow-dirty`/`--no-verify`).
+2. Clean-install check: `cargo install eggress-cli --version 1.0.7` +
+   `eggress version` / `pproxy --version`; minimal `eggress-embed`
+   consumers with `ssh` and `ssh,pproxy-compat`.
+3. `git tag -a v1.0.7 -m "Release v1.0.7" && git push origin v1.0.7`
+   (tag push fires PyPI + binary workflows — deliberate release act).
+4. Verify PyPI `eggress==1.0.7`, five wheels + sdist, and the GitHub
+   Release (five archives + checksums + installers).
+5. Post-release: mark THIS plan `COMPLETE — VERIFIED` with the closure
+   record (version/tag/SHA/CI/crates.io/PyPI/binary confirmations), and
+   hand `>=1.0.7` to the Eggpool fallback-removal pass (in the Eggpool
+   repository, not here).

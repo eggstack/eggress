@@ -2,7 +2,7 @@
 
 ## Status
 
-**REOPENED — final evidence and runtime closure in progress.**
+**SUPERSEDED — 2026-09-14 (final release cleanup; see closure note at end of file)**
 
 ## Parent roadmap
 
@@ -666,3 +666,16 @@ Implementation should begin in `eggress-testkit`, the manifest validator, and co
 The first implementation commit should establish the policy, oracle provenance, and schema. The second should add the minimal paired runner and representative probes. Only after those are stable should the team generate the full inventory, because generated records must target a stable schema.
 
 Do not attempt to close existing compatibility gaps during this milestone unless a small change is required to make the candidate observable. Record gaps accurately and assign them to later milestones instead.
+
+---
+## Closure note (2026-09-14, final release cleanup)
+
+**SUPERSEDED.** The full-drop-in Milestones A–C line
+(`plans/PPROXY_FULL_DROP_IN_ROADMAP.md`, self-described as historical/maximal)
+was replaced by the completed practical-parity line
+(`plans/PPROXY_PRACTICAL_PARITY_ROADMAP.md`): the tier vocabulary
+(`matched` / `supported_difference` / `platform_limited` /
+`intentional_non_parity`) in `docs/parity/pproxy_capability_manifest.toml`
+and `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md` is the
+authoritative compat contract. Do not implement this plan as written.
+Original body retained above as historical context.

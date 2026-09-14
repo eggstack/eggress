@@ -2,7 +2,7 @@
 
 ## Status
 
-LOCAL GATES PASS — HOSTED EVIDENCE PENDING
+**SUPERSEDED — 2026-09-14 (final release cleanup; see closure note at end of file)**
 
 Completed workstreams:
 - CE0: Freeze Truthful Status and Defect Inventory
@@ -1458,3 +1458,16 @@ A reviewer must be able to answer all of these from retained evidence alone:
 15. Did hosted closure run on the same commit and retain the evidence bundle?
 
 If any answer is unavailable, Milestones A–C are not complete.
+
+---
+## Closure note (2026-09-14, final release cleanup)
+
+**SUPERSEDED.** The full-drop-in Milestones A–C line
+(`plans/PPROXY_FULL_DROP_IN_ROADMAP.md`, self-described as historical/maximal)
+was replaced by the completed practical-parity line
+(`plans/PPROXY_PRACTICAL_PARITY_ROADMAP.md`): the tier vocabulary
+(`matched` / `supported_difference` / `platform_limited` /
+`intentional_non_parity`) in `docs/parity/pproxy_capability_manifest.toml`
+and `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md` is the
+authoritative compat contract. Do not implement this plan as written.
+Original body retained above as historical context.

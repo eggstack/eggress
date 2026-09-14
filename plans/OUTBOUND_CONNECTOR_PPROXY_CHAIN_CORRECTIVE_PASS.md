@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION**
+**COMPLETE — VERIFIED 2026-09-14 (final release cleanup; see closure note at end of file)**
 
 ## Parent context
 
@@ -498,3 +498,15 @@ This corrective pass is complete only when all of the following are true:
 ## Handoff note
 
 The intended implementation is deliberately small. The existing pproxy compatibility layer already owns chain grammar and translation, and the native ChainExecutor already owns execution. The correction should primarily remove the lossy single-hop adapter logic between those two working components.
+
+---
+## Closure note (2026-09-14, final release cleanup)
+
+**COMPLETE — VERIFIED.** `OutboundConnector::from_pproxy_uri()` now parses the
+full expression via `eggress_pproxy_compat::uri::parse_pproxy_chain()`
+(`crates/eggress-embed/src/outbound.rs`) and executes multi-hop chains
+listener-free; focused regressions cover two-hop, three-hop, single-hop,
+direct, malformed, unsupported, and redaction behavior
+(`test_from_pproxy_uri_two_hop_chain`, `test_from_pproxy_uri_three_hop_chain`,
+...). `docs/EMBED_API.md` and README document direct `__` multi-hop
+execution. Original body retained above as historical context.

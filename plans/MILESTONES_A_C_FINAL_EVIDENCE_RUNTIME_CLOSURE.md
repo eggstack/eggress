@@ -2,7 +2,7 @@
 
 ## Status
 
-Ready for implementation.
+**SUPERSEDED — 2026-09-14 (final release cleanup; see closure note at end of file)**
 
 ## Parent plans and audit context
 
@@ -1165,3 +1165,16 @@ The final reviewer should be able to answer all of the following from retained a
 - Did hosted CI retain the evidence?
 
 If any answer is unavailable, A–C are not closed.
+
+---
+## Closure note (2026-09-14, final release cleanup)
+
+**SUPERSEDED.** The full-drop-in Milestones A–C line
+(`plans/PPROXY_FULL_DROP_IN_ROADMAP.md`, self-described as historical/maximal)
+was replaced by the completed practical-parity line
+(`plans/PPROXY_PRACTICAL_PARITY_ROADMAP.md`): the tier vocabulary
+(`matched` / `supported_difference` / `platform_limited` /
+`intentional_non_parity`) in `docs/parity/pproxy_capability_manifest.toml`
+and `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md` is the
+authoritative compat contract. Do not implement this plan as written.
+Original body retained above as historical context.

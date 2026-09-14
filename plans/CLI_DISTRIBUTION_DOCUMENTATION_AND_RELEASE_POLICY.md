@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation plan for handoff. This is Phase 4 of `CLI_CLEANUP_AND_BINARY_DELIVERY_ROADMAP.md`.
+**COMPLETE — VERIFIED 2026-09-14 (final release cleanup; see closure note at end of file).** Original handoff text retained below as historical context. This is Phase 4 of `CLI_CLEANUP_AND_BINARY_DELIVERY_ROADMAP.md`.
 
 ## Objective
 
@@ -484,3 +484,17 @@ This plan is complete when:
 14. checksum documentation does not overclaim independent signature/provenance guarantees.
 15. README/docs commands have been exercised against the implementation or covered by focused drift checks.
 16. historical plans are not mass-edited merely to make old decisions look current.
+
+---
+## Closure note (2026-09-14, final release cleanup)
+
+**COMPLETE — VERIFIED.** The distribution model is documented per-persona:
+`docs/INSTALLATION.md` is canonical (binary installer preferred for
+standalone CLI, PyPI primary for Python/pproxy migration, Cargo for
+Rust/custom builds); README and `crates/eggress-cli/README.md` follow it;
+`docs/release/RELEASE_PROCESS.md` authorizes the narrow tag-triggered binary
+workflow, keeps crates.io manual, documents the shared version/tag invariant,
+and avoids signature overclaims for SHA-256 sidecars. Status-only plan
+annotations (as in this cleanup pass) remain the exception to item 16, not a
+rewrite of historical decisions. Original body retained above as
+historical context.

@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION**
+**SUPERSEDED — 2026-09-14 (final release cleanup; see closure note at end of file)**
 
 ## Baseline
 
@@ -1500,3 +1500,18 @@ The exact number may be reduced when two adjacent edits are inseparable, but do 
 - Do not change crate publication boundaries in this pass.
 - Do not create a completion report separate from the plans.
 - Mark completion last.
+
+---
+## Closure note (2026-09-14, final release cleanup)
+
+**SUPERSEDED.** This plan's two-workflow, no-automation premise was
+intentionally replaced by the four-workflow operator-driven model defined in
+`docs/CI_STATUS.md`: `ci.yml` (Ubuntu Rust smoke, including the required
+OpenSSH embed regression), `python-test.yml` (path-scoped 3.12 smoke),
+tag-triggered `publish-python.yml` (PyPI), and tag-triggered
+`release-binaries.yml` (five CLI archives + GitHub Release). Crates.io
+publication stays manual (`docs/release/RELEASE_PROCESS.md`). The manual
+compatibility-certification path is preserved as opt-in tooling
+(`scripts/run_pproxy_certification.sh`, see `docs/TESTING.md`), not as hosted
+mandatory gates. Do not implement this plan as written. Original body retained
+above as historical context.

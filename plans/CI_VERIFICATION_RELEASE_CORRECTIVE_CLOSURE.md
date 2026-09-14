@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION**
+**SUPERSEDED — 2026-09-14 (final release cleanup; see closure note at end of file)**
 
 ## Baseline
 
@@ -1238,3 +1238,18 @@ Do not combine new proxy functionality, crate-boundary restructuring, or release
 - Do not mark this plan complete when PyPI/TestPyPI trusted-publisher state is unknown; state the blocker.
 - Do not attempt crates.io publication in this pass. The CLI publication boundary requires separate architectural work.
 - Prefer a smaller diff. No replacement framework is needed.
+
+---
+## Closure note (2026-09-14, final release cleanup)
+
+**SUPERSEDED.** This plan's two-workflow, no-automation premise was
+intentionally replaced by the four-workflow operator-driven model defined in
+`docs/CI_STATUS.md`: `ci.yml` (Ubuntu Rust smoke, including the required
+OpenSSH embed regression), `python-test.yml` (path-scoped 3.12 smoke),
+tag-triggered `publish-python.yml` (PyPI), and tag-triggered
+`release-binaries.yml` (five CLI archives + GitHub Release). Crates.io
+publication stays manual (`docs/release/RELEASE_PROCESS.md`). The manual
+compatibility-certification path is preserved as opt-in tooling
+(`scripts/run_pproxy_certification.sh`, see `docs/TESTING.md`), not as hosted
+mandatory gates. Do not implement this plan as written. Original body retained
+above as historical context.

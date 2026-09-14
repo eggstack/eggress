@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation plan for handoff. This is Phase 2 of `CLI_CLEANUP_AND_BINARY_DELIVERY_ROADMAP.md`.
+**COMPLETE — VERIFIED 2026-09-14 (final release cleanup; see closure note at end of file).** Original handoff text retained below as historical context. This is Phase 2 of `CLI_CLEANUP_AND_BINARY_DELIVERY_ROADMAP.md`.
 
 ## Objective
 
@@ -409,3 +409,15 @@ This plan is complete when:
 14. crates.io publication remains manual;
 15. Python/PyPI publishing remains a separate unchanged first-class channel;
 16. the repository release policy is updated to explicitly allow this narrow binary artifact automation.
+
+---
+## Closure note (2026-09-14, final release cleanup)
+
+**COMPLETE — VERIFIED.** The narrow release-only binary path exists:
+`.github/workflows/release-binaries.yml` builds the five canonical
+`eggress-cli` target archives with default features, smoke-tests `eggress`
+and `pproxy` natively, generates SHA-256 sidecars, and creates/updates the
+GitHub Release with archives + checksums + `install.sh`/`install.ps1`
+(`v1.0.6` shipped these assets). `scripts/release-preflight.sh` enforces
+tag/version alignment. Ordinary CI never builds the matrix; crates.io stays
+manual. Original body retained above as historical context.

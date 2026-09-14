@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation plan for handoff.
+**COMPLETE — VERIFIED 2026-09-14 (final release cleanup; see closure note at end of file).** Original handoff text retained below as historical context.
 
 This plan is motivated by a concrete external consumer need (Synvoid wants to reuse Eggress's raw bidirectional relay without importing Eggress's routing, URI, TLS, listener, runtime, or protocol stack), but the implementation must remain a general Eggress architectural improvement. No Synvoid-specific types, feature flags, adapters, callbacks, naming, configuration schema, or policy belong in Eggress.
 
@@ -754,3 +754,14 @@ Do not add hook traits for packet inspection, WAF scanning, rate limiting, meter
 Do not change Eggress's server drain policy merely because the new engine makes alternatives possible. Exposing a better primitive and changing Eggress product behavior are separate decisions and should remain separately reviewable.
 
 Do not extract `OutboundConnector` in this plan. If a future external consumer needs Eggress proxy-chain egress without the current `eggress-embed` dependency surface, research that as a separate plan after this relay boundary lands and its real dependency/footprint effect can be measured.
+
+---
+## Closure note (2026-09-14, final release cleanup)
+
+**COMPLETE — VERIFIED.** `crates/eggress-relay` owns the generic single-task
+bidirectional copy engine; `crates/eggress-core/src/relay.rs` is the
+compatibility facade preserving historical server behavior;
+`benches/` measures the actual relay data path; `architecture/relay.md`
+(+`core.md`) documents the boundary; README documents the
+`eggress-relay = "1"` consumer surface. Original body retained above as
+historical context.

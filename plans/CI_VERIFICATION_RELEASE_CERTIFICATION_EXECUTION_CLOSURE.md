@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION**
+**SUPERSEDED — 2026-09-14 (final release cleanup; see closure note at end of file)**
 
 ## Baseline
 
@@ -1445,3 +1445,18 @@ and leave this plan blocked rather than complete.
 - Keep the two-workflow, read-only, manual-release architecture unchanged.
 - Do not touch crates.io publication architecture in this pass.
 - Mark completion last.
+
+---
+## Closure note (2026-09-14, final release cleanup)
+
+**SUPERSEDED.** This plan's two-workflow, read-only, manual-release premise
+was intentionally replaced by the four-workflow operator-driven model defined
+in `docs/CI_STATUS.md`: `ci.yml` (Ubuntu Rust smoke, including the required
+OpenSSH embed regression), `python-test.yml` (path-scoped 3.12 smoke),
+tag-triggered `publish-python.yml` (PyPI via the protected `pypi`
+environment), and tag-triggered `release-binaries.yml` (five CLI archives +
+GitHub Release). Crates.io publication stays manual
+(`docs/release/RELEASE_PROCESS.md`). The manual certification path is
+preserved as opt-in tooling (`scripts/run_pproxy_certification.sh`, see
+`docs/TESTING.md`), not as hosted mandatory gates. Do not implement this plan
+as written. Original body retained above as historical context.

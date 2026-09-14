@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation plan for handoff. This plan is intentionally bounded to the `eggress-cli` user surface, its pproxy compatibility facade, binary distribution, self-update/version UX, and the documentation/release-policy changes required to support those features.
+**COMPLETE — VERIFIED 2026-09-14 (final release cleanup; see closure note at end of file).** Original handoff text retained below as historical context.
 
 ## Objective
 
@@ -238,3 +238,20 @@ This roadmap is complete when all of the following are true:
 ## Non-goals / anti-scope-creep guardrails
 
 Do not add telemetry, update daemons, scheduled update checks, shell completion generation, package repositories, GUI installers, service management, or generic release orchestration as part of this roadmap. If implementation uncovers a need for one of those, document it separately rather than broadening this line of work.
+
+---
+## Closure note (2026-09-14, final release cleanup)
+
+**COMPLETE — VERIFIED.** All roadmap phases landed on `main`:
+- `eggress version` (`crates/eggress-cli/src/commands/version.rs`) and
+  `eggress update` (`src/commands/update.rs` + `src/update/`) exist with
+  focused tests (`crates/eggress-cli/tests/version.rs`, `cli_exit_codes.rs`);
+- tag-triggered `.github/workflows/release-binaries.yml` builds the five
+  canonical target archives (default features), smoke-tests both executables,
+  and attaches archives + SHA-256 sidecars + `install.sh`/`install.ps1` to the
+  GitHub Release (`v1.0.6` shipped these assets);
+- `docs/INSTALLATION.md` is the canonical install guide; README and
+  `crates/eggress-cli/README.md` lead per-persona (PyPI / binary / Cargo);
+- `docs/release/RELEASE_PROCESS.md` explicitly authorizes the narrow binary
+  automation while keeping crates.io manual and PyPI independent.
+Original body retained above as historical context.

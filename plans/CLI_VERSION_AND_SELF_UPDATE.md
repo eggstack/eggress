@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation plan for handoff. This is Phase 3 of `CLI_CLEANUP_AND_BINARY_DELIVERY_ROADMAP.md` and depends on the release asset contract in `CLI_BINARY_RELEASE_AND_INSTALLER.md`.
+**COMPLETE — VERIFIED 2026-09-14 (final release cleanup; see closure note at end of file).** Original handoff text retained below as historical context. This is Phase 3 of `CLI_CLEANUP_AND_BINARY_DELIVERY_ROADMAP.md` and depends on the release asset contract in `CLI_BINARY_RELEASE_AND_INSTALLER.md`.
 
 ## Objective
 
@@ -371,3 +371,15 @@ This plan is complete when:
 14. there is no implicit Cargo/source fallback and no background update behavior.
 15. normal tests do not depend on live GitHub availability.
 16. release workflow artifacts are verified using the same asset/version assumptions consumed by the updater.
+
+---
+## Closure note (2026-09-14, final release cleanup)
+
+**COMPLETE — VERIFIED.** `eggress version` prints `eggress X.Y.Z`
+(`crates/eggress-cli/src/commands/version.rs`); `eggress update` replaces the
+standalone installation from verified GitHub Release assets
+(`src/commands/update.rs` + `src/update/` with staged version/checksum
+verification, no sudo, no background checks, no Cargo fallback). The `pproxy`
+binary keeps its flat `--version` surface with no native subcommands. Covered
+by `crates/eggress-cli/tests/version.rs` and `cli_exit_codes.rs`.
+Original body retained above as historical context.

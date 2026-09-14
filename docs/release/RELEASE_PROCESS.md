@@ -55,7 +55,7 @@ cargo deny check
 cargo audit --ignore RUSTSEC-2025-0134 --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0009
 ```
 
-Run specialized interoperability, Python, performance, or cross-platform checks only when the release contains relevant changes or makes claims that depend on them. The selection policy is in `docs/TESTING.md`.
+Run specialized interoperability, Python, performance, or cross-platform checks only when the release contains relevant changes or makes claims that depend on them. The selection policy is in `docs/TESTING.md`. For example, a release containing SSH/embed changes must run the required OpenSSH embed regression (`EGRESS_REQUIRE_OPENSSH_TESTS=1 cargo test -p eggress-embed --locked --no-default-features --features ssh,pproxy-compat --test ssh`); a skipped fixture is not release evidence for such a version.
 
 ## 2. Check package metadata
 

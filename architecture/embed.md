@@ -252,9 +252,8 @@ Inline tests (`src/lib.rs`):
   Python does not expose UDP associations; Rust is the supported surface.
 - No temp file exists; `EggressHandle._config_path` is always `None`.
   In-memory services never pretend to have a config file (SIGHUP disabled).
-- The published `1.0.6` release predates the corrected SSH outbound facade;
-  downstream fallback removal requires a newer Eggress release containing
-  this fix.
+- The corrected SSH outbound facade is available beginning with `v1.0.7`;
+  downstream fallback removal requires `v1.0.7` or newer.
 
 ## See also
 

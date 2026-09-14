@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed.
+**COMPLETE — VERIFIED 2026-09-14 (final release cleanup; see closure note at end of file)**
 
 ## Parent roadmap
 
@@ -179,3 +179,12 @@ Review search results manually; historical completion documents may retain old s
 ## Handoff notes
 
 This phase should be one small documentation/manifest commit or a few logically separated commits. Avoid touching runtime code. When uncertainty remains about an oracle behavior, add one tiny probe script or run an isolated Python command; do not build generalized observation infrastructure.
+
+---
+## Closure note (2026-09-14, final release cleanup)
+
+**COMPLETE — VERIFIED.** The contract reset landed: per-feature truth lives in
+`docs/parity/pproxy_capability_manifest.toml` (authoritative) and
+`docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`, and the practical
+parity roadmap (`plans/PPROXY_PRACTICAL_PARITY_ROADMAP.md`) is complete.
+Original body retained above as historical context.

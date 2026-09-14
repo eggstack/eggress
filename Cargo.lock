@@ -897,7 +897,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-admin"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "base64",
  "bytes",
@@ -923,7 +923,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-bench"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "criterion",
  "eggress-core",
@@ -938,7 +938,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-cli"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "assert_cmd",
  "base64",
@@ -980,7 +980,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-config"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "eggress-core",
  "eggress-routing",
@@ -1000,7 +1000,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-core"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "bytes",
  "eggress-relay",
@@ -1018,7 +1018,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-embed"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "eggress-config",
  "eggress-core",
@@ -1043,7 +1043,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-metrics"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "eggress-protocol-http",
  "eggress-protocol-shadowsocks",
@@ -1056,7 +1056,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-pproxy-compat"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "assert_cmd",
  "eggress-config",
@@ -1074,7 +1074,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-h3"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "base64",
  "bytes",
@@ -1093,7 +1093,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-http"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "base64",
  "bytes",
@@ -1114,7 +1114,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-raw"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "eggress-core",
  "thiserror",
@@ -1124,7 +1124,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-reverse"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -1144,7 +1144,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-shadowsocks"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "aes 0.8.4",
  "aes-gcm 0.10.3",
@@ -1173,7 +1173,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-socks"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -1187,7 +1187,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-trojan"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -1205,7 +1205,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-websocket"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "base64",
  "bytes",
@@ -1221,7 +1221,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-python"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "eggress-cli",
  "eggress-config",
@@ -1242,14 +1242,14 @@ dependencies = [
 
 [[package]]
 name = "eggress-relay"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "tokio",
 ]
 
 [[package]]
 name = "eggress-routing"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "arc-swap",
  "eggress-core",
@@ -1269,7 +1269,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-runtime"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "arc-swap",
  "bytes",
@@ -1310,7 +1310,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-server"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "base64",
  "bytes",
@@ -1344,7 +1344,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-system-proxy"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "eggress-uri",
  "serde",
@@ -1356,7 +1356,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-testkit"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "eggress-config",
  "eggress-pproxy-compat",
@@ -1377,7 +1377,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-transport-quic"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -1395,7 +1395,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-transport-ssh"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "eggress-core",
  "russh",
@@ -1407,7 +1407,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-transport-tls"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -1423,7 +1423,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-udp"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -1443,7 +1443,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-uri"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "proptest",
  "serde",
@@ -1504,7 +1504,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2083,7 +2083,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2897,7 +2897,7 @@ dependencies = [
  "once_cell",
  "socket2 0.5.10",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3250,14 +3250,14 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "rustls"
-version = "0.23.41"
+version = "0.23.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b92b125634d9b795e7beca796cc790df15a7fb38323bf3196fda83292d06b1f"
+checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
 dependencies = [
  "once_cell",
  "ring",
@@ -3307,7 +3307,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3318,9 +3318,9 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.13"
+version = "0.103.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e"
+checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
 dependencies = [
  "ring",
  "rustls-pki-types",
@@ -3764,7 +3764,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4322,7 +4322,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

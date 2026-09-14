@@ -350,9 +350,9 @@ eggress-embed = { path = "crates/eggress-embed", default-features = false, featu
 The `from_pproxy_uri` method requires the `pproxy-compat` feature. Pproxy-style
 SSH through that constructor requires both `ssh` and `pproxy-compat`.
 
-The published `1.0.6` release predates the corrected SSH outbound facade.
-Downstream applications should not remove an SSH fallback until a newer
-Eggress release containing this correction is published.
+The corrected SSH outbound facade is available beginning with `v1.0.7`.
+Downstream applications pinned to older releases should not remove an SSH
+fallback until they upgrade to `v1.0.7` or newer.
 
 ## Python-binding readiness
 
