@@ -15,11 +15,13 @@ Use `eggress-embed` when you want to start, stop, reload, and inspect an eggress
 - `extended` — Adds Shadowsocks, Trojan, WebSocket, and Shadowsocks UDP relay.
 - `operations` — Enable admin server and system-proxy integration.
 - `reverse` — Enable reverse/backward proxy protocol.
-- `pproxy-compat` — Enable pproxy URI and CLI flag translation.
+- `pproxy-compat` — Enable pproxy URI and CLI flag translation, including
+  `OutboundConnector::from_pproxy_uri()`.
 - `pproxy-legacy` — Enable pproxy-compatible Shadowsocks compression.
 - `legacy-crypto` — Enable legacy Shadowsocks stream ciphers.
 - `quic` — Enable QUIC/H3 transport and protocol.
-- `ssh` — Enable SSH upstream transport.
+- `ssh` — Enable native/TOML SSH upstream transport. This feature does not
+  activate `pproxy-compat`.
 
 ## Quick example
 
@@ -42,10 +44,11 @@ handle.shutdown().await?;
 
 ## Native outbound connector (no listener)
 
-`OutboundConnector` executes a pproxy remote expression in-process via
-`ChainExecutor`, without starting a listener. It accepts canonical `__`
-multi-hop chains, preserves hop order, and fails closed on unsupported
-chain members instead of dropping them:
+`OutboundConnector` executes a configured upstream chain in-process via
+`ChainExecutor`, without starting a listener. `from_toml()` supports native
+TOML chains, including SSH when `ssh` is enabled. `from_pproxy_uri()` accepts
+canonical `__` multi-hop chains, preserves hop order, and fails closed on
+unsupported chain members instead of dropping them:
 
 ```rust
 let connector = OutboundConnector::from_pproxy_uri(
@@ -58,7 +61,11 @@ assert_eq!(info.hop_count, 2);
 
 Requires the `pproxy-compat` feature. Protocol availability remains
 feature-gated, and malformed chained input returns credential-redacted
-errors.
+errors. Pproxy-style SSH requires both `ssh` and `pproxy-compat`; selecting
+`ssh` alone does not enable the compatibility crate. The connector owns the
+reusable SSH session cache internally: native TOML uses verified known-hosts
+behavior, while the explicitly compatibility-oriented constructor retains
+pproxy's compatibility host-key policy.
 
 ## Documentation
 

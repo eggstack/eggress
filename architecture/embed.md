@@ -95,7 +95,11 @@ hop in source order, then calls `compile_chain_to_native()` (validation +
 `build_chain_config_uri` → `parse_proxy_chain`, no TOML). Only a single
 `direct` hop takes the direct fast path; multi-hop `direct`, backward (`+in`),
 or unsupported roles fail closed with redacted errors. Execution reuses
-`ChainExecutor` with no listener.
+`ChainExecutor` with no listener. The connector owns the executor's SSH
+session state for its full lifetime: native/TOML construction uses the
+verified `SshSessionCache::new()` policy, while `from_pproxy_uri()` uses
+`new_compatibility()` only when both `ssh` and `pproxy-compat` are enabled.
+Direct mode does not allocate SSH state.
 
 ## How it works
 
@@ -178,7 +182,7 @@ a stable `&'static str` label for each variant.
 | `pproxy-compat` | pproxy URI translation (`from_pproxy_uri`) and compatibility options |
 | `operations` | Runtime operations gate (`eggress-runtime/operations`: admin snapshot provider wiring) |
 | `reverse` | Reverse proxy control channel |
-| `ssh` | SSH transport passthrough to runtime |
+| `ssh` | Native/TOML SSH upstream transport; does not activate `pproxy-compat` |
 | `quic` | QUIC/H3 config support |
 | `legacy-crypto` | Legacy Shadowsocks ciphers |
 

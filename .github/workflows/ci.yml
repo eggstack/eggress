@@ -38,5 +38,13 @@ jobs:
           cargo check -p eggress-cli --locked --no-default-features
           --features full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon
           --bins
+      - name: Check embed SSH feature boundaries
+        run: >-
+          cargo check -p eggress-embed --locked --no-default-features
+          --features ssh &&
+          cargo check -p eggress-embed --locked --no-default-features
+          --features pproxy-compat &&
+          cargo check -p eggress-embed --locked --no-default-features
+          --features ssh,pproxy-compat
       - name: Check fuzz targets
         run: cargo check --manifest-path fuzz/Cargo.toml --bins

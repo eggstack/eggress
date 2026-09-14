@@ -38,7 +38,7 @@ It is separate from native Shadowsocks AEAD and rustls TLS:
 
 ## SSH upstream transport
 
-SSH is an optional, compatibility-only upstream transport behind the `ssh`
+SSH is an optional upstream transport behind the `ssh`
 feature. It uses `eggress-transport-ssh` and `russh` with no C/OpenSSL
 dependency; the workspace MSRV is therefore 1.85. Default and `common` builds
 must remain SSH-free, and SSH remains upstream-only (listener forms fail with a
@@ -50,12 +50,18 @@ keepalive, and explicit remote TCP forwarding. It uses `russh` (no
 C/OpenSSL dependency). SSH remains upstream-only (listener forms fail with a
 structured diagnostic).
 
-It accepts all server host keys to match pproxy's `known_hosts=None`; keep
-this behavior isolated, warning visible, and never describe it as a native
-security feature. Do not add remote commands, SFTP, agent forwarding, or
-unbounded forwarding. Redact passwords in errors and diagnostics. Verify
-against the OpenSSH fixture with:
+`SshSessionCache::new()` verifies native callers against known_hosts, while
+`new_compatibility()` accepts all server host keys solely for the explicit
+pproxy compatibility path. Keep that exception isolated and warning-visible;
+never weaken native/TOML embedding because compatibility features are enabled.
+Do not add remote commands, SFTP, agent forwarding, or unbounded forwarding.
+Redact passwords in errors and diagnostics. Verify against the OpenSSH fixture
+with:
 `cargo test -p eggress-transport-ssh --test openssh`.
+
+`eggress-embed::outbound::OutboundConnector` owns the reusable cache: native
+`from_toml()` uses verified state, and `from_pproxy_uri()` uses compatibility
+state only when both `ssh` and `pproxy-compat` are selected.
 
 ## Adding a new protocol
 

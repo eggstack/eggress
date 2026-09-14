@@ -415,7 +415,8 @@ Full checklists: `docs/CAPABILITIES.md`, `docs/OPERATIONS.md`,
 
 ## Build profiles
 
-Default features = `full` (common+extended+operations+reverse+pproxy-compat).
+Default features = `full` (common+extended+operations+reverse+pproxy-compat+
+pproxy-legacy); SSH and QUIC remain opt-in.
 Optional: `ssh`, `quic`, `pproxy-legacy`, `legacy-crypto`, `pproxy-daemon`.
 Lean build:
 `cargo build -p eggress-cli --release --no-default-features --features common`.

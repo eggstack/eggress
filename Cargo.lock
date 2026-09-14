@@ -1029,6 +1029,7 @@ dependencies = [
  "eggress-routing",
  "eggress-runtime",
  "eggress-server",
+ "eggress-transport-ssh",
  "eggress-udp",
  "eggress-uri",
  "tempfile",

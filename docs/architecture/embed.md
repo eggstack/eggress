@@ -71,7 +71,12 @@ Both paths create a dedicated Tokio runtime on a separate OS thread.
 The connector executes the chain in-process with no listener. Only a single
 `direct` hop takes the direct path; unsupported chain members fail
 construction instead of being dropped, and malformed chained input returns
-credential-redacted errors.
+credential-redacted errors. Enable `ssh` for native/TOML SSH upstreams;
+`from_toml()` keeps verified known-hosts behavior. Pproxy-style SSH through
+`from_pproxy_uri()` requires both `ssh` and `pproxy-compat` and keeps the
+explicit compatibility host-key policy. The connector owns reusable SSH
+session state internally, and `ssh` alone does not activate the optional
+pproxy compatibility crate.
 
 ## Dependencies
 

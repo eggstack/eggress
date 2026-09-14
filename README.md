@@ -60,6 +60,12 @@ eggress-embed = "1"
 
 From a repository checkout, substitute `eggress-embed = { path = "crates/eggress-embed" }`.
 
+For listener-free outbound chains, enable `ssh` for native/TOML SSH upstreams.
+The `pproxy-compat` feature enables `OutboundConnector::from_pproxy_uri()`;
+pproxy-style SSH requires both features. The connector owns SSH session state
+internally and keeps native known-host verification separate from the explicit
+pproxy compatibility policy.
+
 ### Python package
 
 ```bash

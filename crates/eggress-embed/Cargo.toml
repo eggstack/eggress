@@ -21,7 +21,11 @@ operations = ["eggress-runtime/operations"]
 reverse = ["eggress-runtime/reverse"]
 quic = ["eggress-config/quic", "eggress-runtime/quic"]
 pproxy-compat = ["dep:eggress-pproxy-compat"]
-ssh = ["eggress-runtime/ssh", "eggress-pproxy-compat/ssh"]
+ssh = [
+    "dep:eggress-transport-ssh",
+    "eggress-runtime/ssh",
+    "eggress-pproxy-compat?/ssh",
+]
 
 [dependencies]
 eggress-config = { workspace = true }
@@ -34,6 +38,7 @@ eggress-runtime = { workspace = true }
 eggress-server = { workspace = true }
 eggress-udp = { workspace = true }
 eggress-uri = { workspace = true }
+eggress-transport-ssh = { workspace = true, optional = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 toml = { workspace = true }

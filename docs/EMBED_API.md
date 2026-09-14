@@ -128,8 +128,9 @@ Upstream URI credentials are also redacted:
 
 ## Native outbound connector (no listener)
 
-`OutboundConnector` compiles a pproxy remote expression and executes the
-chain in-process via `ChainExecutor`, without starting a local listener:
+`OutboundConnector` compiles a native TOML upstream or pproxy remote
+expression and executes the chain in-process via `ChainExecutor`, without
+starting a local listener:
 
 ```rust
 let connector = OutboundConnector::from_pproxy_uri(
@@ -144,6 +145,13 @@ Contract:
 
 - `from_pproxy_uri()` accepts one pproxy remote expression, including
   canonical `__` multi-hop chains, preserving hop order.
+- `from_toml()` supports native SSH upstreams when the `ssh` feature is
+  enabled. Native SSH uses verified known-hosts behavior.
+- `from_pproxy_uri()` supports pproxy-style SSH only when both `ssh` and
+  `pproxy-compat` are enabled. It retains the explicit pproxy compatibility
+  host-key policy; enabling `pproxy-compat` never weakens native TOML SSH.
+- The connector owns the reusable SSH session cache for its lifetime, so
+  callers do not construct `ChainExecutor` or SSH transport state themselves.
 - The connector executes the chain in-process; it does not start a local
   listener, subprocess, or compatibility daemon.
 - Protocol availability remains feature-gated (`ssh`, `quic`, and similar
@@ -323,7 +331,9 @@ The embed crate supports the same feature groups as the CLI and runtime:
 | `operations` | System proxy inspection |
 | `reverse` | Reverse/backward proxy control-channel |
 | `pproxy-compat` | pproxy URI translation and compatibility binary |
-| `full` | Union of all (default) |
+| `ssh` | Native/TOML SSH upstream transport; does not activate `pproxy-compat` |
+| `quic` | QUIC/H3 transport and protocol |
+| `full` | `common` + `extended` + `operations` + `reverse` + `pproxy-compat` + `pproxy-legacy` (default; SSH and QUIC remain opt-in) |
 
 A lean build excludes optional protocol families and operational integrations:
 
@@ -332,7 +342,8 @@ A lean build excludes optional protocol families and operational integrations:
 eggress-embed = { path = "crates/eggress-embed", default-features = false, features = ["common"] }
 ```
 
-The `from_pproxy_uri` method requires the `pproxy-compat` feature.
+The `from_pproxy_uri` method requires the `pproxy-compat` feature. Pproxy-style
+SSH through that constructor requires both `ssh` and `pproxy-compat`.
 
 ## Python-binding readiness
 

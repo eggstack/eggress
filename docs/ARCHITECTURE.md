@@ -215,6 +215,11 @@ Rust embed API for in-process embedding:
 - `connector.connect_tcp(target)` — connect to TCP target
 - `connector.connect_tcp_timeout(target, timeout)` — connect with explicit timeout
 
+Enable `ssh` for native/TOML SSH upstreams; the connector owns the verified
+SSH session cache. Pproxy-style SSH through `from_pproxy_uri()` requires both
+`ssh` and `pproxy-compat` and uses the explicit compatibility host-key policy.
+The `ssh` feature alone does not activate the compatibility crate.
+
 The Python binding exposes the same connector through `PyOutboundConnector` and
 returns a `PyOutboundStream`. The pure-Python `OutboundStream` and
 `AsyncOutboundStream` wrappers provide read/write/half-close/close operations,

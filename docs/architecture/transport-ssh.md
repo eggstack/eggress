@@ -1,8 +1,9 @@
 # SSH Transport
 
-`eggress-transport-ssh` is an optional compatibility transport enabled by the
-`ssh` feature. It is intentionally separate from the native protocol crates so
-default and `common` binaries do not link SSH support.
+`eggress-transport-ssh` is an optional upstream transport enabled by the `ssh`
+feature. It is intentionally separate from the native protocol crates so
+default and `common` binaries do not link SSH support. The embed facade uses
+the same transport for native TOML and pproxy-compatible outbound chains.
 
 ## Scope
 
@@ -24,9 +25,12 @@ without a passphrase.
 
 ## Security boundary
 
-pproxy 2.7.9 passes `known_hosts=None`, so this compatibility path accepts the
-server key and emits a warning when a new session is created. This is not a
-native secure SSH API and must not be represented as host authentication.
+Native callers use the verified `SshSessionCache::new()` policy, which checks
+the default OpenSSH known_hosts file. The explicit pproxy compatibility path
+uses `new_compatibility()` because pproxy 2.7.9 passes `known_hosts=None`; it
+accepts the server key and emits a warning when a new session is created. This
+compatibility exception must not weaken native TOML SSH merely because both
+features are enabled.
 Passwords are redacted from debug/error output. Private-key paths are treated as
 operator configuration and are never included in authentication errors.
 

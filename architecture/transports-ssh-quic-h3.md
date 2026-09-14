@@ -56,6 +56,10 @@ Single-file crate. All types and logic live in `src/lib.rs`.
 
 - `InsecureCompatibility` exists solely for pproxy parity (:120);
   disables host-key verification, emits `tracing::warn` per connection.
+- `SshSessionCache::new()` retains verified native known-hosts behavior;
+  `eggress-embed::outbound::OutboundConnector` selects it for TOML chains and
+  selects `new_compatibility()` only for its explicitly pproxy-compatible
+  constructor.
 - Both `SshAuth::Debug` (:49) and `SshSessionKey::Debug` (:68) redact
   secrets with `****`.
 

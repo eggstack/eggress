@@ -289,7 +289,7 @@ The workspace defines bounded feature groups that control which protocol familie
 | `ssh` | cli, embed, runtime, server, Python | Optional pproxy-compatible SSH upstream transport; disabled by default |
 | `legacy-crypto` | cli, embed, runtime, server, Python | Optional unauthenticated pproxy legacy Shadowsocks subset, OTA, and PacketCipher UDP codecs |
 | `pproxy-daemon` | cli, Python | Optional Linux safe re-exec daemon startup; disabled by default |
-| `full` | all | Union of all (default) |
+| `full` | common, extended, operations, reverse, pproxy-compat, pproxy-legacy | Default feature group; optional SSH and QUIC remain opt-in |
 
 Admin and metrics remain required dependencies for the snapshot invariant. The
 `extended` feature gates protocol accept paths, chain executor handlers, and

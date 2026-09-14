@@ -123,6 +123,15 @@ or print that value.
 cargo test -p eggress-transport-ssh --test openssh -- --nocapture
 ```
 
+The public embed boundary has an additional regression fixture in
+`crates/eggress-embed/tests/ssh.rs`. It proves pproxy SSH transports bytes
+through `OutboundConnector`, invalid credentials remain fail-closed and
+redacted, and native TOML rejects an untrusted host key:
+
+```bash
+cargo test -p eggress-embed --all-features --test ssh -- --nocapture
+```
+
 ### UDP-specific tests
 - `crates/eggress-udp/tests/socks5_upstream.rs` — upstream relay scenarios
 - `crates/eggress-runtime/tests/udp_upstream.rs` — runtime UDP upstream

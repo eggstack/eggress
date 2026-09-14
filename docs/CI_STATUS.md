@@ -8,7 +8,7 @@ Egress uses deliberately small hosted CI. GitHub Actions is a smoke signal for o
 
 The repository has four hosted workflows:
 
-- `.github/workflows/ci.yml`: one Ubuntu Rust job running format, Clippy, the default workspace test suite, one bounded optional-compat compile check, and fuzz-target compilation.
+- `.github/workflows/ci.yml`: one Ubuntu Rust job running format, Clippy, the default workspace test suite, bounded optional-compat and embed feature-boundary compile checks, and fuzz-target compilation.
 - `.github/workflows/python-test.yml`: one path-scoped Ubuntu/Python 3.12 smoke job for the Python binding and compatibility packages.
 - `.github/workflows/publish-python.yml`: a real release path, not a smoke job. It fires on every `v*` tag push, validates the tag against the workspace version, builds five-platform abi3 wheels plus an sdist, smoke-tests them, and publishes to PyPI through the protected `pypi` GitHub environment (TestPyPI only via manual dispatch).
 - `.github/workflows/release-binaries.yml`: a real release path, not a smoke job. It fires on every `v*` tag push (or manual dispatch against an existing tag), validates the tag with `scripts/release-preflight.sh`, builds the five canonical `eggress-cli` target archives with default features, smoke-tests both executables natively, and creates/updates the GitHub Release with archives, SHA-256 sidecars, and installers. Ordinary CI never builds this matrix.
@@ -43,7 +43,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --locked
 ```
 
-The Ubuntu Rust job additionally runs one bounded compile-only gate for
+The Ubuntu Rust job additionally runs bounded compile-only gates for
 product-relevant optional compatibility features that the default `full`
 group intentionally leaves off. It is compile verification, not a second
 full test suite, and it deliberately excludes the insecure/test-only
@@ -53,6 +53,15 @@ full test suite, and it deliberately excludes the insecure/test-only
 cargo check -p eggress-cli --locked --no-default-features \
   --features full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon \
   --bins
+```
+
+The same job checks the listener-free embed feature boundary without a
+Cartesian matrix:
+
+```bash
+cargo check -p eggress-embed --locked --no-default-features --features ssh
+cargo check -p eggress-embed --locked --no-default-features --features pproxy-compat
+cargo check -p eggress-embed --locked --no-default-features --features ssh,pproxy-compat
 ```
 
 For a Python-facing change, also build the extension and run the relevant Python tests:

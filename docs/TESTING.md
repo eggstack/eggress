@@ -42,6 +42,14 @@ cargo check -p eggress-cli --locked --no-default-features \
 This is the same command the Ubuntu Rust CI job runs. It is compile
 verification, not a second full test suite.
 
+The CI job also checks the three meaningful no-default embed feature slices:
+
+```bash
+cargo check -p eggress-embed --locked --no-default-features --features ssh
+cargo check -p eggress-embed --locked --no-default-features --features pproxy-compat
+cargo check -p eggress-embed --locked --no-default-features --features ssh,pproxy-compat
+```
+
 ## Python binding and compatibility package
 
 For Python-facing changes:
@@ -158,6 +166,7 @@ cargo test -p eggress-runtime --test upstream_protocols
 cargo test -p eggress-embed --test proxy_traffic
 cargo test -p eggress-embed --test error_redaction
 cargo test -p eggress-transport-ssh --test openssh -- --ignored  # requires openssh
+cargo test -p eggress-embed --all-features --test ssh -- --nocapture  # requires sshd/ssh-keygen
 ```
 
 ## Test selection rule

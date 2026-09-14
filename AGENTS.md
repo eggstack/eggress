@@ -9,6 +9,10 @@ Rust-native, embeddable multi-protocol proxy framework + CLI targeting practical
 - Start subsystem work at `architecture/overview.md` (index into per-component deep dives), not by re-deriving layout from source. Task→deep-dive map: CLI/ops → `cli.md` (+`admin.md`, `metrics.md`, `system-proxy.md`); protocols/transports → `protocols-*.md` / `transports-*.md`; byte relay → `relay.md` (+`core.md` for the legacy facade); embedding → `embed.md` / `python-bindings.md`; compat claims → `pproxy-compat.md`; config/reload/lifecycle → `config.md` / `runtime.md`; UDP/reverse → `udp.md` / `protocols-reverse.md`; verification → `testing-and-tooling.md`.
 - Skills live in `.skills/` (mirrored via symlinks into `.agents/skills/`, `.opencode/skills/` — add new skills in `.skills/` plus a symlink in each mirror). Load via the `skill` tool: `rust-proxy-dev`, `python-bindings`, `testing` are the most general; `cli-ops` covers native/compat CLI, exit codes, diagnostics, admin, metrics, system-proxy; also `security-dev`, `config-reload`, `routing-rules`, `udp-protocol`, `advanced-transports`, `reverse-proxy`, `release`.
 - `plans/` and phase-completion docs are historical; `docs/parity/pproxy_capability_manifest.toml` + `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md` are the authoritative compat contract. `docs/CI_STATUS.md` is the verification policy; `docs/TESTING.md` has the full suite inventory.
+- `eggress-embed::outbound::OutboundConnector` owns listener-free chain
+  execution state, including the SSH session cache when `ssh` is enabled:
+  native/TOML uses verified known-hosts policy, while `from_pproxy_uri()` uses
+  compatibility host-key behavior only with both `ssh` and `pproxy-compat`.
 
 ## Verify
 
@@ -24,6 +28,9 @@ cargo test --workspace --locked
 ```
 
 - Default `full` feature leaves off `ssh`, `quic`, `pproxy-legacy`, `legacy-crypto`, `pproxy-daemon`: after touching those paths also run `cargo check -p eggress-cli --locked --no-default-features --features full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon --bins`. Never substitute `--all-features` (drags in test-only `insecure-quic`).
+- For `eggress-embed` feature-boundary changes, also run the no-default
+  `ssh`, `pproxy-compat`, and `ssh,pproxy-compat` compile slices plus the
+  embed OpenSSH regression when host tools are available.
 - Python-facing changes: `(cd crates/eggress-python && ../../.venv/bin/maturin develop)` after creating `.venv` with `maturin>=1.0,<2.0`, `pytest`, `pytest-asyncio>=0.23,<1`, `cryptography>=42,<47`; also `pip install --no-deps ./python-pproxy-compat`. Always run pytest from repo root — `pytest.ini` forces `--import-mode=importlib` so `python/eggress` can't shadow the built `_eggress` extension.
 - `fuzz/` is a standalone workspace: `cargo check --manifest-path fuzz/Cargo.toml --bins`. Workspace commands don't cover it.
 - External suites are opt-in (they install/launch outside implementations); run only when the claim changed. Oracle is resolved from `$EGRESS_ORACLE_PYTHON`, then `$EGRESS_PYTHON_BIN`, then discovery; prebuilt venvs (`.venv-oracle`, `.venv-pproxy-279`) already exist at root:

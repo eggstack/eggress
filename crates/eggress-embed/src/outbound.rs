@@ -491,6 +491,38 @@ pub struct OutboundConnector {
     udp_live: Arc<AtomicU64>,
 }
 
+#[derive(Clone, Copy)]
+enum ExecutorMode {
+    Native,
+    Direct,
+    #[cfg(feature = "pproxy-compat")]
+    PproxyCompatibility,
+}
+
+fn build_outbound_executor(mode: ExecutorMode) -> eggress_core::chain::ChainExecutor {
+    #[cfg(feature = "ssh")]
+    let ssh_sessions = match mode {
+        ExecutorMode::Native => Some(Arc::new(eggress_transport_ssh::SshSessionCache::new())),
+        ExecutorMode::Direct => None,
+        #[cfg(feature = "pproxy-compat")]
+        ExecutorMode::PproxyCompatibility => Some(Arc::new(
+            eggress_transport_ssh::SshSessionCache::new_compatibility(),
+        )),
+    };
+
+    #[cfg(not(feature = "ssh"))]
+    let _ = mode;
+
+    #[cfg(feature = "ssh")]
+    {
+        eggress_server::build_chain_executor(None, None, ssh_sessions)
+    }
+    #[cfg(not(feature = "ssh"))]
+    {
+        eggress_server::build_chain_executor(None, None)
+    }
+}
+
 impl OutboundConnector {
     /// Create a connector from a TOML config string.
     ///
@@ -511,14 +543,9 @@ impl OutboundConnector {
             return Err(EggressError::Config("upstream chain is empty".to_string()));
         }
 
-        #[cfg(feature = "ssh")]
-        let chain_executor = eggress_server::build_chain_executor(None, None, None);
-        #[cfg(not(feature = "ssh"))]
-        let chain_executor = eggress_server::build_chain_executor(None, None);
-
         Ok(Self {
             runtime_config: Some(Arc::new(runtime_config)),
-            chain_executor,
+            chain_executor: build_outbound_executor(ExecutorMode::Native),
             direct: false,
             udp_live: Arc::new(AtomicU64::new(0)),
         })
@@ -538,13 +565,9 @@ impl OutboundConnector {
         let chain = eggress_pproxy_compat::uri::parse_pproxy_chain(uri)
             .map_err(|e| map_compat_parse_error(uri, &redacted_expr, e))?;
         if chain.hops.len() == 1 && chain.hops[0].scheme == "direct" {
-            #[cfg(feature = "ssh")]
-            let executor = eggress_server::build_chain_executor(None, None, None);
-            #[cfg(not(feature = "ssh"))]
-            let executor = eggress_server::build_chain_executor(None, None);
             return Ok(Self {
                 runtime_config: None,
-                chain_executor: executor,
+                chain_executor: build_outbound_executor(ExecutorMode::Direct),
                 direct: true,
                 udp_live: Arc::new(AtomicU64::new(0)),
             });
@@ -579,13 +602,9 @@ impl OutboundConnector {
             reverse_servers: Vec::new(),
             reverse_clients: Vec::new(),
         };
-        #[cfg(feature = "ssh")]
-        let chain_executor = eggress_server::build_chain_executor(None, None, None);
-        #[cfg(not(feature = "ssh"))]
-        let chain_executor = eggress_server::build_chain_executor(None, None);
         Ok(Self {
             runtime_config: Some(std::sync::Arc::new(runtime_config)),
-            chain_executor,
+            chain_executor: build_outbound_executor(ExecutorMode::PproxyCompatibility),
             direct: false,
             udp_live: Arc::new(AtomicU64::new(0)),
         })
