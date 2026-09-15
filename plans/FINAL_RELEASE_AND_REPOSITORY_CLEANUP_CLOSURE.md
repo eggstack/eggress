@@ -2,7 +2,7 @@
 
 ## Status
 
-**IN PROGRESS — 2026-09-14: release candidate 1.0.7 prepared on `main`; publication pending (see progress note at end of file). Do NOT treat as complete: crates.io publication, tag push, and PyPI/binary workflow verification have not run.**
+**COMPLETE — VERIFIED 2026-09-15** (see closure record at end of file).
 
 ## Baseline
 
@@ -880,3 +880,64 @@ passes; `cargo metadata --locked` passes.
    record (version/tag/SHA/CI/crates.io/PyPI/binary confirmations), and
    hand `>=1.0.7` to the Eggpool fallback-removal pass (in the Eggpool
    repository, not here).
+
+---
+
+# Closure record (2026-09-15, v1.0.7 published)
+
+All 19 completion criteria hold. Publication was operator-authorized and
+executed through the existing channels; no release model change was made.
+
+- Release version and tag: `v1.0.7` → commit
+  `c82649d3992fb9757de94fed945f6710bbfef61d` (tag commit verified by
+  `scripts/release-preflight.sh --tag v1.0.7`; working tree clean).
+- CI for release commit: `CI [34898668721]` success (Rust smoke incl. the
+  required OpenSSH embed regression, executed 3/3 — not skipped) and
+  `Python smoke [34898668730]` success. (The earlier red run `34894598922`
+  belongs to superseded baseline `3e689c9` and failed on a pre-existing
+  flaky transport pubkey-auth timing test, unrelated to this pass.)
+- crates.io: all 27 publishable crates at `1.0.7` published
+  dependency-first via `scripts/publish-remaining.sh` (real run, full Cargo
+  verification, no `--allow-dirty`/`--no-verify`, zero errors; log:
+  27 `Published` lines). Includes the tier-order fix validated in the
+  progress note (testkit after uri).
+- Clean install: `cargo install eggress-cli --version 1.0.7 --locked`
+  into `/tmp/eggress-release-check` → `eggress version` prints
+  `eggress 1.0.7`; `pproxy --version`/`--help` healthy.
+- Published embed consumers (temporary projects against the index):
+  `eggress-embed = "=1.0.7"` with `ssh` only and with
+  `ssh,pproxy-compat` both resolve, build, and run; the ssh-only
+  dependency tree contains zero `eggress-pproxy-compat`.
+- PyPI: `publish-python.yml [34925747101]` success; PyPI exposes
+  `eggress 1.0.7` (five abi3 wheels + sdist); clean
+  `pip install eggress==1.0.7` imports with `__version__ == "1.0.7"`.
+- GitHub Release: `release-binaries.yml [34925747023]` success;
+  `v1.0.7` carries all five canonical archives, five SHA-256 sidecars,
+  `install.sh`, and `install.ps1`.
+- OpenSSH regression: embed `ssh` test 3/3 (byte traversal,
+  fail-closed/redacted auth failure, native untrusted-host rejection)
+  locally in required mode, in hosted CI, and transport `openssh` 7/7.
+- Feature-tree isolation: `ssh` alone activates no `eggress-pproxy-compat`
+  (workspace tree and published-consumer tree both verified).
+- Publish-helper dry-run: leaves (`relay`, `uri`) pass full verification;
+  remaining crates fail only on unpublished-`1.0.7`-dep resolution, which
+  the ordered real run resolved.
+- Dependency/security: `cargo deny check` clean; `cargo audit` clean
+  (2 pre-existing allowed yanked warnings: `der`, `wnaf`).
+- Plan inventory: 84 reviewed; 63 complete/verified (incl. this plan now),
+  11 superseded, 9 deferred/optional (8 strict-line + full-drop-in
+  roadmap), 0 misleading READY.
+- Dependencies/features removed: none (duplicate transitive versions left
+  intact per WS3); security patch only: `rustls 0.23.41 → 0.23.45`
+  (+ `rustls-webpki → 0.103.15`) for RUSTSEC-2026-0285.
+- Deferred work: strict-parity line (roadmap + phases, excluding
+  complete 1/2/10) remains DEFERRED/OPTIONAL, not release-blocking.
+- Post-release docs: no wording changes needed — `v1.0.7` availability
+  statements are durable; install docs use version-agnostic
+  `/releases/latest/` URLs with current `1.0.7` pin examples; embed
+  examples use caret `"1"` requirements.
+- Downstream handoff: Eggpool must upgrade from Eggress `1.0.6` to
+  `>=1.0.7`, adopt `eggress-embed::outbound::OutboundConnector` as the
+  listener-free SSH ownership boundary, and remove its temporary
+  `eggress-ssh-fallback` path. That work belongs in the Eggpool
+  repository. No Eggpool-specific API was added to Eggress.
