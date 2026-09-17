@@ -1,7 +1,8 @@
 # Embed Outbound Typed Connect Errors
 
 Planning baseline: `db56b099e599e29e71bc65d180034edf86391982` (`main`, 2026-09-17; workspace 1.0.7)
-Status: planned
+Status: complete
+Implementation: `f69f25e` (`main`; `OutboundConnectError` + shared `eggress-server::classify`, SOCKS5 REP 0x05 typed refusal, `outbound_detailed` matrix; fmt/clippy/workspace + `full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon` check + embed `ssh`/`pproxy-compat` slices + OpenSSH regression green locally)
 
 ## Objective
 
