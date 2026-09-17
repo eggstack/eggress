@@ -191,6 +191,13 @@ assert_eq!(info.hop_count, 2);
 them in-process with no listener, and fails closed on unsupported hops.
 Requires the `pproxy-compat` feature.
 
+For stable failure categories without parsing strings, use the detailed
+surface (`connect_tcp_detailed()` / `connect_tcp_timeout_detailed()`),
+which reports `OutboundConnectErrorKind` (`Timeout`, `Dns`,
+`ConnectionRefused`, `Authentication`, `Tls`, `Protocol`, `Policy`, …)
+plus `HopConnect` vs `HopHandshake` stage and hop provenance. Ordinary
+`connect_tcp()` stays source-compatible.
+
 Listener-free UDP (`associate_udp`) supports fixed-target direct and
 single-hop SOCKS5 relay over IPv4/IPv6 with idempotent close;
 composed/Shadowsocks UDP in this surface fail with structured errors.

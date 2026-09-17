@@ -2,6 +2,7 @@ pub mod accept;
 #[cfg(feature = "extended")]
 pub mod advanced;
 mod auth;
+pub mod classify;
 pub mod error;
 pub mod execute;
 pub mod listener;

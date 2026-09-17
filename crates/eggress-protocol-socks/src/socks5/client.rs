@@ -146,6 +146,22 @@ async fn send_connect_request<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
+/// Map a SOCKS5 CONNECT reply code to a typed error.
+///
+/// RFC 1928 `REP` 0x05 means the proxy reached the server but the target
+/// refused the connection. That case uses the dedicated
+/// [`Socks5Error::ConnectionRefused`] variant so downstream classifiers can
+/// distinguish proxy-reported destination refusal without parsing display
+/// strings. All other non-zero reply codes remain
+/// [`Socks5Error::ConnectionFailed`] with the numeric code preserved.
+fn connect_failure_for_rep(rep: u8) -> Socks5Error {
+    if rep == 0x05 {
+        Socks5Error::ConnectionRefused
+    } else {
+        Socks5Error::ConnectionFailed(format!("SOCKS5 server returned error: {rep:#04x}"))
+    }
+}
+
 /// Read and validate a CONNECT reply from the server.
 async fn read_connect_reply<R: AsyncRead + Unpin>(
     reader: &mut R,
@@ -167,9 +183,7 @@ async fn read_connect_reply<R: AsyncRead + Unpin>(
             reader.read_exact(&mut addr).await?;
             let port = reader.read_u16().await?;
             if rep != 0x00 {
-                return Err(Socks5Error::ConnectionFailed(format!(
-                    "SOCKS5 server returned error: {rep:#04x}"
-                )));
+                return Err(connect_failure_for_rep(rep));
             }
             Ok(SocksAddr::IPv4(addr, port))
         }
@@ -179,9 +193,7 @@ async fn read_connect_reply<R: AsyncRead + Unpin>(
             reader.read_exact(&mut domain).await?;
             let _port = reader.read_u16().await?;
             if rep != 0x00 {
-                return Err(Socks5Error::ConnectionFailed(format!(
-                    "SOCKS5 server returned error: {rep:#04x}"
-                )));
+                return Err(connect_failure_for_rep(rep));
             }
             let domain = String::from_utf8(domain).map_err(|e| {
                 Socks5Error::MalformedMessage(format!("invalid domain in reply: {e}"))
@@ -193,9 +205,7 @@ async fn read_connect_reply<R: AsyncRead + Unpin>(
             reader.read_exact(&mut addr).await?;
             let port = reader.read_u16().await?;
             if rep != 0x00 {
-                return Err(Socks5Error::ConnectionFailed(format!(
-                    "SOCKS5 server returned error: {rep:#04x}"
-                )));
+                return Err(connect_failure_for_rep(rep));
             }
             Ok(SocksAddr::IPv6(addr, port))
         }
@@ -322,6 +332,21 @@ mod tests {
 
         let result = read_connect_reply(&mut client).await;
         assert!(matches!(result, Err(Socks5Error::ConnectionFailed(_))));
+    }
+
+    #[tokio::test]
+    async fn test_read_connect_reply_refused_is_typed() {
+        let (mut client, mut server) = duplex(1024);
+
+        // Reply: version=5, rep=5 (connection refused), rsv=0, atyp=1
+        server
+            .write_all(&[0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0])
+            .await
+            .unwrap();
+        server.write_all(&0u16.to_be_bytes()).await.unwrap();
+
+        let result = read_connect_reply(&mut client).await;
+        assert!(matches!(result, Err(Socks5Error::ConnectionRefused)));
     }
 
     #[tokio::test]

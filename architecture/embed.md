@@ -57,8 +57,10 @@ Validation chain (single shared boundary `parse_validate_compile`): `toml::from_
 |---|---|---|
 | `from_toml(config_toml)` | `src/outbound.rs` | Parse/validate/compile via shared `parse_validate_compile`, then require at least one upstream + non-empty chain (outbound-only checks) |
 | `from_pproxy_uri(uri)` | `src/outbound.rs` | Full pproxy `__` chain → `compile_chain_to_native` (typed `PproxyChain` → native `ProxyChainSpec`, no TOML string) → minimal `RuntimeConfig` → connector (fail-closed, redacted errors) |
-| `connect_tcp(host, port)` | :597 | Execute chain, return `(BoxStream, OutboundInfo)` |
-| `connect_tcp_timeout(host, port, timeout)` | :652 | Wraps `connect_tcp` in `tokio::time::timeout` |
+| `connect_tcp(host, port)` | `src/outbound.rs` | Compatibility surface: execute chain once, return `(BoxStream, OutboundInfo)`; failures stay `EggressError::Runtime` |
+| `connect_tcp_detailed(host, port)` | `src/outbound.rs` | Opt-in typed surface over the same single execution: returns `OutboundConnectError` with stable kind/stage/hop/protocol |
+| `connect_tcp_timeout(host, port, timeout)` | `src/outbound.rs` | Compatibility timeout: outer deadline stays `Runtime("connection timed out")` |
+| `connect_tcp_timeout_detailed(host, port, timeout)` | `src/outbound.rs` | Typed timeout: outer deadline is `Timeout`/`Deadline`; underlying timeouts keep their own stage |
 | `associate_udp(target_host, target_port)` | `src/outbound.rs` | Listener-free fixed-target UDP: direct or single-hop SOCKS5 via `eggress-udp` primitives, no hidden listener |
 | `associate_udp_timeout(host, port, timeout)` | `src/outbound.rs` | Same with establishment timeout |
 | `active_udp_associations()` | `src/outbound.rs` | Live listener-free UDP count (increment on create, decrement on close/drop) |
@@ -179,6 +181,37 @@ on success *and* failure). Rejected/failed reloads preserve generation.
 All variants carry redacted string messages. `category()` (:43-53) returns
 a stable `&'static str` label for each variant.
 
+### Typed outbound errors (`OutboundConnectError`)
+
+Ordinary `connect_tcp()` / `connect_tcp_timeout()` remain the simple
+compatibility API (`EggressError::Runtime`). Detailed
+`connect_tcp_detailed()` / `connect_tcp_timeout_detailed()` share one
+private `connect_tcp_inner()` with the legacy methods (same route
+construction and chain executor, exactly once) and return
+`OutboundConnectError` with stable `kind()` / `stage()` /
+`hop_index()` / `protocol()` facts:
+
+- Kinds: `Timeout`, `Dns`, `ConnectionRefused`, `NetworkUnreachable`,
+  `HostUnreachable`, `Authentication`, `Tls`, `Protocol`, `Policy`, `Other`.
+- Stages: `DirectConnect` (direct TCP), `HopConnect` (TCP to a hop),
+  `HopHandshake` (proxy protocol over an established hop stream),
+  `Deadline` (caller-supplied outer timeout only).
+- `HopConnect` vs `HopHandshake` lets consumers distinguish proxy transport
+  failure from proxy-reported destination failure without string parsing;
+  both may carry `ConnectionRefused` with different stages.
+- Direct `ConnectError` is classified without strings; boxed handshake
+  sources are downcast to built-in HTTP/SOCKS/TLS (plus Shadowsocks, Trojan,
+  WebSocket, SSH, QUIC/H3 when their features are enabled). SOCKS5 REP 0x05
+  is a typed `ConnectionRefused`; other REP codes stay `Protocol`.
+- Kind/stage/hop/protocol are diagnostic facts, not retry recommendations;
+  callers own retry/backoff policy and no direct fallback occurs.
+- `Display`/`Debug` carry only kind/stage/hop/protocol facts, never
+  credentials, URIs, or config snippets; there is no public `source()`
+  chain. The shared classifier lives in `eggress-server::classify`
+  (`#[doc(hidden)]`, type-based only) and also backs
+  `From<ChainError> for SessionOpenError`, which no longer flattens typed
+  handshake failures to strings.
+
 ## Configuration / features
 
 | Feature | Description |
@@ -230,6 +263,7 @@ a stable `&'static str` label for each variant.
 | `tests/metrics_status.rs` | Prometheus metrics rendering, service status |
 | `tests/proxy_traffic.rs` | End-to-end proxy traffic through embed handle |
 | `tests/error_redaction.rs` | Credential redaction in errors, `to_redacted_toml`, category labels |
+| `tests/outbound_detailed.rs` | Typed `connect_tcp_detailed` matrix (direct/HTTP/SOCKS/TLS, hop provenance, deadline, legacy compat, redaction, reuse/cancel) |
 
 Inline tests (`src/lib.rs`):
 - `listener_addr_*` helpers

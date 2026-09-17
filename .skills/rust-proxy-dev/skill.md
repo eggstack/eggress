@@ -170,8 +170,16 @@ For embedding eggress in another Rust process, use the `eggress-embed` crate:
   direct native `compile_chain_to_native()` (typed `PproxyChain` →
   `ProxyChainSpec`, no TOML string; `__` order preserved, no listener,
   fail-closed, redacted errors; `pproxy-compat` feature)
-- `OutboundConnector::connect_tcp()` / `connect_tcp_timeout()` — execute the
-  compiled chain in-process via `ChainExecutor`
+- `OutboundConnector::connect_tcp()` / `connect_tcp_timeout()` — compatibility
+  surfaces (`EggressError::Runtime`); execute the compiled chain in-process
+  via `ChainExecutor` through one shared `connect_tcp_inner()`
+- `OutboundConnector::connect_tcp_detailed()` /
+  `connect_tcp_timeout_detailed()` — opt-in typed `OutboundConnectError`
+  (`kind()`/`stage()`/`hop_index()`/`protocol()`, credential-safe
+  Display/Debug, no `source()` chain); same single execution as legacy.
+  Classify via `eggress-server::classify` (type-downcast only, never message
+  strings); `HopConnect` vs `HopHandshake` distinguishes transport from
+  proxy-reported failures; outer deadline is `Timeout`/`Deadline`
 
 See `docs/EMBED_API.md` for full reference.
 

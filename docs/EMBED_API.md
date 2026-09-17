@@ -164,6 +164,15 @@ Contract:
 - Unsupported chain semantics fail connector construction instead of being
   silently dropped or reordered.
 - Malformed chained input returns a credential-redacted diagnostic.
+- Ordinary `connect_tcp()` / `connect_tcp_timeout()` remain the compatibility
+  API (`EggressError::Runtime`). Detailed `connect_tcp_detailed()` /
+  `connect_tcp_timeout_detailed()` share the same single execution and return
+  `OutboundConnectError` with stable `kind()` / `stage()` / `hop_index()` /
+  `protocol()` facts for embedding/routing policy. Kind/stage/hop/protocol
+  are diagnostic facts, not retry recommendations; no direct fallback occurs.
+  `HopConnect` vs `HopHandshake` distinguishes proxy transport failure from
+  proxy-reported destination failure. Display/Debug are bounded and
+  credential-safe; the outer deadline maps to `Timeout` / `Deadline`.
 
 ### Listener-free UDP (`associate_udp`)
 
@@ -375,6 +384,9 @@ This API is designed for thin PyO3 wrappers:
 | `ServiceStatus` | `generation`, `readiness`, `active_connections`, `uptime_secs`, `listener_count`, `listeners`, `udp_associations_active`, `upstream_count` |
 | `ListenerStatus` | `name`, `bind`, `local_addr`, `protocols`, `udp_enabled` |
 | `ReloadOutcome` | `Applied { generation, upstreams }` |
-| `OutboundConnector` | `from_toml`, `from_pproxy_uri`, `connect_tcp`, `connect_tcp_timeout`, `upstream_count` |
+| `OutboundConnector` | `from_toml`, `from_pproxy_uri`, `connect_tcp`, `connect_tcp_detailed`, `connect_tcp_timeout`, `connect_tcp_timeout_detailed`, `upstream_count` |
 | `OutboundInfo` | `local_addr`, `peer_addr`, `hop_count` |
+| `OutboundConnectError` | `kind`, `stage`, `hop_index`, `protocol` |
+| `OutboundConnectErrorKind` | `Timeout`, `Dns`, `ConnectionRefused`, `NetworkUnreachable`, `HostUnreachable`, `Authentication`, `Tls`, `Protocol`, `Policy`, `Other` |
+| `OutboundConnectStage` | `DirectConnect`, `HopConnect`, `HopHandshake`, `Deadline` |
 | `EggressError` | `Config`, `Runtime`, `Startup`, `Reload`, `Shutdown`, `UnsupportedFeature`, `Internal` |

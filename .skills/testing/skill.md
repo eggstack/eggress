@@ -325,6 +325,8 @@ The `eggress-embed` crate has integration tests in `crates/eggress-embed/tests/`
 - `reload.rs` — reload generation increment, invalid config, bind change rejection
 - `metrics_status.rs` — Prometheus counters, status fields, metrics after session
 - `error_redaction.rs` — no credentials in error messages, error categories
+- `outbound_detailed.rs` — typed `connect_tcp_detailed` matrix (no string
+  parsing for categories; credential-safe Display/Debug/source)
 
 Run: `cargo test -p eggress-embed`
 

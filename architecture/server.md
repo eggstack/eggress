@@ -13,7 +13,8 @@ crate.
 | `src/accept/` | `mod.rs` (entry points + auth/session types) + `handlers.rs` (SOCKS5/SOCKS4/HTTP handshakes), `forward.rs` (CONNECT parsing, authority, 407 challenges), `detect.rs` (first-byte dispatch), `prefixed.rs` (peek-then-delegate stream): `AcceptedSession` (4 variants), `TunnelProtocol` (10 variants), `ReplyContext` (9 variants), `InboundAuthentication`, `AuthReuseCache` (IP-keyed, 4096 entries), `AcceptError`, `MAX_HEAD_SIZE` (32 KiB), `MAX_HEADER_LINES` (128) |
 | `src/execute/` | `mod.rs` (`execute()` dispatcher, `open_route()`, `build_chain_executor()`, `SessionReport`, `SessionOutcome` (7 variants), `FailureCategory` (15 variants)) + `hops.rs` (one `HopHandler` per upstream protocol, `HttpOnlyStream`, `PooledH2Stream`, `target_to_socks_addr`) |
 | `src/reply.rs` | Protocol-correct success/failure replies: `send_tunnel_success()`, `send_tunnel_failure()`, `send_http_forward_failure()`, `send_http_expectation_failed()` (417), `send_http_upgrade_unsupported()` (501) |
-| `src/error.rs` | `SessionOpenError` with `From` impls for `ConnectError`, `ChainError`, `HttpError`, `Socks5Error` |
+| `src/error.rs` | `SessionOpenError` with `From` impls for `ConnectError`, `ChainError`, `HttpError`, `Socks5Error` (handshake path via shared `classify`) |
+| `src/classify.rs` | Shared type-based classifier (`ClassifiedKind`, `classify_io_kind` / `classify_connect_error` / `classify_handshake_source`, `#[doc(hidden)]`); single source for `SessionOpenError` and embed typed errors |
 | `src/advanced.rs` | `serve_h2_connection()` (H2 multiplexing), `serve_websocket_connection()` (WS upgrade). Gated on `feature = "extended"`. |
 | `src/listener/unix.rs` | `UnixListener` with lifecycle management; refuses to unlink non-socket files or symlinks even when `unlink_existing=true` |
 | `src/listener/transparent.rs` | Linux `SO_ORIGINAL_DST` retrieval — workspace's single documented `unsafe` block (ADR at `docs/adr/ADR_transparent_proxy_unsafe_boundary.md`) |
@@ -120,7 +121,7 @@ H2/WebSocket failure: stream shutdown (no framed error code). HTTP forward failu
 
 ### `SessionOpenError` — key `From` conversions
 
-`ConnectError` maps `ConnectionRefused`→`Refused`, `Timeout`→`Timeout`, `DnsResolution`→`Dns`, `TlsHandshake`/`Io`/`ReservedTarget`→`Other(msg)`. `ChainError::ConnectFailed` maps to `Hop { hop_index, source: from(source) }`. `HttpError::AuthRequired`/`AuthFailed`→`UpstreamAuthentication`. `Socks5Error::AuthFailed`→`UpstreamAuthentication`. Full table in `error.rs`.
+`ConnectError` maps `ConnectionRefused`→`Refused`, `Timeout`→`Timeout`, `DnsResolution`→`Dns`, `TlsHandshake`/`ReservedTarget`→`Other(msg)`; `Io` kinds map `ConnectionRefused`→`Refused`, `TimedOut`→`Timeout`, `NetworkUnreachable`/`HostUnreachable`→their variants, else `Other`. `ChainError::ConnectFailed` maps to `Hop { hop_index, source: from(source) }`; `HandshakeFailed` reuses `classify::classify_handshake_source` so typed HTTP/SOCKS auth/refusal/timeout (and other built-in protocol) failures keep their category instead of flattening to `Other(string)`. `HttpError::AuthRequired`/`AuthFailed`→`UpstreamAuthentication`. `Socks5Error::AuthFailed`→`UpstreamAuthentication` (SOCKS5 REP 0x05 is now a typed `ConnectionRefused` at the client). Full table in `error.rs` + `classify.rs`.
 
 ## Configuration & features
 

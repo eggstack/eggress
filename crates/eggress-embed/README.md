@@ -67,6 +67,27 @@ reusable SSH session cache internally: native TOML uses verified known-hosts
 behavior, while the explicitly compatibility-oriented constructor retains
 pproxy's compatibility host-key policy.
 
+Ordinary `connect_tcp()` / `connect_tcp_timeout()` remain the simple
+compatibility API (`EggressError::Runtime`). Detailed
+`connect_tcp_detailed()` / `connect_tcp_timeout_detailed()` share the same
+single execution and return `OutboundConnectError` with stable
+`kind()` / `stage()` / `hop_index()` / `protocol()` facts for
+embedding/routing policy:
+
+```rust
+match connector.connect_tcp_detailed("example.invalid", 443).await {
+    Err(error) if error.kind() == OutboundConnectErrorKind::Dns => { /* route policy */ }
+    Err(error) => { /* generic failure */ }
+    Ok(_) => { /* connected */ }
+}
+```
+
+Kind, stage, hop, and protocol are diagnostic facts, not retry
+recommendations; callers own retry/backoff policy and no direct fallback
+occurs on proxy failure. `HopConnect` vs `HopHandshake` distinguishes proxy
+transport failure from proxy-reported destination failure. Display/Debug are
+bounded and credential-safe.
+
 ## Documentation
 
 - [Workspace README](https://github.com/eggstack/eggress/blob/main/README.md)

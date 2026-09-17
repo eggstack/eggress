@@ -79,6 +79,10 @@ len+bytes), 0x04=IPv6(16B). Sync parsers `parse_connect_request` (:140) and
 
 REP=0x00 success, REP=0x07 command not supported. `handle_socks5_handshake`
 (:522-528) catches `UnsupportedCommand` and sends REP=0x07 before closing.
+Client `read_connect_reply` maps numeric REP 0x05 to typed
+`Socks5Error::ConnectionRefused` (proxy-reported destination refusal);
+other non-zero REPs stay `ConnectionFailed` with the code preserved, so
+downstream classifiers need no string parsing.
 
 ### SOCKS5 UDP datagram (`:udp_codec.rs`)
 

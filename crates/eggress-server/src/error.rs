@@ -34,7 +34,19 @@ impl From<eggress_core::ConnectError> for SessionOpenError {
             eggress_core::ConnectError::TlsHandshake(_) => {
                 SessionOpenError::Other("TLS handshake failed".into())
             }
-            eggress_core::ConnectError::Io(io) => SessionOpenError::Other(io.to_string()),
+            eggress_core::ConnectError::Io(io) => {
+                match crate::classify::classify_io_kind(io.kind()) {
+                    crate::classify::ClassifiedKind::Refused => SessionOpenError::Refused,
+                    crate::classify::ClassifiedKind::Timeout => SessionOpenError::Timeout,
+                    crate::classify::ClassifiedKind::NetworkUnreachable => {
+                        SessionOpenError::NetworkUnreachable
+                    }
+                    crate::classify::ClassifiedKind::HostUnreachable => {
+                        SessionOpenError::HostUnreachable
+                    }
+                    _ => SessionOpenError::Other(io.to_string()),
+                }
+            }
             eggress_core::ConnectError::ReservedTarget(addr) => {
                 SessionOpenError::Other(format!("reserved target: {addr}"))
             }
@@ -53,10 +65,36 @@ impl From<eggress_core::chain::ChainError> for SessionOpenError {
             },
             eggress_core::chain::ChainError::HandshakeFailed {
                 hop_index, source, ..
-            } => SessionOpenError::Hop {
-                hop: hop_index,
-                source: Box::new(SessionOpenError::Other(source.to_string())),
-            },
+            } => {
+                // Reuse the shared handshake classifier so built-in
+                // HTTP/SOCKS (and other typed) failures keep their
+                // structured category instead of flattening to a string.
+                let kind = crate::classify::classify_handshake_source(&*source);
+                let inner = match kind {
+                    crate::classify::ClassifiedKind::Auth => {
+                        SessionOpenError::UpstreamAuthentication
+                    }
+                    crate::classify::ClassifiedKind::Refused => SessionOpenError::Refused,
+                    crate::classify::ClassifiedKind::Timeout => SessionOpenError::Timeout,
+                    crate::classify::ClassifiedKind::Dns => SessionOpenError::Dns,
+                    crate::classify::ClassifiedKind::NetworkUnreachable => {
+                        SessionOpenError::NetworkUnreachable
+                    }
+                    crate::classify::ClassifiedKind::HostUnreachable => {
+                        SessionOpenError::HostUnreachable
+                    }
+                    crate::classify::ClassifiedKind::Policy => SessionOpenError::PolicyDenied,
+                    crate::classify::ClassifiedKind::Tls
+                    | crate::classify::ClassifiedKind::Protocol
+                    | crate::classify::ClassifiedKind::Other => {
+                        SessionOpenError::Other(source.to_string())
+                    }
+                };
+                SessionOpenError::Hop {
+                    hop: hop_index,
+                    source: Box::new(inner),
+                }
+            }
             eggress_core::chain::ChainError::EmptyChain => {
                 SessionOpenError::Other("empty chain".into())
             }

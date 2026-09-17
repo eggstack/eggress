@@ -30,6 +30,198 @@ pub struct OutboundInfo {
     pub hop_count: usize,
 }
 
+/// Stable failure category for listener-free TCP establishment.
+///
+/// Protocol-neutral and general-purpose: embedding consumers match on this
+/// plus [`OutboundConnectError::stage`]/[`OutboundConnectError::hop_index`]
+/// to implement their own routing policy without parsing display strings.
+/// The enum is [`non_exhaustive`](https://doc.rust-lang.org/reference/attributes/type_system.html)
+/// so new categories can be added without breaking downstream matches.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutboundConnectErrorKind {
+    Timeout,
+    Dns,
+    ConnectionRefused,
+    NetworkUnreachable,
+    HostUnreachable,
+    Authentication,
+    Tls,
+    Protocol,
+    Policy,
+    Other,
+}
+
+impl std::fmt::Display for OutboundConnectErrorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let label = match self {
+            Self::Timeout => "timeout",
+            Self::Dns => "dns",
+            Self::ConnectionRefused => "connection_refused",
+            Self::NetworkUnreachable => "network_unreachable",
+            Self::HostUnreachable => "host_unreachable",
+            Self::Authentication => "authentication",
+            Self::Tls => "tls",
+            Self::Protocol => "protocol",
+            Self::Policy => "policy",
+            Self::Other => "other",
+        };
+        f.write_str(label)
+    }
+}
+
+/// Route stage where a listener-free TCP establishment failed.
+///
+/// Distinguishes transport failures (opening TCP to a hop) from proxy
+/// protocol handshake failures (the proxy accepted TCP but reported a
+/// destination/authentication problem), plus the caller-supplied outer
+/// deadline. Consumers combine `kind` + `stage` + `hop_index` into their own
+/// policy; Eggress never retries or falls back on their behalf.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutboundConnectStage {
+    DirectConnect,
+    HopConnect,
+    HopHandshake,
+    Deadline,
+}
+
+impl std::fmt::Display for OutboundConnectStage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let label = match self {
+            Self::DirectConnect => "direct_connect",
+            Self::HopConnect => "hop_connect",
+            Self::HopHandshake => "hop_handshake",
+            Self::Deadline => "deadline",
+        };
+        f.write_str(label)
+    }
+}
+
+/// Typed failure for listener-free TCP establishment.
+///
+/// Returned by
+/// [`OutboundConnector::connect_tcp_detailed`] and
+/// [`OutboundConnector::connect_tcp_timeout_detailed`]. The struct uses
+/// private fields with accessors so metadata can be extended without forcing
+/// exhaustive matches on internal details.
+///
+/// `Display` and `Debug` are bounded, redacted, and safe to log: they carry
+/// only kind/stage/hop/protocol facts, never proxy credentials, passwords,
+/// auth headers, full credential-bearing URIs, or configuration snippets.
+/// Callers already know the target they requested; it is not echoed here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutboundConnectError {
+    kind: OutboundConnectErrorKind,
+    stage: OutboundConnectStage,
+    hop_index: Option<usize>,
+    protocol: Option<String>,
+    message: String,
+}
+
+impl OutboundConnectError {
+    fn new(
+        kind: OutboundConnectErrorKind,
+        stage: OutboundConnectStage,
+        hop_index: Option<usize>,
+        protocol: Option<String>,
+    ) -> Self {
+        let message = match (&hop_index, &protocol) {
+            (Some(hop), Some(proto)) => {
+                format!("outbound connection failed: kind={kind} stage={stage} hop={hop} protocol={proto}")
+            }
+            (Some(hop), None) => {
+                format!("outbound connection failed: kind={kind} stage={stage} hop={hop}")
+            }
+            (None, Some(proto)) => {
+                format!("outbound connection failed: kind={kind} stage={stage} protocol={proto}")
+            }
+            (None, None) => {
+                format!("outbound connection failed: kind={kind} stage={stage}")
+            }
+        };
+        Self {
+            kind,
+            stage,
+            hop_index,
+            protocol,
+            message,
+        }
+    }
+
+    /// Stable failure category for routing policy.
+    pub fn kind(&self) -> OutboundConnectErrorKind {
+        self.kind
+    }
+
+    /// Route stage where establishment failed.
+    pub fn stage(&self) -> OutboundConnectStage {
+        self.stage
+    }
+
+    /// Failing hop index for chained failures, if applicable.
+    pub fn hop_index(&self) -> Option<usize> {
+        self.hop_index
+    }
+
+    /// Bounded protocol label for handshake failures, if applicable.
+    ///
+    /// Derived from the chain's protocol identifier (lowercased, e.g.
+    /// `"http"`, `"socks5"`, `"tls"`); never contains credentials.
+    pub fn protocol(&self) -> Option<&str> {
+        self.protocol.as_deref()
+    }
+}
+
+impl std::fmt::Display for OutboundConnectError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for OutboundConnectError {}
+
+/// Internal classified failure retaining both public representations.
+///
+/// `error` is the detailed typed surface; `compat_message` is the exact
+/// sanitized string legacy `connect_tcp()`/`connect_tcp_timeout()` return
+/// inside `EggressError::Runtime`, preserving behavioral compatibility.
+struct ClassifiedFailure {
+    error: OutboundConnectError,
+    compat_message: String,
+}
+
+fn map_classified_kind(kind: eggress_server::classify::ClassifiedKind) -> OutboundConnectErrorKind {
+    match kind {
+        eggress_server::classify::ClassifiedKind::Timeout => OutboundConnectErrorKind::Timeout,
+        eggress_server::classify::ClassifiedKind::Dns => OutboundConnectErrorKind::Dns,
+        eggress_server::classify::ClassifiedKind::Refused => {
+            OutboundConnectErrorKind::ConnectionRefused
+        }
+        eggress_server::classify::ClassifiedKind::NetworkUnreachable => {
+            OutboundConnectErrorKind::NetworkUnreachable
+        }
+        eggress_server::classify::ClassifiedKind::HostUnreachable => {
+            OutboundConnectErrorKind::HostUnreachable
+        }
+        eggress_server::classify::ClassifiedKind::Auth => OutboundConnectErrorKind::Authentication,
+        eggress_server::classify::ClassifiedKind::Tls => OutboundConnectErrorKind::Tls,
+        eggress_server::classify::ClassifiedKind::Protocol => OutboundConnectErrorKind::Protocol,
+        eggress_server::classify::ClassifiedKind::Policy => OutboundConnectErrorKind::Policy,
+        eggress_server::classify::ClassifiedKind::Other => OutboundConnectErrorKind::Other,
+    }
+}
+
+/// Normalize a chain protocol label for the public typed surface.
+///
+/// The chain executor reports labels like `"Http"`, `"Socks5"`, `"tls"`, or
+/// `"Http+Socks5"`. Lowercasing keeps the stable contract predictable while
+/// remaining bounded; the label originates from `ProtocolSpec` debug names
+/// and never carries credentials.
+fn normalize_protocol_label(raw: &str) -> String {
+    raw.to_ascii_lowercase()
+}
+
 /// Listener-free UDP association.
 ///
 /// Fixed-target (connected) semantics: the target is fixed at
@@ -613,11 +805,165 @@ impl OutboundConnector {
     /// Connect to a target host:port through the configured proxy chain.
     ///
     /// Returns the connected stream and connection metadata.
+    ///
+    /// Compatibility surface: failures remain `EggressError::Runtime` with
+    /// the established message shape. New consumers that need stable failure
+    /// categories without parsing strings should use
+    /// [`OutboundConnector::connect_tcp_detailed`].
     pub async fn connect_tcp(
         &self,
         host: &str,
         port: u16,
     ) -> Result<(eggress_core::BoxStream, OutboundInfo), EggressError> {
+        self.connect_tcp_inner(host, port)
+            .await
+            .map_err(|failure| EggressError::Runtime(failure.compat_message))
+    }
+
+    /// Connect with typed failure details.
+    ///
+    /// Opt-in detailed surface over the same single route construction and
+    /// chain execution as [`OutboundConnector::connect_tcp`]: the returned
+    /// [`OutboundConnectError`] exposes stable `kind`/`stage`/hop/protocol
+    /// facts for embedding/routing policy. Kind, stage, hop, and protocol
+    /// are diagnostic facts, not retry recommendations; callers decide
+    /// retry/backoff policy and no direct fallback occurs on proxy failure.
+    pub async fn connect_tcp_detailed(
+        &self,
+        host: &str,
+        port: u16,
+    ) -> Result<(eggress_core::BoxStream, OutboundInfo), OutboundConnectError> {
+        self.connect_tcp_inner(host, port)
+            .await
+            .map_err(|failure| failure.error)
+    }
+
+    /// Connect with a timeout.
+    ///
+    /// Compatibility surface: the outer deadline remains
+    /// `EggressError::Runtime("connection timed out")`. See
+    /// [`OutboundConnector::connect_tcp_timeout_detailed`] for the typed
+    /// variant that distinguishes the caller deadline (`Deadline` stage)
+    /// from underlying transport timeouts.
+    pub async fn connect_tcp_timeout(
+        &self,
+        host: &str,
+        port: u16,
+        timeout: Duration,
+    ) -> Result<(eggress_core::BoxStream, OutboundInfo), EggressError> {
+        match tokio::time::timeout(timeout, self.connect_tcp_inner(host, port)).await {
+            Err(_) => Err(EggressError::Runtime("connection timed out".to_string())),
+            Ok(inner) => inner.map_err(|failure| EggressError::Runtime(failure.compat_message)),
+        }
+    }
+
+    /// Connect with a timeout and typed failure details.
+    ///
+    /// The caller-supplied outer deadline maps to
+    /// `kind=Timeout, stage=Deadline`; underlying direct, hop-connect, or
+    /// handshake timeouts keep their own stage. Cancellation remains
+    /// cancellation by future drop and is never synthesized into an error.
+    pub async fn connect_tcp_timeout_detailed(
+        &self,
+        host: &str,
+        port: u16,
+        timeout: Duration,
+    ) -> Result<(eggress_core::BoxStream, OutboundInfo), OutboundConnectError> {
+        match tokio::time::timeout(timeout, self.connect_tcp_inner(host, port)).await {
+            Err(_) => Err(OutboundConnectError::new(
+                OutboundConnectErrorKind::Timeout,
+                OutboundConnectStage::Deadline,
+                None,
+                None,
+            )),
+            Ok(inner) => inner.map_err(|failure| failure.error),
+        }
+    }
+
+    /// Single internal connection implementation preserving typed sources.
+    ///
+    /// Both legacy (`connect_tcp`) and detailed (`connect_tcp_detailed`)
+    /// surfaces execute this routine exactly once per call; it retains enough
+    /// structure to produce the typed error and the legacy compatibility
+    /// string from the same failure. No second chain executor or duplicated
+    /// route selection exists.
+    async fn connect_tcp_inner(
+        &self,
+        host: &str,
+        port: u16,
+    ) -> Result<(eggress_core::BoxStream, OutboundInfo), ClassifiedFailure> {
+        fn direct_failure(source: eggress_core::ConnectError) -> ClassifiedFailure {
+            let compat_message = source.to_string();
+            let kind =
+                map_classified_kind(eggress_server::classify::classify_connect_error(&source));
+            ClassifiedFailure {
+                error: OutboundConnectError::new(
+                    kind,
+                    OutboundConnectStage::DirectConnect,
+                    None,
+                    None,
+                ),
+                compat_message,
+            }
+        }
+
+        fn chain_failure(error: eggress_core::chain::ChainError) -> ClassifiedFailure {
+            let compat_message = error.to_string();
+            let detailed = match &error {
+                eggress_core::chain::ChainError::ConnectFailed {
+                    hop_index, source, ..
+                } => {
+                    let kind = map_classified_kind(
+                        eggress_server::classify::classify_connect_error(source),
+                    );
+                    OutboundConnectError::new(
+                        kind,
+                        OutboundConnectStage::HopConnect,
+                        Some(*hop_index),
+                        None,
+                    )
+                }
+                eggress_core::chain::ChainError::HandshakeFailed {
+                    hop_index,
+                    protocol,
+                    source,
+                } => {
+                    let mut kind = map_classified_kind(
+                        eggress_server::classify::classify_handshake_source(&**source),
+                    );
+                    // Explicit TLS wrapping stage carries TLS provenance even
+                    // when the boxed source is generic.
+                    if protocol.eq_ignore_ascii_case("tls")
+                        && matches!(
+                            kind,
+                            OutboundConnectErrorKind::Protocol | OutboundConnectErrorKind::Other
+                        )
+                    {
+                        kind = OutboundConnectErrorKind::Tls;
+                    }
+                    OutboundConnectError::new(
+                        kind,
+                        OutboundConnectStage::HopHandshake,
+                        Some(*hop_index),
+                        Some(normalize_protocol_label(protocol)),
+                    )
+                }
+                eggress_core::chain::ChainError::EmptyChain
+                | eggress_core::chain::ChainError::InvalidChain { .. } => {
+                    OutboundConnectError::new(
+                        OutboundConnectErrorKind::Policy,
+                        OutboundConnectStage::DirectConnect,
+                        None,
+                        None,
+                    )
+                }
+            };
+            ClassifiedFailure {
+                error: detailed,
+                compat_message,
+            }
+        }
+
         let target = eggress_core::TargetAddr {
             host: if let Ok(ip) = host.parse::<std::net::IpAddr>() {
                 eggress_core::TargetHost::Ip(ip)
@@ -631,7 +977,7 @@ impl OutboundConnector {
             let stream = eggress_core::connector::DirectConnector
                 .connect_with_options(&target, &eggress_core::connector::ConnectOptions::default())
                 .await
-                .map_err(|e| EggressError::Runtime(e.to_string()))?;
+                .map_err(direct_failure)?;
             return Ok((
                 stream,
                 OutboundInfo {
@@ -642,9 +988,18 @@ impl OutboundConnector {
             ));
         }
 
-        let runtime_config = self.runtime_config.as_ref().ok_or_else(|| {
-            EggressError::Runtime("outbound runtime configuration is unavailable".to_string())
-        })?;
+        let runtime_config = self
+            .runtime_config
+            .as_ref()
+            .ok_or_else(|| ClassifiedFailure {
+                error: OutboundConnectError::new(
+                    OutboundConnectErrorKind::Other,
+                    OutboundConnectStage::DirectConnect,
+                    None,
+                    None,
+                ),
+                compat_message: "outbound runtime configuration is unavailable".to_string(),
+            })?;
         let upstream = &runtime_config.upstreams[0];
         let chain = &upstream.chain;
 
@@ -656,7 +1011,7 @@ impl OutboundConnector {
             .chain_executor
             .execute(&chain.hops, &target)
             .await
-            .map_err(|e| EggressError::Runtime(e.to_string()))?;
+            .map_err(chain_failure)?;
 
         let info = OutboundInfo {
             local_addr: None,
@@ -665,18 +1020,6 @@ impl OutboundConnector {
         };
 
         Ok((stream, info))
-    }
-
-    /// Connect with a timeout.
-    pub async fn connect_tcp_timeout(
-        &self,
-        host: &str,
-        port: u16,
-        timeout: Duration,
-    ) -> Result<(eggress_core::BoxStream, OutboundInfo), EggressError> {
-        tokio::time::timeout(timeout, self.connect_tcp(host, port))
-            .await
-            .map_err(|_| EggressError::Runtime("connection timed out".to_string()))?
     }
 
     /// Create a listener-free UDP association for a fixed target.
