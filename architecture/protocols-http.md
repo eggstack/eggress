@@ -10,7 +10,7 @@ proxy-usable HTTP from other protocols by method/response shape.
 | File | Role | Key lines |
 |---|---|---|
 | `connect/server.rs` | `handle_connect`: bounded CONNECT head, Basic auth constant-time compare, 200/407 | `MAX_HEAD_SIZE` (:10), `MAX_HEADER_LINES` (:13), `handle_connect` (:35), `parse_authority` (:177), `parse_basic_auth` (:259) |
-| `connect/client.rs` | `http_connect`: send CONNECT, read reply; `validate_credentials` rejects control chars | `HttpConnectLimits` (:12), `validate_credentials` (:34), `http_connect` (:55), `parse_status_code` (:196) |
+| `connect/client.rs` | `http_connect`: authority-form CONNECT, byte-preserving reply parse; `validate_credentials` rejects control chars | `HttpConnectLimits`, `validate_credentials`, `authority_form`, `build_connect_request`, `http_connect`, `read_response_status`, `parse_status_code` (compat helper) |
 | `forward/server.rs` | Absolute-to-origin form, hop-by-hop filter, body framing, chunk caps, informational bound | `BodyCopyLimits` (:7), `determine_request_body_kind` (:269), `filter_hop_by_hop` (:398), `forward_response` (:647), `parse_header_line` (:1085) |
 | `h2_connect.rs` | H2 CONNECT client/server/relay; `H2ConnectionPool`/`H2PoolRegistry` keyed by endpoint + SHA-256 cred hash; `H2_PROTOCOL_METRICS` | `h2_connect_relay` (:168), `H2PoolKey` (:441), `H2ConnectionPool` (:550) |
 | `detect.rs` | `HttpDetector`: confidence 100 for methods, 95 for responses | `HttpDetector` (:7), `HTTP_METHODS` (:9) |
@@ -36,24 +36,43 @@ Re-exported from `lib.rs` (:12-27): `handle_connect`, `ConnectRequest`,
 
 ```
 CONNECT host:port HTTP/1.1\r\n
+Host: host:port\r\n
 [Proxy-Authorization: Basic <base64(user:pass)>\r\n]
 \r\n
 ```
+
+Outbound authority comes from a single `authority_form` helper so the
+request line and `Host` agree. Domains/IPv4 render as `host:port`; IPv6
+renders bracketed as `[addr]:port`. Empty hosts and request-line
+splitting bytes (controls, DEL, space, `:`, `@`, `/` in domains) fail
+closed before any wire bytes. Credentials are validated before the
+request is built and never appear in errors.
 
 Server limits: head <= 32 KiB (`MAX_HEAD_SIZE`, :10), headers <= 128
 (`MAX_HEADER_LINES`, :13). Authority (`:177`): `host:port`, `[ipv6]:port`;
 domain-only returns error.
 
-### Client-side CONNECT response limits (`HttpConnectLimits` defaults, :22-28)
+### Client-side CONNECT response limits (`HttpConnectLimits` defaults)
 
-| Limit | Default |
-|---|---|
-| `max_status_line` | 1024 B |
-| `max_headers_bytes` | 32 KiB |
-| `max_header_count` | 100 |
+| Limit | Default | Counts |
+|---|---|---|
+| `max_status_line` | 1024 B | Status-line bytes before CRLF |
+| `max_headers_bytes` | 32 KiB | Total response-head bytes |
+| `max_header_count` | 100 | Actual header fields only (status line and terminal empty line excluded) |
 
-Status mapping (:103-110): 200-299 success, 407/403/502/504 to typed errors,
+Response parsing is byte-preserving: only the status line must be UTF-8;
+header values may carry obs-text bytes without failing the tunnel.
+Read-ahead bytes after `\r\n\r\n` stay buffered in the returned
+`BoxStream`.
+
+Status mapping: 200-299 success, 407/403/502/504 to typed errors,
 other codes `UnexpectedStatus`.
+
+Ownership note: outbound H1 CONNECT wire mechanics remain local to
+`eggress-protocol-http`. The Eggfetch shared CONNECT primitive
+(`plans/EGGFETCH_*`) is deferred until its published crate is resolvable
+through the normal registry with an MSRV compatible with Eggress 1.85;
+no `eggfetch-core` dependency exists. H2 CONNECT ownership is unchanged.
 
 ### Forward request
 
@@ -131,8 +150,10 @@ and `DnsRebinding`.
 | Request/response trailers | 32/64 KiB | `BodyCopyLimits` (:22), `:356` |
 
 **Constant-time auth**: CONNECT server uses `subtle::ConstantTimeEq`
-(:connect/server.rs:47-49). `validate_credentials` (:connect/client.rs:31)
-rejects bytes < 0x20 or 0x7F before wire.
+(:connect/server.rs:47-49). `validate_credentials`
+(`connect/client.rs`) rejects bytes < 0x20 or 0x7F before wire; the
+outbound builder validates before producing request bytes and redacts
+credentials from errors.
 
 **Header validation**: forward `parse_header_line` (:forward/server.rs:1085)
 rejects NUL/CR/LF in names/values per RFC 7230 s3.2.4. Reason phrase validated
@@ -157,7 +178,13 @@ at `idle_timeout / 2`.
 
 - `connect/server.rs`: `parse_authority`, `parse_header_line`,
   `parse_basic_auth`, head-size/header-count rejection.
-- `connect/client.rs`: `parse_status_code`, `validate_credentials`,
+- `connect/client.rs`: `parse_status_code`/`validate_credentials` compat
+  helpers, authority-form unit tests (IPv4/IPv6/domain, injection
+  rejection), wire tests (request-line/Host agreement, bracketed IPv6,
+  non-default ports, auth header, pre-write credential rejection, secret
+  redaction), status tests (200/201/204 success, 403/407/502/504/arbitrary
+  mappings, malformed/truncated/overlong/total-limit, exact-100 vs 101
+  header counts, non-UTF-8 header acceptance, pipelined read-ahead),
   synthetic server integration (200/407/403/malformed/slow/headers-too-large).
 - `forward/server.rs`: `parse_absolute_uri`, `filter_hop_by_hop`,
   `determine_request_body_kind` (all branches), body copy (chunked/CL/EOF,

@@ -23,8 +23,15 @@ Host: host:port\r\n
 \r\n
 ```
 
+Authority and `Host` are produced from one helper so they agree. Domains
+and IPv4 use `host:port`; IPv6 uses bracketed `[addr]:port`. Empty hosts
+and request-line splitting bytes fail before any wire bytes are sent.
+
 The client expects a response head terminated by `\r\n\r\n`. Any `2xx` status
 code indicates success; the stream is returned for bidirectional forwarding.
+Only the status line must be UTF-8; header values may contain obs-text
+bytes. Bytes already buffered past the terminator are replayed first from
+the returned stream.
 
 ## Authentication
 
@@ -40,13 +47,15 @@ before sending any bytes to the upstream.
 
 Configurable via `HttpConnectLimits`:
 
-| Field               | Default    | Description                         |
-|---------------------|------------|-------------------------------------|
-| `max_status_line`   | 1024       | Maximum length of the status line   |
-| `max_headers_bytes` | 32,768     | Maximum total bytes for headers     |
-| `max_header_count`  | 100        | Maximum number of header lines      |
+| Field               | Default    | Description                                         |
+|---------------------|------------|-----------------------------------------------------|
+| `max_status_line`   | 1024       | Maximum length of the status line (before CRLF)     |
+| `max_headers_bytes` | 32,768     | Maximum total bytes for the response head           |
+| `max_header_count`  | 100        | Maximum number of actual header fields (status line and terminal empty line excluded) |
 
-Exceeding these limits returns `HeaderTooLarge` or `TooManyHeaders`.
+Exceeding size limits returns `HeaderTooLarge`; exceeding the field count
+returns `TooManyHeaders`. Truncated or malformed heads return
+`MalformedResponse`.
 
 ## Error Mapping
 
@@ -70,8 +79,14 @@ Exceeding these limits returns `HeaderTooLarge` or `TooManyHeaders`.
 - Malformed response handling
 - Slow response timeout (external timeout)
 - Header size limit enforcement
+- Authority formatting (domain/IPv4/IPv6 bracketed, injection rejected)
+- Wire agreement (request-line authority matches `Host`, non-default ports)
+- Pre-write credential rejection and secret redaction in errors
+- Status policy (201/204 success, 502/504/arbitrary mappings, truncated/overlong heads)
+- Header-count boundaries (exactly 100 accepted, 101 rejected)
+- Non-UTF-8 header acceptance and pipelined read-ahead preservation
 
-Test count: 76 tests across `eggress-protocol-http`.
+Test count: run `cargo test -p eggress-protocol-http` for the current total.
 
 ## Limitations
 

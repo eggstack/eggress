@@ -518,3 +518,113 @@ Stop and revise rather than forcing completion if:
 - package publication would require a git/path-only dependency in the released manifest.
 
 In those cases, retain the current small local implementation until the shared boundary can be corrected upstream.
+
+---
+
+# Closure record — 2026-09-17 (local hardening; upstream dependency deferred)
+
+## Disposition
+
+**Deferred per stop conditions; local correctness closure completed.**
+
+- `cargo search eggfetch-http-connect` returns no published crate; the
+  prerequisite `EGGFETCH_SHARED_HTTP_CONNECT_PRIMITIVE_PREREQUISITE.md`
+  is not yet published to crates.io. A releasable Eggress manifest therefore
+  cannot depend on it without a git/path-only edge, which this plan forbids.
+- Eggress declares `rust-version = "1.85"` (`rust-toolchain.toml` pins
+  1.85.0); the Eggfetch workspace declares `rust-version = "1.89"`. No
+  independently approved Eggress MSRV migration has landed, so adopting an
+  Eggfetch-1.89 primitive now would be a silent MSRV increase.
+- Per the plan's stop conditions, the small local H1 implementation is
+  retained. No `eggfetch-core` or `eggfetch-http-connect` dependency was
+  added; `cargo tree -p eggress-protocol-http -e features` contains zero
+  `eggfetch` entries and no new Hyper client/pool, Rustls, or resolver
+  edges from this change.
+
+## What changed instead
+
+`crates/eggress-protocol-http/src/connect/client.rs` was hardened to the
+target semantics the shared primitive would have provided, behind the
+unchanged public facade (`http_connect`, `validate_credentials`,
+`HttpConnectLimits`, `connect::client::parse_status_code`):
+
+- `authority_form()`: single helper for request-line and `Host`
+  (domain/IPv4 `host:port`, IPv6 `[addr]:port`); rejects empty hosts and
+  request-line splitting bytes before any wire write.
+- `build_connect_request()`: validates credentials before producing bytes;
+  errors never carry credential/Base64 material.
+- `read_response_status()`: byte-preserving head read; only the status
+  line must be UTF-8, header obs-text bytes accepted; header count is
+  actual header fields (status line and terminal empty line excluded);
+  `BufReader`-backed `BufferedStream` still replays pipelined bytes first.
+- `parse_status_from_bytes()`: wire status parser mirroring the public
+  string helper's token rules plus the configured status-line limit.
+- Eggress status policy unchanged (2xx success; 407/403/502/504 mappings).
+
+`HttpHopHandler` (`crates/eggress-server/src/execute/hops.rs`) unchanged
+except for delegation internals (still calls `http_connect`). H2 CONNECT,
+inbound CONNECT, forward/httponly, and all other protocols untouched.
+
+## Regression matrix (all at the public boundary)
+
+New tests in `connect/client.rs` cover the plan's Workstream 6 matrix:
+authority/Host agreement (domain, IPv4, bracketed IPv6), non-default
+ports, Basic-auth header, pre-write credential rejection (zero request
+bytes), secret redaction (Display/Debug, incl. Base64), 200/201/204
+success, 403/407/502/504/arbitrary mappings, malformed/truncated/overlong
+heads, total-head limit, exactly-100 accepted / 101 rejected, non-UTF-8
+header acceptance, and single-write pipelined read-ahead (`PIPELINED-BYTES`
++ delayed `-LATER`). Existing chaining coverage retained
+(`eggress-runtime` `chain_http_connect_consumes_prior_hop_stream`,
+`chain_http_to_ws_over_stream`, `multihop_tcp` http chains).
+
+## Validation (same toolchain/target/profile, x86_64-unknown-linux-gnu)
+
+- `cargo test -p eggress-protocol-http --locked`: 170 passed.
+- `cargo test -p eggress-server --locked`: 108 passed.
+- `cargo fmt --all -- --check`: clean (after `cargo fmt --all`).
+- `cargo clippy -p eggress-protocol-http --all-targets -- -D warnings`: clean.
+- `cargo package -p eggress-protocol-http --allow-dirty`: ok.
+- `cargo publish -p eggress-protocol-http --dry-run --allow-dirty`: ok
+  (dry-run upload abort expected).
+- MSRV: workspace still declares 1.85; toolchain 1.85.0; no MSRV change.
+
+## Footprint (measured, not claimed from line deletion)
+
+```text
+metric                         before       after       delta
+----------------------------------------------------------------
+eggress-protocol-http tree     no eggfetch  no eggfetch  +0 packages
+eggress-cli duplicate tree     getrandom-led getrandom-led unchanged family
+release raw bytes              11562432     11566528    +4096 (+0.04%)
+release stripped bytes         11562432     11566528    +4096 (strip=symbols)
+release-small raw bytes        7585240      7585240     +0
+```
+
+Classification: **neutral / bounded**. No dependency reduction was
+expected (H2 still needs `base64`/`bytes`/`h2`/HTTP types) and none is
+claimed. The maintenance win is the corrected local wire code shaped as a
+thin adapter (`authority_form` / `build_connect_request` /
+`read_response_status` / status classifier), ready to delegate to the
+published primitive once available.
+
+## Docs
+
+- `architecture/protocols-http.md`: client module map, request wire
+  (shared authority/Host, bracketed IPv6, pre-write validation), response
+  limits table (field-count semantics, byte-preserving parse, read-ahead),
+  ownership note (H1 remains local; Eggfetch dependency deferred; H2
+  unchanged), expanded test-coverage list.
+- `docs/protocols/HTTP_CONNECT.md`: wire format, limits table, and test
+  list updated to match behavior; stale fixed test count removed.
+- `README.md`, `AGENTS.md`, `.skills/*`: reviewed; no stale CONNECT
+  ownership claims found, no extraction history added per plan guidance.
+
+## Deferred follow-up
+
+When `eggfetch-http-connect` is published with MSRV ≤ Eggress's approved
+MSRV, replace `authority_form` / `build_connect_request` /
+`read_response_status` internals with the shared primitive behind the same
+facade, re-run this plan's full Workstream 9 measurements, and record the
+exact crate version + Eggfetch commit here. Do not add a git/path
+dependency in the interim.
