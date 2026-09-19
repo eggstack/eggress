@@ -325,10 +325,15 @@ The `eggress-embed` crate has integration tests in `crates/eggress-embed/tests/`
 - `reload.rs` — reload generation increment, invalid config, bind change rejection
 - `metrics_status.rs` — Prometheus counters, status fields, metrics after session
 - `error_redaction.rs` — no credentials in error messages, error categories
-- `outbound_detailed.rs` — typed `connect_tcp_detailed` matrix (no string
+- `outbound_detailed.rs` — typed `connect_tcp_detailed` matrix via the
+  `eggress_embed::outbound` facade (no string
   parsing for categories; credential-safe Display/Debug/source)
 
 Run: `cargo test -p eggress-embed`
+
+Listener-free outbound unit coverage (construction, classifier, HttpOnly
+rewrite, UDP lifecycle) lives in `eggress-outbound`:
+`cargo test -p eggress-outbound --no-default-features --features udp,pproxy-compat,toml`.
 
 Tests use local TCP echo servers (no public internet required).
 

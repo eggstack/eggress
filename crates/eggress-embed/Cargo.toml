@@ -14,16 +14,21 @@ readme = "README.md"
 default = ["full"]
 full = ["common", "extended", "operations", "reverse", "pproxy-compat", "pproxy-legacy"]
 common = ["eggress-runtime/common"]
-extended = ["eggress-runtime/extended"]
-pproxy-legacy = ["eggress-runtime/pproxy-legacy"]
-legacy-crypto = ["eggress-runtime/legacy-crypto"]
+extended = ["eggress-runtime/extended", "eggress-outbound/extended"]
+pproxy-legacy = ["eggress-runtime/pproxy-legacy", "eggress-outbound/pproxy-legacy"]
+legacy-crypto = ["eggress-runtime/legacy-crypto", "eggress-outbound/legacy-crypto"]
 operations = ["eggress-runtime/operations"]
 reverse = ["eggress-runtime/reverse"]
-quic = ["eggress-config/quic", "eggress-runtime/quic"]
-pproxy-compat = ["dep:eggress-pproxy-compat"]
+quic = [
+    "eggress-config/quic",
+    "eggress-runtime/quic",
+    "eggress-outbound/quic",
+]
+pproxy-compat = ["dep:eggress-pproxy-compat", "eggress-outbound/pproxy-compat"]
 ssh = [
     "dep:eggress-transport-ssh",
     "eggress-runtime/ssh",
+    "eggress-outbound/ssh",
     "eggress-pproxy-compat?/ssh",
 ]
 
@@ -31,6 +36,7 @@ ssh = [
 eggress-config = { workspace = true }
 eggress-core = { workspace = true }
 eggress-metrics.workspace = true
+eggress-outbound = { workspace = true, features = ["toml", "udp"] }
 eggress-pproxy-compat = { workspace = true, optional = true }
 eggress-protocol-socks = { workspace = true }
 eggress-routing = { workspace = true }

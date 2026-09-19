@@ -2,7 +2,9 @@ pub mod accept;
 #[cfg(feature = "extended")]
 pub mod advanced;
 mod auth;
-pub mod classify;
+/// Shared typed outbound classifier (single authority in
+/// `eggress-outbound`; re-exported here for source compatibility).
+pub use eggress_outbound::classify;
 pub mod error;
 pub mod execute;
 pub mod listener;

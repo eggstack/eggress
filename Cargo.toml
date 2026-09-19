@@ -28,6 +28,7 @@ members = [
     "crates/eggress-testkit",
     "crates/eggress-pproxy-compat",
     "crates/eggress-embed",
+    "crates/eggress-outbound",
     "crates/eggress-python",
     "crates/eggress-protocol-websocket",
     "crates/eggress-protocol-reverse",
@@ -116,6 +117,7 @@ eggress-cli = { version = "=1.0.7", path = "crates/eggress-cli" }
 eggress-runtime = { version = "=1.0.7", path = "crates/eggress-runtime", default-features = false }
 eggress-pproxy-compat = { version = "=1.0.7", path = "crates/eggress-pproxy-compat" }
 eggress-embed = { version = "=1.0.7", path = "crates/eggress-embed", default-features = false }
+eggress-outbound = { version = "=1.0.7", path = "crates/eggress-outbound", default-features = false }
 eggress-protocol-websocket = { version = "=1.0.7", path = "crates/eggress-protocol-websocket" }
 eggress-protocol-reverse = { version = "=1.0.7", path = "crates/eggress-protocol-reverse" }
 eggress-protocol-h3 = { version = "=1.0.7", path = "crates/eggress-protocol-h3", default-features = false }

@@ -60,11 +60,20 @@ eggress-embed = "1"
 
 From a repository checkout, substitute `eggress-embed = { path = "crates/eggress-embed" }`.
 
-For listener-free outbound chains, enable `ssh` for native/TOML SSH upstreams.
-The `pproxy-compat` feature enables `OutboundConnector::from_pproxy_uri()`;
-pproxy-style SSH requires both features. The connector owns SSH session state
-internally and keeps native known-host verification separate from the explicit
-pproxy compatibility policy.
+For listener-free outbound chains without the full service, depend directly
+on `eggress-outbound` (`eggress_embed::outbound::*` re-exports the same API
+for full-service consumers):
+
+```toml
+[dependencies]
+eggress-outbound = "1"
+```
+
+Enable `ssh` for native/TOML SSH upstreams. The `pproxy-compat` feature
+enables `OutboundConnector::from_pproxy_uri()`; pproxy-style SSH requires
+both features. The connector owns SSH session state internally and keeps
+native known-host verification separate from the explicit pproxy
+compatibility policy.
 
 The embed SSH regression uses a temporary local OpenSSH server. Run it with
 `EGRESS_REQUIRE_OPENSSH_TESTS=1` when validating an SSH-enabled build; CI

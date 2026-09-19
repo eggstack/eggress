@@ -44,11 +44,14 @@ handle.shutdown().await?;
 
 ## Native outbound connector (no listener)
 
-`OutboundConnector` executes a configured upstream chain in-process via
-`ChainExecutor`, without starting a listener. `from_toml()` supports native
-TOML chains, including SSH when `ssh` is enabled. `from_pproxy_uri()` accepts
-canonical `__` multi-hop chains, preserves hop order, and fails closed on
-unsupported chain members instead of dropping them:
+`OutboundConnector` (implementation authority in `eggress-outbound`,
+re-exported here as `eggress_embed::outbound::*`) executes a configured
+upstream chain in-process via `ChainExecutor`, without starting a listener.
+`from_chain()` takes a compiled native chain directly; `from_toml()`
+supports native TOML chains, including SSH when `ssh` is enabled.
+`from_pproxy_uri()` accepts canonical `__` multi-hop chains, preserves hop
+order, and fails closed on unsupported chain members instead of dropping
+them:
 
 ```rust
 let connector = OutboundConnector::from_pproxy_uri(
@@ -68,7 +71,7 @@ behavior, while the explicitly compatibility-oriented constructor retains
 pproxy's compatibility host-key policy.
 
 Ordinary `connect_tcp()` / `connect_tcp_timeout()` remain the simple
-compatibility API (`EggressError::Runtime`). Detailed
+compatibility API (`OutboundError::Runtime`). Detailed
 `connect_tcp_detailed()` / `connect_tcp_timeout_detailed()` share the same
 single execution and return `OutboundConnectError` with stable
 `kind()` / `stage()` / `hop_index()` / `protocol()` facts for

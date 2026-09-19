@@ -116,6 +116,7 @@ direct connector with DNS-rebinding protection, and the multi-hop
 - `ChainError`: EmptyChain, ConnectFailed{hop_index, endpoint, source}, HandshakeFailed{hop_index, protocol, source}, InvalidChain{reason}
 - `HandshakeError`: Io, Protocol, ConnectionRefused, AuthFailed, Other
 - `TlsWrapper`: boxed async closure `(BoxStream, String, Option<Vec<Vec<u8>>>, bool) -> Result<BoxStream, ...>` (the `bool` is the insecure flag)
+- Concrete protocol handlers and the executor factory live in `eggress-outbound` ([outbound.md](outbound.md)); core owns only the generic machinery
 
 ### Capability (`capability.rs`)
 
@@ -200,6 +201,7 @@ direct connector with DNS-rebinding protection, and the multi-hop
 - [overview.md](overview.md) -- system architecture
 - [relay.md](relay.md) -- generic relay engine, half-close policy, error model
 - [uri.md](uri.md) -- proxy chain URI grammar consumed by `ChainExecutor`
+- [outbound.md](outbound.md) -- concrete hop handlers, executor factory, shared classifier, `OutboundConnector`
 - [config.md](config.md) -- TOML schema and compilation
 - [routing.md](routing.md) -- rule matching and route selection
 - [server.md](server.md) -- connection orchestration driving core types

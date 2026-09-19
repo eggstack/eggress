@@ -6,6 +6,7 @@
 
 use std::time::Duration;
 
+use eggress_embed::outbound::OutboundError;
 use eggress_embed::outbound::{OutboundConnectErrorKind, OutboundConnectStage, OutboundConnector};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -570,7 +571,7 @@ async fn legacy_methods_remain_compatible() {
         .err()
         .expect("must fail");
     match &legacy {
-        eggress_embed::EggressError::Runtime(_) => {}
+        OutboundError::Runtime(_) => {}
         other => panic!("legacy chain failure must stay Runtime, got {other:?}"),
     }
 
@@ -731,7 +732,7 @@ async fn trojan_missing_password_is_protocol() {
     // proves fail-closed behavior. Otherwise the handshake classifies.
     let connector = match OutboundConnector::from_toml(&toml_for_uri(&uri)) {
         Ok(connector) => connector,
-        Err(eggress_embed::EggressError::Config(_)) => return,
+        Err(OutboundError::Config(_)) => return,
         Err(other) => panic!("unexpected constructor error: {other:?}"),
     };
     let err = connector
@@ -750,7 +751,7 @@ async fn shadowsocks_missing_credentials_is_protocol() {
     let uri = format!("shadowsocks://{acceptor}");
     let connector = match OutboundConnector::from_toml(&toml_for_uri(&uri)) {
         Ok(connector) => connector,
-        Err(eggress_embed::EggressError::Config(_)) => return,
+        Err(OutboundError::Config(_)) => return,
         Err(other) => panic!("unexpected constructor error: {other:?}"),
     };
     let err = connector

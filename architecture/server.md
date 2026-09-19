@@ -11,10 +11,9 @@ crate.
 |------|------|
 | `src/lib.rs` | `serve_connection()` entry point; `ConnectionConfig`, `ConnectionContext`, `SessionMetrics` trait (6 session/route/upstream/auth methods; runtime concerns moved to `eggress-metrics::RuntimeMetrics`), `UdpService` trait, `UdpAssociationHandle`, `NoopMetrics` |
 | `src/accept/` | `mod.rs` (entry points + auth/session types) + `handlers.rs` (SOCKS5/SOCKS4/HTTP handshakes), `forward.rs` (CONNECT parsing, authority, 407 challenges), `detect.rs` (first-byte dispatch), `prefixed.rs` (peek-then-delegate stream): `AcceptedSession` (4 variants), `TunnelProtocol` (10 variants), `ReplyContext` (9 variants), `InboundAuthentication`, `AuthReuseCache` (IP-keyed, 4096 entries), `AcceptError`, `MAX_HEAD_SIZE` (32 KiB), `MAX_HEADER_LINES` (128) |
-| `src/execute/` | `mod.rs` (`execute()` dispatcher, `open_route()`, `build_chain_executor()`, `SessionReport`, `SessionOutcome` (7 variants), `FailureCategory` (15 variants)) + `hops.rs` (one `HopHandler` per upstream protocol, `HttpOnlyStream`, `PooledH2Stream`, `target_to_socks_addr`) |
+| `src/execute/` | `mod.rs` (`execute()` dispatcher, `open_route()`, `SessionReport`, `SessionOutcome` (7 variants), `FailureCategory` (15 variants); chain execution via `eggress-outbound::build_chain_executor`) |
 | `src/reply.rs` | Protocol-correct success/failure replies: `send_tunnel_success()`, `send_tunnel_failure()`, `send_http_forward_failure()`, `send_http_expectation_failed()` (417), `send_http_upgrade_unsupported()` (501) |
-| `src/error.rs` | `SessionOpenError` with `From` impls for `ConnectError`, `ChainError`, `HttpError`, `Socks5Error` (handshake path via shared `classify`) |
-| `src/classify.rs` | Shared type-based classifier (`ClassifiedKind`, `classify_io_kind` / `classify_connect_error` / `classify_handshake_source`, `#[doc(hidden)]`); single source for `SessionOpenError` and embed typed errors |
+| `src/error.rs` | `SessionOpenError` with `From` impls for `ConnectError`, `ChainError`, `HttpError`, `Socks5Error` (handshake path via the shared `eggress-outbound::classify`) |
 | `src/advanced.rs` | `serve_h2_connection()` (H2 multiplexing), `serve_websocket_connection()` (WS upgrade). Gated on `feature = "extended"`. |
 | `src/listener/unix.rs` | `UnixListener` with lifecycle management; refuses to unlink non-socket files or symlinks even when `unlink_existing=true` |
 | `src/listener/transparent.rs` | Linux `SO_ORIGINAL_DST` retrieval — workspace's single documented `unsafe` block (ADR at `docs/adr/ADR_transparent_proxy_unsafe_boundary.md`) |
@@ -121,7 +120,7 @@ H2/WebSocket failure: stream shutdown (no framed error code). HTTP forward failu
 
 ### `SessionOpenError` — key `From` conversions
 
-`ConnectError` maps `ConnectionRefused`→`Refused`, `Timeout`→`Timeout`, `DnsResolution`→`Dns`, `TlsHandshake`/`ReservedTarget`→`Other(msg)`; `Io` kinds map `ConnectionRefused`→`Refused`, `TimedOut`→`Timeout`, `NetworkUnreachable`/`HostUnreachable`→their variants, else `Other`. `ChainError::ConnectFailed` maps to `Hop { hop_index, source: from(source) }`; `HandshakeFailed` reuses `classify::classify_handshake_source` so typed HTTP/SOCKS auth/refusal/timeout (and other built-in protocol) failures keep their category instead of flattening to `Other(string)`. `HttpError::AuthRequired`/`AuthFailed`→`UpstreamAuthentication`. `Socks5Error::AuthFailed`→`UpstreamAuthentication` (SOCKS5 REP 0x05 is now a typed `ConnectionRefused` at the client). Full table in `error.rs` + `classify.rs`.
+`ConnectError` maps `ConnectionRefused`→`Refused`, `Timeout`→`Timeout`, `DnsResolution`→`Dns`, `TlsHandshake`/`ReservedTarget`→`Other(msg)`; `Io` kinds map `ConnectionRefused`→`Refused`, `TimedOut`→`Timeout`, `NetworkUnreachable`/`HostUnreachable`→their variants, else `Other`. `ChainError::ConnectFailed` maps to `Hop { hop_index, source: from(source) }`; `HandshakeFailed` reuses `eggress-outbound::classify::classify_handshake_source` so typed HTTP/SOCKS auth/refusal/timeout (and other built-in protocol) failures keep their category instead of flattening to `Other(string)`. `HttpError::AuthRequired`/`AuthFailed`→`UpstreamAuthentication`. `Socks5Error::AuthFailed`→`UpstreamAuthentication` (SOCKS5 REP 0x05 is now a typed `ConnectionRefused` at the client). Full table in `error.rs`; classifier truth lives in [outbound.md](outbound.md).
 
 ## Configuration & features
 
@@ -153,9 +152,18 @@ H2/WebSocket failure: stream shutdown (no framed error code). HTTP forward failu
 | `quic` | `QuicHopHandler`, `H3HopHandler` |
 | `legacy-crypto` | Legacy Shadowsocks cipher methods |
 
-### Hop handler registry (`build_chain_executor`)
+### Hop handler registry (`eggress-outbound::build_chain_executor`)
 
-Handlers in fixed order (`execute/mod.rs:991`): Http, HttpOnly, Socks5, Socks4, [Shadowsocks, Trojan, WebSocket] (extended), [ShadowsocksR] (pproxy-legacy), Raw, Unix, [Ssh] (ssh), H2, [Quic, H3] (quic). The executor also installs a TLS wrapper using system root CAs or the `tls_client_config` override.
+Concrete hop composition lives in `eggress-outbound` (single authority);
+the server consumes it and only passes listener-owned inputs (TLS override,
+Shadowsocks metrics, SSH session cache). `eggress_server::classify` is a
+re-export of `eggress_outbound::classify`, and `eggress_server::
+build_chain_executor` re-exports the outbound factory so existing callers
+share one registry and TLS composition.
+
+Handlers in fixed order: Http, HttpOnly, Socks5, Socks4, [Shadowsocks,
+Trojan, WebSocket] (extended), [ShadowsocksR] (pproxy-legacy), Raw, Unix,
+[Ssh] (ssh), H2, [Quic, H3] (quic). Details: [outbound.md](outbound.md).
 
 ## Security notes
 
@@ -190,7 +198,9 @@ Handlers in fixed order (`execute/mod.rs:991`): Http, HttpOnly, Socks5, Socks4, 
 | Body upload | Connect timeout does NOT limit body upload; Expect 100-continue -> 417; upgrade unsupported -> 501 |
 | Advanced | H2 listener routes CONNECT; WebSocket listener routes binary |
 | Lean build | SS/Trojan/WS rejected in non-extended build; HTTP/SOCKS still works |
-| HttpOnly | origin-form rewrite, header terminator preservation, mixed line endings |
+
+HttpOnly origin-form rewrite coverage lives in `eggress-outbound`
+(hop-owned); server tests treat the outbound crate as a dependency.
 
 Run: `cargo test -p eggress-server`
 
@@ -200,14 +210,17 @@ Run: `cargo test -p eggress-server`
 2. `FailureCategory::Relay` covers both `ConnectionReset` and `TimedOut` I/O errors — no distinction.
 3. `SessionReport::rejected()` produces `RouteFailed` + `PolicyDenied`; NOT a separate `SessionOutcome`.
 4. Non-extended build: `shadowsocks_metrics` field becomes `Option<()>`.
-5. `HttpOnlyHopHandler` rewrites origin-form to absolute-form for pproxy `httponly` compat — not a general rewriter.
-6. `PooledH2Stream` wraps stream + pool guard; dropping releases connection back to H2 pool.
-7. `PrefixedStream` (`accept.rs:263`) replays bytes consumed during detection — every accept path wraps the stream.
-8. `open_route()` maps `RouteError::NoEligibleUpstream` and `RouteError::UnknownGroup` to `PolicyDenied` (`execute.rs:324-328`).
+5. `HttpOnlyHopHandler` (in `eggress-outbound`) rewrites origin-form to absolute-form for pproxy `httponly` compat — not a general rewriter.
+6. `PrefixedStream` (`accept.rs:263`) replays bytes consumed during detection — every accept path wraps the stream.
+7. `open_route()` maps `RouteError::NoEligibleUpstream` and `RouteError::UnknownGroup` to `PolicyDenied` (`execute.rs:324-328`).
+8. Concrete hop handlers live in `eggress-outbound`; do not reintroduce a
+   server-local registry. Shared helpers (`target_to_socks_addr`,
+   classifier) are consumed from `eggress-outbound`, never duplicated.
 
 ## See also
 
-- [core.md](core.md) — relay facade, BoxStream, chain executor, hop handler trait
+- [outbound.md](outbound.md) — concrete hop registry, executor factory, shared classifier, `OutboundConnector`
+- [core.md](core.md) — relay facade, BoxStream, generic chain executor, hop handler trait
 - [relay.md](relay.md) — generic relay engine behind the core facade
 - [protocols-http.md](protocols-http.md) — HTTP CONNECT/forward, hop-by-hop filtering
 - [protocols-socks.md](protocols-socks.md) — SOCKS4/5 protocol details

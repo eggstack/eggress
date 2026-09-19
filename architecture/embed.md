@@ -9,7 +9,7 @@ listeners entirely. Designed as the binding target for PyO3.
 | File | Role |
 |---|---|
 | `src/lib.rs` | `EggressConfig`, `EggressService`, `EggressHandle`, redaction logic |
-| `src/outbound.rs` | `OutboundConnector` for chain execution without listeners |
+| `src/outbound.rs` | Compatibility facade: `pub use eggress_outbound::*` (implementation authority in `eggress-outbound`) |
 | `src/error.rs` | `EggressError` enum (7 variants, PyO3-mappable) |
 
 ## Public API surface
@@ -51,55 +51,51 @@ Validation chain (single shared boundary `parse_validate_compile`): `toml::from_
 | `shutdown()` async | :601 | Cancel token + join runtime |
 | `shutdown_blocking()` | :619 | Blocking shutdown |
 
-### OutboundConnector (`src/outbound.rs:487`)
+### OutboundConnector (`eggress_embed::outbound::*`, authority in `eggress-outbound`)
 
-| Method | Line | Description |
-|---|---|---|
-| `from_toml(config_toml)` | `src/outbound.rs` | Parse/validate/compile via shared `parse_validate_compile`, then require at least one upstream + non-empty chain (outbound-only checks) |
-| `from_pproxy_uri(uri)` | `src/outbound.rs` | Full pproxy `__` chain → `compile_chain_to_native` (typed `PproxyChain` → native `ProxyChainSpec`, no TOML string) → minimal `RuntimeConfig` → connector (fail-closed, redacted errors) |
-| `connect_tcp(host, port)` | `src/outbound.rs` | Compatibility surface: execute chain once, return `(BoxStream, OutboundInfo)`; failures stay `EggressError::Runtime` |
-| `connect_tcp_detailed(host, port)` | `src/outbound.rs` | Opt-in typed surface over the same single execution: returns `OutboundConnectError` with stable kind/stage/hop/protocol |
-| `connect_tcp_timeout(host, port, timeout)` | `src/outbound.rs` | Compatibility timeout: outer deadline stays `Runtime("connection timed out")` |
-| `connect_tcp_timeout_detailed(host, port, timeout)` | `src/outbound.rs` | Typed timeout: outer deadline is `Timeout`/`Deadline`; underlying timeouts keep their own stage |
-| `associate_udp(target_host, target_port)` | `src/outbound.rs` | Listener-free fixed-target UDP: direct or single-hop SOCKS5 via `eggress-udp` primitives, no hidden listener |
-| `associate_udp_timeout(host, port, timeout)` | `src/outbound.rs` | Same with establishment timeout |
-| `active_udp_associations()` | `src/outbound.rs` | Live listener-free UDP count (increment on create, decrement on close/drop) |
-| `upstream_count()` | :807 | Number of configured upstreams |
-| `validate_outbound_config(toml)` | :819 | Static validation, returns hop count |
+Compatibility facade over `eggress-outbound::OutboundConnector`
+(`src/outbound.rs` is `pub use eggress_outbound::*`). Downstream
+`use eggress_embed::outbound::{OutboundConnector, OutboundConnectErrorKind}`
+keeps working; the implementation, hop registry, executor factory, and
+classifier live in [outbound.md](outbound.md).
 
-### Outbound UDP (`associate_udp`)
+| Method | Description |
+|---|---|
+| `from_chain(chain)` | Native constructor from a compiled `ProxyChainSpec` (no TOML/pproxy); rejects empty chains |
+| `direct()` | Explicit direct connector |
+| `from_toml(config_toml)` | Parse/validate/compile via the canonical outbound boundary, then require at least one upstream + non-empty chain |
+| `from_pproxy_uri(uri)` | Full pproxy `__` chain → `compile_chain_to_native` (no TOML string) → stored chain (fail-closed, redacted errors) |
+| `connect_tcp(host, port)` | Compatibility surface: failures stay `OutboundError::Runtime` |
+| `connect_tcp_detailed(host, port)` | Opt-in typed surface returning `OutboundConnectError` |
+| `connect_tcp_timeout(host, port, timeout)` | Compatibility timeout: outer deadline stays `Runtime("connection timed out")` |
+| `connect_tcp_timeout_detailed(host, port, timeout)` | Typed timeout: outer deadline is `Timeout`/`Deadline` |
+| `associate_udp(target_host, target_port)` | Listener-free fixed-target UDP: direct or single-hop SOCKS5, no hidden listener |
+| `associate_udp_timeout(host, port, timeout)` | Same with establishment timeout |
+| `active_udp_associations()` | Live listener-free UDP count |
+| `upstream_count()` / `hop_count()` | Configured upstreams / chain hops (0 for direct) |
+| `validate_outbound_config(toml)` | Static validation, returns hop count |
+
+### Outbound UDP (`associate_udp`, authority in `eggress-outbound`)
 
 Fixed-target connected semantics over existing UDP primitives, no hidden
-listener:
+listener (see [outbound.md](outbound.md) for the full contract):
 
-- Direct: family-aware wildcard bind (`0.0.0.0:0` for IPv4, `[::]:0`
-  for IPv6, selected from the resolved destination) + `connect(resolved
-  target)` for `direct://` connectors. Never loopback-bound.
-- Single-hop SOCKS5: `open_socks5_udp_upstream()` (TCP control + UDP
-  ASSOCIATE handshake) with SOCKS5 datagram encode/decode per send/recv.
-  The caller passes an unspecified hint (`0.0.0.0:0`, or `[::]:0` for
-  IPv6-literal proxy hosts); the primitive family-corrects the effective
-  bind against the negotiated relay (`effective_udp_bind`), so IPv6
-  relays use `[::]:0` instead of failing on IPv4 loopback.
-- Target validation via `validate_standalone_target(allow_private_egress=true)`
-  (multicast/broadcast/unspecified/port-zero rejected; private/loopback allowed
-  because the caller explicitly selected the destination) plus
-  `validate_datagram_size(65535)`.
-- Unsupported chains (HTTP, multi-hop, composed, Shadowsocks UDP in this
-  surface) fail with `UnsupportedFeature`, never silent direct fallback.
-- `UdpAssociation::send/recv/send_timeout/recv_timeout/close/wait_closed`,
-  `is_closed`, `local_addr`, `target`, `relay_addr` (SOCKS5 only). Close is
-  idempotent; drop decrements `active_udp_associations()` exactly once and
-  aborts the SOCKS5 control keepalive.
+- Direct: family-aware wildcard bind + `connect(resolved target)` for
+  `direct://` connectors. Never loopback-bound.
+- Single-hop SOCKS5: `open_socks5_udp_upstream()` with SOCKS5 datagram
+  encode/decode per send/recv.
+- Unsupported chains fail with `UnsupportedFeature`, never silent direct
+  fallback.
 
 `from_pproxy_uri()` parses via `parse_pproxy_chain()`, preserving every `__`
 hop in source order, then calls `compile_chain_to_native()` (validation +
 `build_chain_config_uri` → `parse_proxy_chain`, no TOML). Only a single
 `direct` hop takes the direct fast path; multi-hop `direct`, backward (`+in`),
-or unsupported roles fail closed with redacted errors. Execution reuses
-`ChainExecutor` with no listener. The connector owns the executor's SSH
-session state for its full lifetime: native/TOML construction uses the
-verified `SshSessionCache::new()` policy, while `from_pproxy_uri()` uses
+or unsupported roles fail closed with redacted errors. The connector holds an
+`OutboundRoute` (direct vs compiled chain + upstream count), never a full
+`RuntimeConfig`, and owns the executor's SSH session state for its full
+lifetime: native/TOML/`from_chain` construction uses the verified
+`SshSessionCache::new()` policy, while `from_pproxy_uri()` uses
 `new_compatibility()` only when both `ssh` and `pproxy-compat` are enabled.
 Direct mode does not allocate SSH state.
 
@@ -181,33 +177,23 @@ on success *and* failure). Rejected/failed reloads preserve generation.
 All variants carry redacted string messages. `category()` (:43-53) returns
 a stable `&'static str` label for each variant.
 
-### Typed outbound errors (`OutboundConnectError`)
+### Typed outbound errors (`OutboundConnectError`, authority in `eggress-outbound`)
 
 Ordinary `connect_tcp()` / `connect_tcp_timeout()` remain the simple
-compatibility API (`EggressError::Runtime`). Detailed
+compatibility API (`OutboundError::Runtime`). Detailed
 `connect_tcp_detailed()` / `connect_tcp_timeout_detailed()` share one
-private `connect_tcp_inner()` with the legacy methods (same route
-construction and chain executor, exactly once) and return
+private `connect_tcp_inner()` with the legacy methods and return
 `OutboundConnectError` with stable `kind()` / `stage()` /
-`hop_index()` / `protocol()` facts:
+`hop_index()` / `protocol()` facts (see [outbound.md](outbound.md)).
 
 - Kinds: `Timeout`, `Dns`, `ConnectionRefused`, `NetworkUnreachable`,
   `HostUnreachable`, `Authentication`, `Tls`, `Protocol`, `Policy`, `Other`.
-- Stages: `DirectConnect` (direct TCP), `HopConnect` (TCP to a hop),
-  `HopHandshake` (proxy protocol over an established hop stream),
-  `Deadline` (caller-supplied outer timeout only).
-- `HopConnect` vs `HopHandshake` lets consumers distinguish proxy transport
-  failure from proxy-reported destination failure without string parsing;
-  both may carry `ConnectionRefused` with different stages.
-- Direct `ConnectError` is classified without strings; boxed handshake
-  sources are downcast to built-in HTTP/SOCKS/TLS (plus Shadowsocks, Trojan,
-  WebSocket, SSH, QUIC/H3 when their features are enabled). SOCKS5 REP 0x05
-  is a typed `ConnectionRefused`; other REP codes stay `Protocol`.
+- Stages: `DirectConnect`, `HopConnect`, `HopHandshake`, `Deadline`.
 - Kind/stage/hop/protocol are diagnostic facts, not retry recommendations;
   callers own retry/backoff policy and no direct fallback occurs.
 - `Display`/`Debug` carry only kind/stage/hop/protocol facts, never
   credentials, URIs, or config snippets; there is no public `source()`
-  chain. The shared classifier lives in `eggress-server::classify`
+  chain. The shared classifier lives in `eggress-outbound::classify`
   (`#[doc(hidden)]`, type-based only) and also backs
   `From<ChainError> for SessionOpenError`, which no longer flattens typed
   handshake failures to strings.
@@ -240,7 +226,7 @@ construction and chain executor, exactly once) and return
     and `user@` userinfo for any scheme (last unbracketed `@` wins, so
     passwords containing `@` stay covered) and emits `scheme://****@host`.
     There is no embed-local scheme whitelist.
-- Outbound error paths (`outbound.rs`, feature `pproxy-compat`) parse hops
+- Outbound error paths (in `eggress-outbound`, feature `pproxy-compat`) parse hops
   via `eggress_pproxy_compat` and fall back to a scheme-agnostic
   last-`@`-outside-brackets scrubber that additionally masks `#` auth
   fragments; over-redaction is preferred to leakage there.
@@ -263,7 +249,7 @@ construction and chain executor, exactly once) and return
 | `tests/metrics_status.rs` | Prometheus metrics rendering, service status |
 | `tests/proxy_traffic.rs` | End-to-end proxy traffic through embed handle |
 | `tests/error_redaction.rs` | Credential redaction in errors, `to_redacted_toml`, category labels |
-| `tests/outbound_detailed.rs` | Typed `connect_tcp_detailed` matrix (direct/HTTP/SOCKS/TLS, hop provenance, deadline, legacy compat, redaction, reuse/cancel) |
+| `tests/outbound_detailed.rs` | Typed `connect_tcp_detailed` matrix via the re-export facade (direct/HTTP/SOCKS/TLS, hop provenance, deadline, legacy compat, redaction, reuse/cancel) |
 
 Inline tests (`src/lib.rs`):
 - `listener_addr_*` helpers
@@ -281,6 +267,10 @@ Inline tests (`src/lib.rs`):
   service doesn't become ready in time, the handle is not returned.
 - `reload_toml_str` rejects ANY listener topology change (count, name, or
   bind). Only routing rules, upstreams, and health state can be hot-reloaded.
+- `OutboundConnector` construction/execution coverage lives in
+  `eggress-outbound` (`from_chain`, `direct`, TOML, pproxy, UDP); embed
+  tests prove the `eggress_embed::outbound::*` re-export compiles and
+  behaves, plus full-service lifecycle.
 - `OutboundConnector::associate_udp()` supports direct + single-hop SOCKS5;
   composed/Shadowsocks UDP in this surface fail with `UnsupportedFeature`.
   Python does not expose UDP associations; Rust is the supported surface.

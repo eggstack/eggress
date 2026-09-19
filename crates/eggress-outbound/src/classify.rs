@@ -1,15 +1,16 @@
 //! Shared typed classification for connection and handshake failures.
 //!
-//! This module owns the single internal classifier for boxed handshake errors
-//! used by both the server-side [`crate::SessionOpenError`] conversion and
-//! the embed `OutboundConnector` detailed surface. Classification is purely
+//! This module owns the single implementation authority for the boxed
+//! handshake-error classifier used by both the server-side
+//! `SessionOpenError` conversion (`eggress-server`) and the listener-free
+//! `OutboundConnector` detailed surface (this crate). Classification is purely
 //! type-based (downcasting concrete built-in error types); it never inspects
 //! message strings.
 //!
 //! The returned [`ClassifiedKind`] is intentionally narrow and
 //! protocol-neutral. It is exposed as `#[doc(hidden)]` for Rust visibility
-//! between `eggress-server` and `eggress-embed` and is not a second end-user
-//! API: embedding consumers should use `eggress-embed::OutboundConnectError`.
+//! between crates and is not a second end-user API: embedding consumers
+//! should use [`crate::OutboundConnectError`].
 
 /// Protocol-neutral failure category produced by the shared classifier.
 ///

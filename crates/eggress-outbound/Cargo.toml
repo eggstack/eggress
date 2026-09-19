@@ -1,70 +1,64 @@
 [package]
-name = "eggress-server"
+name = "eggress-outbound"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Connection handling and server orchestration for eggress"
-keywords = ["proxy", "server", "listener"]
+description = "Listener-free outbound chain execution for eggress proxy"
+keywords = ["proxy", "outbound", "chain", "library"]
 categories = ["network-programming", "asynchronous"]
 readme = "README.md"
 
 [features]
-default = ["full"]
-full = ["extended"]
-common = []
+default = []
+
+toml = ["dep:eggress-config", "dep:toml"]
+pproxy-compat = ["dep:eggress-pproxy-compat"]
+udp = ["dep:eggress-udp"]
+
 extended = [
     "dep:eggress-protocol-shadowsocks",
     "dep:eggress-protocol-trojan",
     "dep:eggress-protocol-websocket",
-    "eggress-udp/shadowsocks",
-    "eggress-outbound/extended",
 ]
+
 pproxy-legacy = [
     "extended",
     "eggress-protocol-shadowsocks/pproxy-legacy",
-    "eggress-outbound/pproxy-legacy",
 ]
+
 legacy-crypto = [
     "extended",
     "eggress-protocol-shadowsocks/legacy-crypto",
-    "eggress-outbound/legacy-crypto",
 ]
-ssh = ["dep:eggress-transport-ssh", "eggress-outbound/ssh"]
+
+ssh = ["dep:eggress-transport-ssh"]
 quic = [
     "dep:eggress-transport-quic",
     "dep:eggress-protocol-h3",
-    "eggress-outbound/quic",
 ]
-insecure-quic = ["eggress-transport-quic/insecure-quic"]
-insecure-tls = ["eggress-transport-tls/insecure-tls", "eggress-outbound/insecure-tls"]
-
-[dev-dependencies]
-eggress-testkit.workspace = true
-futures-util.workspace = true
-tokio-tungstenite.workspace = true
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "net", "io-util", "test-util"] }
+insecure-tls = ["eggress-transport-tls/insecure-tls"]
 
 [dependencies]
 eggress-core.workspace = true
-eggress-outbound.workspace = true
 eggress-uri.workspace = true
-eggress-routing.workspace = true
 eggress-protocol-http.workspace = true
 eggress-protocol-socks.workspace = true
+eggress-transport-tls.workspace = true
+eggress-config = { workspace = true, optional = true }
+eggress-pproxy-compat = { workspace = true, optional = true }
+eggress-udp = { workspace = true, optional = true }
 eggress-protocol-shadowsocks = { workspace = true, optional = true }
 eggress-protocol-trojan = { workspace = true, optional = true }
 eggress-protocol-websocket = { workspace = true, optional = true }
-bytes.workspace = true
-base64.workspace = true
-h2.workspace = true
-http.workspace = true
-eggress-transport-tls.workspace = true
 eggress-transport-ssh = { workspace = true, optional = true }
 eggress-transport-quic = { workspace = true, optional = true }
 eggress-protocol-h3 = { workspace = true, optional = true }
-eggress-udp.workspace = true
+toml = { workspace = true, optional = true }
+bytes.workspace = true
+h2.workspace = true
+http.workspace = true
 rustls.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
@@ -75,6 +69,13 @@ zeroize.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
+
+[dev-dependencies]
+eggress-testkit.workspace = true
+tempfile.workspace = true
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "net", "io-util", "test-util", "time"] }
+futures-util.workspace = true
+tokio-tungstenite.workspace = true
 
 [lints]
 workspace = true

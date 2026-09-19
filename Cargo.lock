@@ -1023,6 +1023,7 @@ dependencies = [
  "eggress-config",
  "eggress-core",
  "eggress-metrics",
+ "eggress-outbound",
  "eggress-pproxy-compat",
  "eggress-protocol-http",
  "eggress-protocol-socks",
@@ -1052,6 +1053,42 @@ dependencies = [
  "prometheus-client",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "eggress-outbound"
+version = "1.0.7"
+dependencies = [
+ "bytes",
+ "eggress-config",
+ "eggress-core",
+ "eggress-pproxy-compat",
+ "eggress-protocol-h3",
+ "eggress-protocol-http",
+ "eggress-protocol-shadowsocks",
+ "eggress-protocol-socks",
+ "eggress-protocol-trojan",
+ "eggress-protocol-websocket",
+ "eggress-testkit",
+ "eggress-transport-quic",
+ "eggress-transport-ssh",
+ "eggress-transport-tls",
+ "eggress-udp",
+ "eggress-uri",
+ "futures-util",
+ "h2",
+ "http",
+ "libc",
+ "rustls",
+ "subtle",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-tungstenite",
+ "tokio-util",
+ "toml",
+ "tracing",
+ "zeroize",
 ]
 
 [[package]]
@@ -1315,6 +1352,7 @@ dependencies = [
  "base64",
  "bytes",
  "eggress-core",
+ "eggress-outbound",
  "eggress-protocol-h3",
  "eggress-protocol-http",
  "eggress-protocol-shadowsocks",

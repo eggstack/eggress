@@ -128,9 +128,10 @@ Upstream URI credentials are also redacted:
 
 ## Native outbound connector (no listener)
 
-`OutboundConnector` compiles a native TOML upstream or pproxy remote
-expression and executes the chain in-process via `ChainExecutor`, without
-starting a local listener:
+`OutboundConnector` (implementation authority in `eggress-outbound`,
+re-exported as `eggress_embed::outbound::*`) executes a compiled native
+chain, a native TOML upstream, or a pproxy remote expression in-process via
+`ChainExecutor`, without starting a local listener:
 
 ```rust
 let connector = OutboundConnector::from_pproxy_uri(
@@ -143,6 +144,9 @@ assert_eq!(info.hop_count, 2);
 
 Contract:
 
+- `from_chain()` takes a compiled native `ProxyChainSpec` directly (no TOML,
+  no pproxy, no server/runtime types) and rejects empty chains; `direct()`
+  is the explicit no-hop alternative.
 - `from_pproxy_uri()` accepts one pproxy remote expression, including
   canonical `__` multi-hop chains, preserving hop order.
 - `from_toml()` supports native SSH upstreams when the `ssh` feature is
@@ -165,7 +169,7 @@ Contract:
   silently dropped or reordered.
 - Malformed chained input returns a credential-redacted diagnostic.
 - Ordinary `connect_tcp()` / `connect_tcp_timeout()` remain the compatibility
-  API (`EggressError::Runtime`). Detailed `connect_tcp_detailed()` /
+  API (`OutboundError::Runtime`). Detailed `connect_tcp_detailed()` /
   `connect_tcp_timeout_detailed()` share the same single execution and return
   `OutboundConnectError` with stable `kind()` / `stage()` / `hop_index()` /
   `protocol()` facts for embedding/routing policy. Kind/stage/hop/protocol
@@ -384,7 +388,7 @@ This API is designed for thin PyO3 wrappers:
 | `ServiceStatus` | `generation`, `readiness`, `active_connections`, `uptime_secs`, `listener_count`, `listeners`, `udp_associations_active`, `upstream_count` |
 | `ListenerStatus` | `name`, `bind`, `local_addr`, `protocols`, `udp_enabled` |
 | `ReloadOutcome` | `Applied { generation, upstreams }` |
-| `OutboundConnector` | `from_toml`, `from_pproxy_uri`, `connect_tcp`, `connect_tcp_detailed`, `connect_tcp_timeout`, `connect_tcp_timeout_detailed`, `upstream_count` |
+| `OutboundConnector` | `from_chain`, `direct`, `from_toml`, `from_pproxy_uri`, `connect_tcp`, `connect_tcp_detailed`, `connect_tcp_timeout`, `connect_tcp_timeout_detailed`, `upstream_count`, `hop_count` |
 | `OutboundInfo` | `local_addr`, `peer_addr`, `hop_count` |
 | `OutboundConnectError` | `kind`, `stage`, `hop_index`, `protocol` |
 | `OutboundConnectErrorKind` | `Timeout`, `Dns`, `ConnectionRefused`, `NetworkUnreachable`, `HostUnreachable`, `Authentication`, `Tls`, `Protocol`, `Policy`, `Other` |

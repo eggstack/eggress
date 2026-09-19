@@ -137,10 +137,23 @@ bounded label cardinality throughout.
 
 The reusable per-connection pipeline: `serve_connection()` detects the
 inbound protocol (with timeout + auth), builds a `RouteRequest`, opens the
-route via shared `open_route()` (direct or chained), sends the success reply
+route via shared `open_route()` (direct or chained through the
+`eggress-outbound` executor factory), sends the success reply
 only after the upstream is established, then relays with byte counting.
 Emits structured `SessionReport`s (outcome + failure category) and supports
-Unix-socket and transparent-listener variants.
+Unix-socket and transparent-listener variants. Concrete hop handlers,
+TLS composition, and the shared failure classifier live in
+`eggress-outbound`; the server consumes them, never duplicates them.
+
+#### Listener-free outbound execution — `eggress-outbound` → [outbound.md](outbound.md)
+
+The direct listener-free Rust dependency: concrete `HopHandler`
+implementations, the `ChainExecutor` factory with TLS composition, the
+typed failure classifier (single authority also backing
+`SessionOpenError`), and `OutboundConnector` (`from_chain` / `direct` /
+`from_toml` / `from_pproxy_uri`, typed + compatibility TCP surfaces,
+optional UDP). `eggress-server` consumes the registry/factory/classifier;
+`eggress-embed` re-exports the connector API as its full-service facade.
 
 #### Runtime supervisor — `eggress-runtime` → [runtime.md](runtime.md)
 
@@ -272,9 +285,10 @@ fail-closed gate and Linux `--daemon` re-exec behind `pproxy-daemon`.
 Stable in-process Rust API and the binding target for PyO3: parse/validate
 config from TOML string or file, `start()`/`start_blocking()`, discover
 bound addresses (port-0 friendly), `status()`/`metrics_text()`, hot-reload
-routing/upstreams via `reload_toml_str`, idempotent shutdown. Plus
-`OutboundConnector` for listener-free TCP chains (`from_pproxy_uri` with
-`__` multi-hop, fail-closed) and idempotent UDP association.
+routing/upstreams via `reload_toml_str`, idempotent shutdown. Plus an
+`outbound` compatibility facade re-exporting `eggress-outbound`
+(`OutboundConnector` for listener-free TCP chains with `__` multi-hop
+`from_pproxy_uri`, fail-closed) and idempotent UDP association.
 
 #### Python bindings + package — `eggress-python`, `python/` → [python-bindings.md](python-bindings.md)
 
@@ -429,7 +443,7 @@ product-relevant optional surface.
 
 ```
 eggress/
-├── crates/                 # 27 workspace crates (see index above)
+├── crates/                 # 28 workspace crates (see index above)
 ├── python/                 # canonical Python package (eggress/) + pproxy shim sources
 ├── python-pproxy-compat/   # opt-in distribution owning top-level `pproxy`
 ├── architecture/           # THIS directory: overview + per-component reviews
@@ -450,7 +464,7 @@ Pick one component, read its 2–4 sentence summary above, then open the
 linked deep dive — each follows the same shape (module map → API → control
 flow → tests → gotchas → see-also). Suggested order for a first pass:
 [core.md](core.md) → [relay.md](relay.md) → [uri.md](uri.md) → [config.md](config.md) →
-[routing.md](routing.md) → [server.md](server.md) → [runtime.md](runtime.md),
+[routing.md](routing.md) → [outbound.md](outbound.md) → [server.md](server.md) → [runtime.md](runtime.md),
 then the protocol/transport of interest, then [cli.md](cli.md) /
 [embed.md](embed.md) / [python-bindings.md](python-bindings.md) /
 [pproxy-compat.md](pproxy-compat.md), finishing with [udp.md](udp.md),

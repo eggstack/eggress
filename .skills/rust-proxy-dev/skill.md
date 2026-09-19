@@ -59,9 +59,10 @@ Redact passwords in errors and diagnostics. Verify against the OpenSSH fixture
 with:
 `cargo test -p eggress-transport-ssh --test openssh`.
 
-`eggress-embed::outbound::OutboundConnector` owns the reusable cache: native
-`from_toml()` uses verified state, and `from_pproxy_uri()` uses compatibility
-state only when both `ssh` and `pproxy-compat` are selected.
+`eggress-outbound::OutboundConnector` (re-exported as
+`eggress-embed::outbound::OutboundConnector`) owns the reusable cache: native
+`from_toml()`/`from_chain()` uses verified state, and `from_pproxy_uri()`
+uses compatibility state only when both `ssh` and `pproxy-compat` are selected.
 The facade regression is exercised through a required local OpenSSH fixture:
 `EGRESS_REQUIRE_OPENSSH_TESTS=1 cargo test -p eggress-embed --locked
 --no-default-features --features ssh,pproxy-compat --test ssh -- --nocapture`.
@@ -84,9 +85,10 @@ Create the protocol module under `crates/eggress-protocol-<name>/`:
 Follow the pattern in `eggress-protocol-socks/` or `eggress-protocol-http/`.
 
 ### 3. Chain integration
-The chain executor in `eggress-core/src/chain.rs` folds over hops with protocol-specific handlers. You must:
+The generic chain executor in `eggress-core/src/chain.rs` folds over hops with protocol-specific handlers. Concrete hop handlers are registered in `eggress-outbound` (`crates/eggress-outbound/src/hops.rs` + factory in `src/executor.rs`); `eggress-server` consumes that factory. You must:
 - Validate chain capabilities (`UdpRelayCapability` for UDP, similar for other protocols)
 - Implement the hop handler that takes a stream to the hop and produces a stream to the next target
+- Register the handler in the outbound factory in fixed order (do not create a second registry in the server)
 
 ### 4. Registration
 - Add the protocol variant to `ProtocolId` enum in `eggress-core/src/lib.rs`
@@ -166,20 +168,25 @@ For embedding eggress in another Rust process, use the `eggress-embed` crate:
 - `handle.metrics_text()` — Prometheus metrics without HTTP
 - `handle.reload_toml_str()` — hot-reload routing/upstreams
 - `handle.shutdown()` / `shutdown_blocking()` — graceful shutdown
+- `OutboundConnector::from_chain()` — compiled native `ProxyChainSpec`
+  directly (no TOML, no pproxy, no server/runtime types; rejects empty
+  chains); `direct()` is the explicit no-hop alternative
 - `OutboundConnector::from_pproxy_uri()` — one pproxy remote expression via
   direct native `compile_chain_to_native()` (typed `PproxyChain` →
   `ProxyChainSpec`, no TOML string; `__` order preserved, no listener,
   fail-closed, redacted errors; `pproxy-compat` feature)
 - `OutboundConnector::connect_tcp()` / `connect_tcp_timeout()` — compatibility
-  surfaces (`EggressError::Runtime`); execute the compiled chain in-process
+  surfaces (`OutboundError::Runtime`); execute the compiled chain in-process
   via `ChainExecutor` through one shared `connect_tcp_inner()`
 - `OutboundConnector::connect_tcp_detailed()` /
   `connect_tcp_timeout_detailed()` — opt-in typed `OutboundConnectError`
   (`kind()`/`stage()`/`hop_index()`/`protocol()`, credential-safe
   Display/Debug, no `source()` chain); same single execution as legacy.
-  Classify via `eggress-server::classify` (type-downcast only, never message
+  Classify via `eggress-outbound::classify` (type-downcast only, never message
   strings); `HopConnect` vs `HopHandshake` distinguishes transport from
-  proxy-reported failures; outer deadline is `Timeout`/`Deadline`
+  proxy-reported failures; outer deadline is `Timeout`/`Deadline`.
+  Implementation authority is `eggress-outbound`; `eggress-embed::outbound`
+  is a `pub use` facade.
 
 See `docs/EMBED_API.md` for full reference.
 
