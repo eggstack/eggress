@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION AFTER `OUTBOUND_EXECUTION_CRATE_EXTRACTION.md` — 2026-09-18**
+**COMPLETE — VERIFIED 2026-09-19**
 
 ## Target repository
 
@@ -508,22 +508,23 @@ EggPool should then perform its own dependency bump/removal plan. Do not edit Eg
 Append a concise record when implemented:
 
 ```text
-Implementation commit:
-Released version:
-eggress-outbound package:
-Publish-order update:
-MSRV:
-Minimal graph before/after:
-EggPool-like graph before/after:
-Minimal binary bytes before/after:
-EggPool-like binary bytes before/after:
-Workspace tests:
-Feature checks:
-OpenSSH regression:
-cargo deny:
-cargo audit:
-Package/dry-run:
-Deferred follow-ups:
+Implementation commit: 022db65 (refactor(outbound): close facade feature, footprint, and release topology)
+Released version: unreleased (workspace still 1.0.7; operator publishes per docs/release/RELEASE_PROCESS.md)
+eggress-outbound package: 1.0.7 — `cargo package` + `cargo publish --dry-run` pass; internal deps pinned `=1.0.7`, optional flags preserved
+Publish-order update: scripts/publish-remaining.sh re-tiered to 28 crates (outbound tier 8, before server tier 9; metrics/admin/runtime shifted downstream); topology validated programmatically, zero violations
+MSRV: 1.85 (unchanged; packaged manifest rust-version = 1.85)
+Minimal graph before/after: embed-baseline 147 resolved / 111 unique pkgs -> outbound-direct 93 / 74 (service families server/runtime/metrics/config/routing/udp gone)
+EggPool-like graph before/after: 356 / 218 -> 333 / 206 (server/runtime/metrics/embed gone; config/routing/udp retained via pproxy-compat translation ownership)
+Minimal binary bytes before/after: 1899136 -> 1899136 (delta 0)
+EggPool-like binary bytes before/after: 3829544 -> 3829544 (delta 0)
+Size classification: maintenance/graph win, byte-neutral (tiny LTO/GC-converged harnesses; no size reduction claimed)
+Workspace tests: 134 suites ok, 0 failures (cargo test --workspace --locked)
+Feature checks: outbound base/pproxy-compat/ssh/ssh,pproxy-compat/udp + embed ssh/pproxy-compat/ssh,pproxy-compat + cli full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon bins + fuzz bins — all pass
+OpenSSH regression: 3 passed (EGRESS_REQUIRE_OPENSSH_TESTS=1, embed ssh,pproxy-compat --test ssh)
+cargo deny: clean (advisories/bans/licenses/sources ok)
+cargo audit: exit 0 (only allowed der/wnaf yanked warnings)
+Package/dry-run: outbound ok; server/embed packaging structurally blocked until outbound 1.0.7 reaches the crates.io index (expected new-crate ordering; release follows tier order)
+Deferred follow-ups: none — operator publication (outbound tier 8 before server tier 9) is the remaining release step; downstream EggPool bump is out of scope for this plan
 ```
 
 ---
