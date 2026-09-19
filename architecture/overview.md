@@ -429,8 +429,10 @@ Full checklists: `docs/CAPABILITIES.md`, `docs/OPERATIONS.md`,
 
 ## Build profiles
 
-Default features = `full` (common+extended+operations+reverse+pproxy-compat+
-pproxy-legacy); SSH and QUIC remain opt-in.
+`eggress-cli` default `full` = `common`+`extended`+`operations`+`reverse`+
+`pproxy-compat` — it leaves off `ssh`, `quic`, `pproxy-legacy`,
+`legacy-crypto`, `pproxy-daemon`. `eggress-embed` default `full` adds
+`pproxy-legacy` to the same set. SSH and QUIC remain opt-in in both.
 Optional: `ssh`, `quic`, `pproxy-legacy`, `legacy-crypto`, `pproxy-daemon`.
 Lean build:
 `cargo build -p eggress-cli --release --no-default-features --features common`.
@@ -444,8 +446,8 @@ product-relevant optional surface.
 ```
 eggress/
 ├── crates/                 # 28 workspace crates (see index above)
-├── python/                 # canonical Python package (eggress/) + pproxy shim sources
-├── python-pproxy-compat/   # opt-in distribution owning top-level `pproxy`
+├── python/                 # canonical Python package source (python/eggress)
+├── python-pproxy-compat/   # opt-in distribution owning the top-level `pproxy`
 ├── architecture/           # THIS directory: overview + per-component reviews
 ├── docs/                   # canonical reference docs (ARCHITECTURE, INSTALLATION, parity manifests, specs)
 ├── packaging/              # install.sh / install.ps1 + fixture-based installer tests
@@ -462,7 +464,25 @@ eggress/
 
 Pick one component, read its 2–4 sentence summary above, then open the
 linked deep dive — each follows the same shape (module map → API → control
-flow → tests → gotchas → see-also). Suggested order for a first pass:
+flow → tests → gotchas → see-also). Task→file map: CLI/ops →
+[cli.md](cli.md) (+[admin.md](admin.md), [metrics.md](metrics.md),
+[system-proxy.md](system-proxy.md)); protocols/transports →
+[protocols-http.md](protocols-http.md) / [protocols-socks.md](protocols-socks.md) /
+[protocols-shadowsocks.md](protocols-shadowsocks.md) /
+[protocols-trojan.md](protocols-trojan.md) /
+[protocols-tunnels.md](protocols-tunnels.md) /
+[transports-tls.md](transports-tls.md) /
+[transports-ssh-quic-h3.md](transports-ssh-quic-h3.md); outbound chains →
+[outbound.md](outbound.md) (+[server.md](server.md) for listener sessions,
+[embed.md](embed.md) for the facade); byte relay → [relay.md](relay.md)
+(+[core.md](core.md) for the legacy facade); embedding →
+[embed.md](embed.md) / [python-bindings.md](python-bindings.md); compat claims
+→ [pproxy-compat.md](pproxy-compat.md); config/reload/lifecycle →
+[config.md](config.md) / [runtime.md](runtime.md); UDP/reverse → [udp.md](udp.md)
+/ [protocols-reverse.md](protocols-reverse.md); verification →
+[testing-and-tooling.md](testing-and-tooling.md).
+
+Suggested order for a first pass:
 [core.md](core.md) → [relay.md](relay.md) → [uri.md](uri.md) → [config.md](config.md) →
 [routing.md](routing.md) → [outbound.md](outbound.md) → [server.md](server.md) → [runtime.md](runtime.md),
 then the protocol/transport of interest, then [cli.md](cli.md) /
