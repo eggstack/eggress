@@ -46,6 +46,17 @@ jobs:
           --features pproxy-compat &&
           cargo check -p eggress-embed --locked --no-default-features
           --features ssh,pproxy-compat
+      - name: Check outbound feature boundaries
+        run: >-
+          cargo check -p eggress-outbound --locked --no-default-features &&
+          cargo check -p eggress-outbound --locked --no-default-features
+          --features pproxy-compat &&
+          cargo check -p eggress-outbound --locked --no-default-features
+          --features ssh &&
+          cargo check -p eggress-outbound --locked --no-default-features
+          --features ssh,pproxy-compat &&
+          cargo check -p eggress-outbound --locked --no-default-features
+          --features udp
       - name: Install OpenSSH test server
         run: |
           sudo apt-get update

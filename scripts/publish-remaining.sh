@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publish all 27 eggress-* crates to crates.io in dependency order.
+# Publish all 28 eggress-* crates to crates.io in dependency order.
 #
 # Prerequisites:
 #   - crates.io credentials configured (`cargo login` or $CARGO_REGISTRY_TOKEN`).
@@ -15,7 +15,14 @@
 # eggress-uri; its dev-deps on config/runtime/pproxy-compat are path-only and
 # excluded from the published manifest, so they do not constrain order).
 #
-# Total: 27 crates. crates.io rate-limits new publishes to roughly one per 10
+# `eggress-outbound` (tier 8) sits after its mandatory and optional
+# same-version internal deps (`eggress-config`, `eggress-pproxy-compat`,
+# `eggress-udp`, protocol/transports) and before its dependents
+# (`eggress-server`, `eggress-embed`). `eggress-server` follows outbound, so
+# `eggress-metrics` (mandatory dep on the server) and everything downstream
+# of it (`eggress-admin`, `eggress-runtime`, facades) shift one tier later.
+#
+# Total: 28 crates. crates.io rate-limits new publishes to roughly one per 10
 # minutes, so expect ~4h of wall time plus index-propagation waits.
 
 set -euo pipefail
@@ -46,9 +53,15 @@ TIERS=(
     "eggress-core"
     "eggress-protocol-raw eggress-protocol-http eggress-protocol-socks eggress-protocol-websocket eggress-transport-tls eggress-transport-ssh eggress-transport-quic eggress-protocol-reverse eggress-routing eggress-protocol-shadowsocks"
     "eggress-protocol-trojan eggress-protocol-h3 eggress-udp"
-    "eggress-config eggress-server"
-    "eggress-metrics"
+    "eggress-config"
     "eggress-pproxy-compat"
+    # eggress-outbound must precede eggress-server (mandatory dep) but follow
+    # its optional same-version deps (config, pproxy-compat) plus udp and the
+    # protocol/transport families, which Cargo resolves against the index at
+    # package time even when a minimal build leaves those features off.
+    "eggress-outbound"
+    "eggress-server"
+    "eggress-metrics"
     # eggress-admin must precede eggress-runtime: runtime's optional
     # `dep:eggress-admin` is still resolved against the index at package time.
     "eggress-admin"

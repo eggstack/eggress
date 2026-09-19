@@ -4,9 +4,15 @@
 
 Listener-free outbound chain execution: the direct Rust dependency for
 opening proxy-chained TCP connections (and optional UDP associations)
-without starting a listener service.
+without starting a listener service. Ordinary HTTP/SOCKS TCP chains are
+available in the base profile with no features enabled.
 
 ## When to use this crate
+
+Need listener-free outbound proxy-chain dialing? -> `eggress-outbound`.
+Need a full in-process proxy lifecycle (listeners, supervision, reload,
+metrics)? -> `eggress-embed`. Need only generic byte relay? ->
+`eggress-relay`.
 
 Use `eggress-outbound` when you need to execute an Eggress proxy chain
 in-process. `eggress-server` consumes the hop registry, executor factory,

@@ -198,7 +198,10 @@ assert_eq!(info.hop_count, 2);
 
 `from_pproxy_uri()` accepts canonical `__` multi-hop expressions, executes
 them in-process with no listener, and fails closed on unsupported hops.
-Requires the `pproxy-compat` feature.
+Requires the `pproxy-compat` feature. Native chains need no translation
+features: `OutboundConnector::from_chain(eggress_uri::parse_proxy_chain(..)?)`
+and `OutboundConnector::direct()` are available in the base profile
+(ordinary HTTP/SOCKS TCP).
 
 For stable failure categories without parsing strings, use the detailed
 surface (`connect_tcp_detailed()` / `connect_tcp_timeout_detailed()`),

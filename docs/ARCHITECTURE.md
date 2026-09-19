@@ -207,9 +207,17 @@ Rust embed API for in-process embedding:
 - `handle.shutdown()` / `shutdown_blocking()` — graceful shutdown (idempotent)
 - Thread ownership: async path uses Tokio blocking-pool thread + dedicated OS thread; blocking path uses outer startup thread + inner run thread
 
+### eggress-outbound
+Listener-free outbound chain execution (no listeners, no service state):
+- Concrete `HopHandler` per upstream protocol + `build_chain_executor()` / `build_chain_executor_with_options()` factory with TLS composition
+- Shared typed failure classifier (`classify.rs`) backing both `OutboundConnectError` and `SessionOpenError`
+- `OutboundConnector` — `from_chain()` / `direct()` base constructors, `from_toml()` (feature `toml`), `from_pproxy_uri()` (feature `pproxy-compat`), typed + compatibility TCP surfaces, optional UDP associations (feature `udp`)
+- `eggress-server` consumes the registry/factory/classifier; `eggress-embed::outbound` re-exports this API as its full-service facade
+- Full contract: `architecture/outbound.md`
+
 ### Native OutboundConnector
 
-`eggress-embed::outbound` provides `OutboundConnector` for native Rust outbound connections without temporary local listeners:
+`eggress-outbound` provides `OutboundConnector` for native Rust outbound connections without temporary local listeners (re-exported as `eggress-embed::outbound` for full-service consumers):
 - `OutboundConnector::from_toml(toml)` — create from TOML config
 - `OutboundConnector::from_pproxy_uri(uri)` — create from one pproxy remote expression, including `__` multi-hop chains (order preserved, fail-closed, redacted errors)
 - `connector.connect_tcp(target)` — connect to TCP target

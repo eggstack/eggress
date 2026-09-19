@@ -150,7 +150,10 @@ plus the required OpenSSH regression
   `target_to_socks_addr` from here; `eggress-embed::outbound` is a pure
   `pub use eggress_outbound::*` facade.
 - `eggress-udp` is absent unless the `udp` feature is selected;
-  `eggress-config` is absent unless `toml` is selected.
+  a direct `eggress-config` edge exists only under `toml`
+  (`pproxy-compat` pulls `eggress-config` transitively through
+  `eggress-pproxy-compat` translation ownership, intentionally retained —
+  the connector still stores an `OutboundRoute`, never a `RuntimeConfig`).
 
 ## See also
 

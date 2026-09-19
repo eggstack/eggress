@@ -1021,17 +1021,11 @@ name = "eggress-embed"
 version = "1.0.7"
 dependencies = [
  "eggress-config",
- "eggress-core",
- "eggress-metrics",
  "eggress-outbound",
  "eggress-pproxy-compat",
  "eggress-protocol-http",
- "eggress-protocol-socks",
- "eggress-routing",
  "eggress-runtime",
- "eggress-server",
  "eggress-transport-ssh",
- "eggress-udp",
  "eggress-uri",
  "tempfile",
  "thiserror",

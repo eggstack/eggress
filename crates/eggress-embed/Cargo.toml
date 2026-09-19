@@ -34,15 +34,9 @@ ssh = [
 
 [dependencies]
 eggress-config = { workspace = true }
-eggress-core = { workspace = true }
-eggress-metrics.workspace = true
 eggress-outbound = { workspace = true, features = ["toml", "udp"] }
 eggress-pproxy-compat = { workspace = true, optional = true }
-eggress-protocol-socks = { workspace = true }
-eggress-routing = { workspace = true }
 eggress-runtime = { workspace = true }
-eggress-server = { workspace = true }
-eggress-udp = { workspace = true }
 eggress-uri = { workspace = true }
 eggress-transport-ssh = { workspace = true, optional = true }
 tokio = { workspace = true }

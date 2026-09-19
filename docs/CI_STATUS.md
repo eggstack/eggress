@@ -8,7 +8,7 @@ Egress uses deliberately small hosted CI. GitHub Actions is a smoke signal for o
 
 The repository has four hosted workflows:
 
-- `.github/workflows/ci.yml`: one Ubuntu Rust job running format, Clippy, the default workspace test suite, bounded optional-compat and embed feature-boundary compile checks, a required local OpenSSH embed runtime regression, and fuzz-target compilation. The job installs `openssh-server` immediately before that runtime gate.
+- `.github/workflows/ci.yml`: one Ubuntu Rust job running format, Clippy, the default workspace test suite, bounded optional-compat and embed/outbound feature-boundary compile checks, a required local OpenSSH embed runtime regression, and fuzz-target compilation. The job installs `openssh-server` immediately before that runtime gate.
 - `.github/workflows/python-test.yml`: one path-scoped Ubuntu/Python 3.12 smoke job for the Python binding and compatibility packages.
 - `.github/workflows/publish-python.yml`: a real release path, not a smoke job. It fires on every `v*` tag push, validates the tag against the workspace version, builds five-platform abi3 wheels plus an sdist, smoke-tests them, and publishes to PyPI through the protected `pypi` GitHub environment (TestPyPI only via manual dispatch).
 - `.github/workflows/release-binaries.yml`: a real release path, not a smoke job. It fires on every `v*` tag push (or manual dispatch against an existing tag), validates the tag with `scripts/release-preflight.sh`, builds the five canonical `eggress-cli` target archives with default features, smoke-tests both executables natively, and creates/updates the GitHub Release with archives, SHA-256 sidecars, and installers. Ordinary CI never builds this matrix.
@@ -62,6 +62,17 @@ Cartesian matrix:
 cargo check -p eggress-embed --locked --no-default-features --features ssh
 cargo check -p eggress-embed --locked --no-default-features --features pproxy-compat
 cargo check -p eggress-embed --locked --no-default-features --features ssh,pproxy-compat
+```
+
+The same job checks the direct outbound crate boundary, including the `udp`
+slice that the default workspace test run leaves uncompiled:
+
+```bash
+cargo check -p eggress-outbound --locked --no-default-features
+cargo check -p eggress-outbound --locked --no-default-features --features pproxy-compat
+cargo check -p eggress-outbound --locked --no-default-features --features ssh
+cargo check -p eggress-outbound --locked --no-default-features --features ssh,pproxy-compat
+cargo check -p eggress-outbound --locked --no-default-features --features udp
 ```
 
 The same Ubuntu job then provisions `openssh-server` and runs the listener-free
