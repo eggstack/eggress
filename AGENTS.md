@@ -28,7 +28,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --locked
 ```
 
-- Default `full` feature leaves off `ssh`, `quic`, `pproxy-legacy`, `legacy-crypto`, `pproxy-daemon`: after touching those paths also run `cargo check -p eggress-cli --locked --no-default-features --features full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon --bins`. Never substitute `--all-features` (drags in test-only `insecure-quic`).
+- `eggress-cli` default `full` leaves off `ssh`, `quic`, `pproxy-legacy`, `legacy-crypto`, `pproxy-daemon` (note: `eggress-embed` `full` includes `pproxy-legacy`): after touching those paths also run `cargo check -p eggress-cli --locked --no-default-features --features full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon --bins`. Never substitute `--all-features` (drags in test-only `insecure-quic`).
 - For `eggress-embed` feature-boundary changes, also run the no-default
   `ssh`, `pproxy-compat`, and `ssh,pproxy-compat` compile slices plus the
   required embed OpenSSH regression:
@@ -39,7 +39,7 @@ cargo test --workspace --locked
 - For `eggress-outbound` feature-boundary changes, also run the no-default
   base, `pproxy-compat`, `ssh`, `ssh,pproxy-compat`, and `udp` compile slices:
   `cargo check -p eggress-outbound --locked --no-default-features [--features …]`.
-- Python-facing changes: `(cd crates/eggress-python && ../../.venv/bin/maturin develop)` after creating `.venv` with `maturin>=1.0,<2.0`, `pytest`, `pytest-asyncio>=0.23,<1`, `cryptography>=42,<47`; also `pip install --no-deps ./python-pproxy-compat`. Always run pytest from repo root — `pytest.ini` forces `--import-mode=importlib` so `python/eggress` can't shadow the built `_eggress` extension.
+- Python-facing changes: `(cd crates/eggress-python && ../../.venv/bin/maturin develop)` after creating `.venv` with `maturin>=1.0,<2.0`, `pytest`, `pytest-asyncio>=0.23,<1`, `cryptography>=42,<47`; also `pip install --no-deps ./python-pproxy-compat`. Always run pytest from repo root — `pytest.ini` forces `--import-mode=importlib` so `python/eggress` can't shadow the built `_eggress` extension. Target: `.venv/bin/python -m pytest python/tests tests/compat -q`.
 - `fuzz/` is a standalone workspace: `cargo check --manifest-path fuzz/Cargo.toml --bins`. Workspace commands don't cover it.
 - External suites are opt-in (they install/launch outside implementations); run only when the claim changed. Oracle is resolved from `$EGRESS_ORACLE_PYTHON`, then `$EGRESS_PYTHON_BIN`, then discovery; prebuilt venvs (`.venv-oracle`, `.venv-pproxy-279`) already exist at root:
 ```bash
@@ -52,7 +52,7 @@ EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interopera
 
 - Redact credentials/secret-bearing URIs before logging, diagnostics, or evidence output.
 - Box streams at protocol/transport boundaries; don't leak generic stream types through the architecture. Validate protocol/transport composition before execution; unsupported transports/roles fail closed with structured diagnostics, never silent fallback.
-- Listener topology is not hot-reloaded; only routing/upstream/group/health state swaps atomically. Shutdown order: readiness false → listener stop → connection drain/cancel → admin shutdown.
+- Listener topology is not hot-reloaded; only routing/upstream/group/health state swaps atomically. Shutdown order: readiness false → listener stop → UDP drain → connection drain/cancel → admin shutdown last.
 - Compat claims use tier vocabulary (`matched` / `supported_difference` / `platform_limited` / `intentional_non_parity`); changing a claim means updating the manifest and running the oracle/differential/interop suite. Generated reports follow the manifest, never lead it.
 - Edition 2021, MSRV 1.85 (release contract — don't reopen pinning to recover older toolchains), `unsafe_code = "deny"`. Tokio + `thiserror` + `tracing`. No OpenSSL / C deps / build scripts without explicit architectural reason; keep protocol parsing bounded.
 - Keep changes narrowly scoped; ordinary work needs a clear message + relevant tests, not evidence bundles, screenshots, transcripts, or new completion docs.
