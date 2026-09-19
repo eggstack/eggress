@@ -87,7 +87,7 @@ It returns neutral structures (`HostPort`, raw userinfo parts) and
 chain       = hop ( "__" hop )+
 hop         = scheme "://" [ creds "@" ] endpoint [ "?" query ] [ "/" plugins ] [ "@" local_bind ]
 scheme      = proto ( "+" proto )*        -- "tls" sets hop.tls flag
-proto       = "http" | "socks4" | "socks5" | "shadowsocks" | "ss" | "ssr"
+proto       = "http" | "socks4" | "socks4a" | "socks5" | "shadowsocks" | "ss" | "ssr"
             | "trojan" | "h2" | "h3" | "quic" | "ws" | "wss"
             | "raw" | "tunnel" | "ssh" | "unix" | "httponly"
 creds       = user ":" pass               -- Trojan allows pass-only (no colon)
@@ -100,10 +100,10 @@ local_bind  = <ip-addr>                   -- e.g. @127.0.0.1
 Key parsing rules:
 - `__` separates hops; `___` (triple) is rejected as `DuplicateHopSeparator`
 - `+` stacks protocols within one hop; `tls` in the scheme sets `hop.tls = true`
-- Credentials are percent-decoded (`%40` -> `@`, `%3A` -> `:`, UTF-8 sequences)
-- The userinfo separator is the **last** unbracketed `@` after `://` -- a password containing `@` is preserved correctly
+- Credentials are percent-decoded strictly: invalid UTF-8 or NUL in decoded credentials returns `InvalidFormat` (no lossy fallback)
+- The userinfo separator is the **last** unbracketed `@` after `://` (`syntax::find_userinfo_separator`) -- a password containing `@` is preserved correctly
 - SSH defaults to port 22 when no port is given
-- Port 0 is rejected (except for Unix protocol)
+- Port 0 is rejected except single-protocol `unix` (port always 0)
 - Empty hosts are rejected for proxy hops (e.g. `http://:8080`); listener bind
   addresses are configured separately and may use unspecified addresses
 - Bracket depth is tracked; unmatched `[` or `]` is rejected before hop splitting
@@ -166,12 +166,12 @@ Error messages include hop context (e.g. `"hop 1: missing scheme"`).
    - Detects trailing local-bind modifier (`find_last_at_outside_scheme` over shared `@` scan)
    - Extracts scheme, calls `parse_protocols()` (`+` split, `tls` modifier, `ProtocolSpec::parse_name`)
    - Extracts `#auth_prefix` fragment
-   - Extracts credentials (shared `@` scan, native percent-decode)
+   - Extracts credentials (shared `find_userinfo_separator` scan, strict native percent-decode)
    - Parses plugin path segment
    - Splits endpoint from query string
    - Calls `parse_endpoint()` (shared `syntax::parse_host_port` + native port/host policy)
    - Extracts `?rule=` and `?insecure` query params
-   - Validates port != 0 (except Unix)
+   - Validates port != 0 (except single-protocol `unix`)
 3. `parse_credentials()` percent-decodes username and password; Trojan allows password-only (no colon)
 4. Results are wrapped in `ProxyChainSpec { hops }`
 
@@ -191,7 +191,7 @@ Error messages include hop context (e.g. `"hop 1: missing scheme"`).
 
 - `CredentialSpec::Debug` redacts passwords (verified by `test_credential_debug_is_redacted`)
 - `RedactedUri::Display` replaces creds with `****:****@` (verified by multiple roundtrip and redaction tests)
-- Percent-decoding is lossy via `String::from_utf8_lossy` -- invalid UTF-8 sequences are replaced rather than rejected
+- Percent-decoding is strict: invalid UTF-8 or NUL in decoded credentials returns `InvalidFormat`
 
 ## Concurrency & lifecycle
 
@@ -226,9 +226,9 @@ Error messages include hop context (e.g. `"hop 1: missing scheme"`).
 - `parse_proxy_chain` rejects empty hosts for proxy hops; listener bind
   addresses are configured separately.
 - The `+` separator is for protocol stacking within a scheme; `__` is for hop chaining. Do not confuse with URI path separators.
-- `find_at_outside_brackets` finds the **last** unbracketed `@` after `://`. This is critical for passwords containing `@`.
-- Port 0 is rejected for all protocols except Unix (where port is always 0).
-- `split_hops` rejects `___` (triple underscore) as `DuplicateHopSeparator` but does not check for longer runs -- `____` would be caught as two consecutive separators.
+- `syntax::find_userinfo_separator` finds the **last** unbracketed `@` after `://`. This is critical for passwords containing `@`. (Hop splitting itself is `syntax::split_chain_hops`.)
+- Port 0 is rejected for all protocols except single-protocol Unix (where port is always 0).
+- `split_chain_hops` rejects `___` (triple underscore) as `DuplicateHopSeparator` but does not check for longer runs -- `____` would be caught as two consecutive separators.
 - The `plugins` path segment is parsed from the URI path after the endpoint (e.g. `socks5://host:1080/plugin1,plugin2`). Leading commas are trimmed.
 
 ## See also

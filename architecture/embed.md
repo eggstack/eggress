@@ -246,6 +246,8 @@ private `connect_tcp_inner()` with the legacy methods and return
 |---|---|
 | `tests/start_stop.rs` | Start + bound_addresses + shutdown lifecycle |
 | `tests/reload.rs` | Hot-reload, listener topology rejection |
+| `tests/reload_convergence.rs` | Reload convergence |
+| `tests/ssh.rs` | OpenSSH-gated SSH outbound regression (`EGRESS_REQUIRE_OPENSSH_TESTS=1`) |
 | `tests/metrics_status.rs` | Prometheus metrics rendering, service status |
 | `tests/proxy_traffic.rs` | End-to-end proxy traffic through embed handle |
 | `tests/error_redaction.rs` | Credential redaction in errors, `to_redacted_toml`, category labels |

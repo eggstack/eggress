@@ -16,6 +16,7 @@ state after compilation.
 | `src/lib.rs` | Public entry points (`load_and_validate`, `validate_and_compile_toml`, `_with_warnings` variants), integration tests |
 | `src/compile/` | Compilation by domain (`mod.rs` facade + `compile_config`/`load_and_compile`/`resolve_password`/`parse_duration_opt`); `model.rs` (RuntimeConfig + compiled DTOs), `listeners.rs` (listener/TLS/UDP/transparent/unix), `upstreams.rs` (chains/groups/health/H2), `rules.rs` (matchers/actions/rules), `reverse.rs` (reverse server/client + TLS), `process.rs` (process/timeouts/admin). Reuses `validate/`; no validation duplicated. `parse -> validate -> compile` stays one-way |
 | `src/validate/` | `mod.rs` (`validate_config` orchestrator) + `composition.rs` (protocol matrix), `listeners.rs` (bindings/auth/TLS/UDP), `upstreams.rs` (chains/health/H2/groups/transports), `rules.rs` (matchers/group refs), `core.rs` (durations/timeouts/process/admin), `security.rs` (dangerous-combination + alias warnings) |
+| `src/validate/tests.rs` | Security-warning + composition-matrix tests (21) |
 | `src/file.rs` | Bounded file loading (1 MB limit with TOCTOU guard) |
 | `src/error.rs` | `ConfigError` and `ConfigWarning` types |
 
@@ -171,8 +172,9 @@ Non-fatal warnings emitted during `validate_config_security()`:
 
 ## Configuration/features
 
-- `toml` for parsing; `regex` for host/port regex compilation; `ipnet` for CIDR; `rcgen` (test only)
-- Duration parsing: ns, us/micro-s, ms, s, m, h, d -- with overflow checking
+- `toml` for parsing; `regex` for host/port regex compilation; `ipnet` for CIDR; `zeroize` for secret hygiene; `rcgen`/`tempfile` dev-only
+- Feature: `quic` (optional H3/QUIC listener support)
+- Duration parsing: `ns`, `us`/`μs`, `ms`, `s`, `m`, `h`, `d` -- with overflow checking via `checked_mul`
 - File size limit: 1 MB (`MAX_CONFIG_SIZE`) with TOCTOU guard (read one extra byte after stat)
 - No `unsafe` code
 

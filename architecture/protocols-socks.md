@@ -11,7 +11,7 @@ version sniffers.
 |---|---|---|
 | `detector.rs` | `Socks4Detector`: version byte 0x04, confidence 100 | `Socks4Detector` (:10) |
 | `lib.rs` | `Socks5Detector`: version byte 0x05, confidence 100; re-exports | `Socks5Detector` (:21) |
-| `socks4/server.rs` | `read_socks4_request` / `write_socks4_reply`; 4a domain when IP=`0.0.0.x`(x!=0); USERID<=255; BIND rejected | `MAX_USER_ID_LEN` (:9), `read_socks4_request` (:52), `write_socks4_reply` (:143) |
+| `socks4/server.rs` | `read_socks4_request` / `write_socks4_reply`; 4a domain when IP=`0.0.0.x`(x!=0); USERID<=255; BIND rejected | `MAX_USER_ID_LEN` (`socks4/mod.rs:9`), `read_socks4_request` (:52), `write_socks4_reply` (:143) |
 | `socks4/client.rs` | `socks4_connect`: IP->SOCKS4, domain->SOCKS4a (IP=0.0.0.1); IPv6 rejected | `socks4_connect` (:16) |
 | `socks5/server.rs` | Full handshake: method neg -> RFC 1929 auth -> CONNECT; `SocksAddr`; REP=0x07 for unsupported cmds; sync parse fns for fuzzing | `parse_method_negotiation` (:119), `parse_connect_request` (:140), `parse_socks5_request` (:200), `read_auth_request` (:312), `handle_socks5_handshake` (:498) |
 | `socks5/client.rs` | `socks5_connect`: greeting + auth + CONNECT + reply | `socks5_connect` (:31) |
@@ -59,7 +59,7 @@ Client: [VER=0x01][ULEN][UNAME][PLEN][PASSWD]   Server: [VER=0x01][STATUS]
 ```
 
 Credential lengths capped at 255 (`MAX_CRED_LEN`, :50). Password compared
-via `subtle::ConstantTimeEq` (:333-337). On failure, status=0x01 sent
+via `subtle::ConstantTimeEq` (:338-346). On failure, status=0x01 sent
 then connection closed.
 
 ### SOCKS5 CONNECT request
@@ -146,7 +146,7 @@ version/cmd/atyp in hex. `From<Socks5Error> for io::Error` (:50).
 | UDP datagram | 65535 B | `udp_codec.rs:37` |
 
 **Constant-time compare**: SOCKS5 password via `subtle::ConstantTimeEq`
-(:server.rs:341-345). SOCKS4 user_id is clear-text, not a credential.
+(:server.rs:338-346). SOCKS4 user_id is clear-text, not a credential.
 
 **Validation**: RSV must be 0x00 in CONNECT and UDP. FRAG must be 0x00.
 Empty SOCKS4a domain rejected (:server.rs:117-121). `send_method_selection`

@@ -9,7 +9,7 @@ health probes, reverse routing gate, and ordered shutdown.
 | File | Role |
 |------|------|
 | `src/supervisor.rs` | Orchestration facade: `ServiceSupervisor` public API (`start`/`start_from_config`/`start_from_config_with_compatibility` + deprecated legacy `start_from_config_with_options` shim/`run()`/`reload_config()`), `CompatibilityRuntimeHooks` + legacy `CompatibilityOptions` adapter + `SystemProxyRequest`, listener-prep dispatch, transport accept loops, admin/signal orchestration |
-| `src/supervisor/startup.rs` | `init_supervisor()` (feature gates, bind pre-validation, metrics/UDP/health wiring, `RuntimeState` assembly), `resolve_udp_global_limit()`, `build_ssh_sessions(allow_insecure: bool)` |
+| `src/supervisor/startup.rs` | `init_supervisor()` (feature gates, bind pre-validation, metrics/UDP/health wiring, `RuntimeState` assembly), `resolve_udp_global_limit()`, `build_ssh_sessions(allow_insecure_host_keys: bool)` |
 | `src/supervisor/state.rs` | `RuntimeState` (snapshot, routing, session + runtime metrics, readiness, accounting, UDP registry, health, reverse state) + canonical `apply_compiled_config` transaction |
 | `src/supervisor/reload.rs` | `ReloadResult`, `classify_listeners()` + `classify_reload_config()` (restart-required contract) |
 | `src/supervisor/connection.rs` | `PreparedListener`/`PreparedQuicListener`, shared `wrap_tls_server()`, `build_connection_config()` (`ConnectionBuildParams`, `InboundSecurity`) |
@@ -181,7 +181,8 @@ Startup failures are structured `Result` errors, never panics.
 |------|---------------|
 | `operations` | Admin server, `RuntimeAdminListenerInfos`, system-proxy dep |
 | `reverse` | Reverse server/client spawning, `reverse_registry` (implies `operations`) |
-| `extended` | Shadowsocks metrics, `pproxy-legacy`, Shadowsocks UDP relay |
+| `extended` | Shadowsocks metrics, Shadowsocks UDP relay (`eggress-udp/shadowsocks`) |
+| `pproxy-legacy` | SSR framing (requires `extended`) |
 | `ssh` | `SshSessionCache`, SSH session shutdown |
 | `quic` | QUIC/HTTP3 listener binding |
 

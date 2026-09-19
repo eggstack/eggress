@@ -10,8 +10,10 @@ shell-style strings, preserving names with spaces.
 
 | File | Role |
 |------|------|
-| `src/apply.rs` | `plan_apply()` (dry-run), `ApplyPlan`, `apply_compatibility_proxy[_with_runner]()`, `AppliedProxy` (RAII rollback), `RollbackState`, `Command`, `CompatibilityProxyKind`, `create_rollback`, `execute_apply`, `generate_revert_commands` |
+| `src/lib.rs` | Crate root; re-exports (`plan_apply`, `apply_*`, `AppliedProxy`, `ApplyPlan`, `Command`, `CompatibilityProxyKind`, `RollbackState`) |
+| `src/apply.rs` | `plan_apply()` (dry-run), `ApplyPlan`, `apply_compatibility_proxy[_with_runner]()`, `AppliedProxy` (RAII rollback), `RollbackState`, `Command`, `CompatibilityProxyKind`; `create_rollback` / `execute_apply` / `generate_revert_commands` are `pub` in `apply.rs` but NOT re-exported at crate root (refer to them as `apply::…`) |
 | `src/capability.rs` | `SystemProxyCapability` (9 variants), `SystemProxyStatus`, `check_system_proxy_capability[_with_overrides]()`, `system_proxy_platform_info()` |
+| `src/backends/mod.rs` | Backend module declarations |
 | `src/backends/macos.rs` | `networksetup` inspect/apply/disable; `list_network_services`, `inspect_macos_proxy`, `generate_macos_apply_commands`, `generate_macos_disable_commands` |
 | `src/backends/linux.rs` | GNOME `gsettings` inspect/apply/disable; `inspect_gnome_proxy`, `generate_gnome_apply_commands`, `generate_gnome_disable_commands` |
 | `src/backends/windows.rs` | Windows registry inspect/apply/disable; `inspect_windows_proxy`, `generate_windows_apply_commands`, `generate_windows_disable_commands` |
@@ -43,7 +45,7 @@ shell-style strings, preserving names with spaces.
 
 ## Apply-plan flow
 
-`apply_compatibility_proxy` (`src/apply.rs:113-161`):
+`apply_compatibility_proxy`:
 
 ```
 detect_platform()
@@ -140,13 +142,13 @@ Applied in `inspect_system_proxy_with_runner` for safe logging.
 
 ## Concurrency
 
-- `AppliedProxy` is per-process, not `Send`/`Sync`.
+- `AppliedProxy` is a per-process RAII guard: `Drop` calls `restore()` (idempotent).
 - `MockCommandRunner` uses `Mutex<Vec<...>>` for call recording.
 - All `CommandRunner::run` calls are synchronous.
 
 ## Test coverage
 
-49 tests via `cargo test -p eggress-system-proxy --lib`:
+55 tests via `cargo test -p eggress-system-proxy --lib`:
 
 | Module | Key tests |
 |--------|-----------|

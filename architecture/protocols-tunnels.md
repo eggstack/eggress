@@ -8,7 +8,7 @@ Two thin tunnel wrappers used as chain hops and listener protocols:
 
 | File | Role |
 |---|---|
-| `websocket/src/lib.rs` | `WebSocketStreamAdapter` (AsyncRead+AsyncWrite over binary frames), `WebSocketTunnelServer`, `WebSocketTunnelClient`, free `accept_upgrade_with_auth` function, `parse_basic_auth` |
+| `websocket/src/lib.rs` | `WebSocketStreamAdapter` (AsyncRead+AsyncWrite over binary frames), `WebSocketTunnelServer`, `WebSocketTunnelClient`, free `accept_upgrade_with_auth` / `accept_upgrade_with_auth_and_limit` functions, private `parse_basic_auth` helper (`lib.rs:361`, not exported) |
 | `websocket/src/error.rs` | `WebSocketError` enum: `Handshake`, `Connect`, `Protocol`, `MessageTooLarge`, `Io` |
 | `raw/src/tunnel.rs` | `RawTunnelListener`: bind, accept loop, semaphore-gated relay to fixed target |
 | `raw/src/error.rs` | `RawTunnelError` enum: `NoTarget`, `TargetConnect`, `Io`, `DnsRebinding` |
@@ -33,7 +33,7 @@ Two thin tunnel wrappers used as chain hops and listener protocols:
 |---|---|---|
 | `RawTunnelListener` | struct | Holds `TcpListener`, `TargetAddr`, `Arc<Semaphore>` |
 | `RawTunnelListener::bind(bind_addr, target)` | async fn | Binds TCP socket; semaphore defaults to 1024 permits |
-| `RawTunnelListener::local_addr()` | method | Returns bound `SocketAddr` |
+| `RawTunnelListener::local_addr()` | method | Returns `Result<SocketAddr, io::Error>` |
 | `RawTunnelListener::run()` | async fn | Accept loop; spawns `handle_raw_connection` per peer |
 | `DEFAULT_MAX_CONNECTIONS` | const | 1024 |
 
@@ -174,7 +174,7 @@ Semaphore exhaustion in `RawTunnelListener` is not an error variant -- the conne
 - `connect_over_stream` exists only on `WebSocketTunnelClient`, not on the server. The server has `accept_upgrade_over_stream` for the same purpose.
 - The `write_flush_outstanding` flag in `AsyncWrite` means a `poll_write` can return `Ok(len)` even when the flush is still pending. The next write will block on the flush. This is correct backpressure but looks surprising.
 - `RawTunnelListener::run()` has no graceful shutdown; the caller must cancel the task.
-- `DEFAULT_MAX_MESSAGE_SIZE` is 8 MiB. If a chain hop uses `accept_upgrade_with_auth`, it also uses this default (hardcoded at `lib.rs:320`), not a configurable value.
+- `DEFAULT_MAX_MESSAGE_SIZE` is 8 MiB. `accept_upgrade_with_auth` (`lib.rs:294`) delegates to `accept_upgrade_with_auth_and_limit` with `DEFAULT_MAX_MESSAGE_SIZE` at `:301` — not a configurable value at that call site.
 
 ## See also
 

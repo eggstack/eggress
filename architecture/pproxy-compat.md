@@ -13,7 +13,7 @@ diagnostics, and the fail-closed startup gate.
 | `lib.rs` | Public re-exports: `PproxyArgs`, `translate_pproxy_args`, `translate_from_uris`, `classify_aggregate_tier`, `evaluate_execution_gate`, `ManifestTier`, `DiagnosticCode`, `StructuredDiagnostic`, `CompatIssue`, `IssueSeverity`, `CompatRegex`, `PproxyRuleFile` |
 | `args.rs` | `PproxyArgs`: frozen pproxy 2.7.9 flag parser; strict violations for unknown flags/values |
 | `uri.rs` | `PproxyUri`/`PproxyChain`/`PproxyPluginSpec` — compat grammar over shared `eggress-uri::syntax` primitives; native tokens delegate to `ProtocolSpec::parse_name`, compat-only tokens stay explicit |
-| `translate/` | Split by semantic area: `entry` (arg-level entry points + `CombinedTranslation`), `intermediates` (shared semantic builder), `model` (TOML structs shared by builder/renderers), `rules` (patterns/rule files), `toml_render` (presentation-only TOML), `native` (native compilation + `NativeTranslation`) |
+| `translate/` | Split by semantic area: `entry` (arg-level entry points + `CombinedTranslation`), `intermediates` (shared semantic builder), `mod` (module re-exports), `model` (TOML structs shared by builder/renderers), `rules` (patterns/rule files), `toml_render` (presentation-only TOML), `native` (native compilation + `NativeTranslation`), `tests` (renderer unit tests) |
 | `issues.rs` | `CompatIssue` (severity, code, category/feature tags, tier, message, suggestion) — the single stored diagnostic model; `IssueSeverity::{Warning, Unsupported, Info}` |
 | `tier.rs` | `ManifestTier` enum (5 variants) + `classify_aggregate_tier` + `manifest_tier_for_category` |
 | `diagnostics.rs` | `DiagnosticCode` enum (26 variants), `StructuredDiagnostic` JSON output, `classify_unsupported_feature_tier` |
@@ -23,7 +23,7 @@ diagnostics, and the fail-closed startup gate.
 | `error.rs` | `CompatError` enum |
 | `regex_compat.rs` | `CompatRegex`, `PproxyRuleFile`, `RegexBackend` — pproxy line-based rule-file parsing |
 | `diagnose.rs` | Diagnostic helpers |
-| `tests.rs` | Integration tests |
+| `tests.rs` | Unit tests (translation/gate/tier; crate-level integration tests live in `tests/{native_equivalence,uri_syntax_equivalence}.rs`) |
 
 ### Five-tier vocabulary (`tier.rs`)
 

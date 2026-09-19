@@ -11,7 +11,7 @@ facade, never this crate directly.
 
 | File | Role |
 |---|---|
-| `crates/eggress-relay/src/lib.rs` | Entire crate: `RelayOptions`/`HalfClosePolicy`, `RelayReport`/`RelayTermination`/`RelaySide`, `RelayFailure`/`RelayDirection`, `relay()`/`relay_with_options()`, inline unit tests |
+| `crates/eggress-relay/src/lib.rs` | Entire crate: `RelayOptions` (`new`/`try_new`/`bounded`), `InvalidRelayOptions`, `HalfClosePolicy`, `RelayReport`/`RelayTermination`/`RelaySide`, `RelayFailure`/`RelayDirection`, `relay()`/`relay_with_options()`, inline unit tests |
 | `crates/eggress-relay/README.md` | Direct-consumer usage and the `eggress-embed` distinction |
 | `crates/eggress-core/src/relay.rs` | Legacy facade: unchanged `RelayResult`/`TerminationReason`/`relay(BoxStream, BoxStream)`, explicit 64 KiB + one-second options, rich-to-legacy mapping (not part of this crate) |
 
@@ -26,7 +26,10 @@ pub struct RelayOptions {
     pub buffer_size: NonZeroUsize,   // non-zero by construction
     pub half_close: HalfClosePolicy,
 }
-// Default: 64 KiB + Drain. try_new(usize, ..) rejects zero explicitly.
+// Default: 64 KiB + Drain. `RelayOptions::new(size, policy)`,
+// `try_new(usize, ..) -> Result<_, InvalidRelayOptions>` (rejects zero),
+// `bounded(size, drain_timeout)` constructors; `InvalidRelayOptions`
+// (Display+Error) on zero size.
 
 pub enum RelaySide { Client, Server }
 

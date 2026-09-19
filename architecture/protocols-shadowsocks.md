@@ -128,7 +128,7 @@ AEAD tag verification is inherent in AES-GCM and Poly1305. Decrypting a tampered
 
 | Feature | Modules enabled | Purpose |
 |---|---|---|
-| `legacy-crypto` | `legacy` | Stream ciphers: AES-CFB/CTR/OFB, RC4, RC4-MD5, Blowfish, Camellia, ChaCha20, Salsa20, etc. `warn!()` emitted on every use (`legacy.rs:796-801`) |
+| `legacy-crypto` | `legacy` | Stream ciphers: AES-CFB/CTR/OFB, RC4, RC4-MD5, Blowfish, Camellia, ChaCha20, Salsa20, etc. `warn!()` emitted on every use (`legacy.rs:836`) |
 | `pproxy-legacy` | `compat::plugin`, `compat::ssr` | SSR framing, six pproxy plugins (plain, origin, http_simple, tls1.2_ticket_auth, verify_simple, verify_deflate) |
 
 Neither feature is enabled by default (`Cargo.toml:14`). The `is_legacy_method` function in `method.rs:93-133` recognizes 33 legacy cipher names regardless of feature flags, returning `LegacyMethodUnsupported` (not `UnsupportedMethod`) for stable diagnostics.

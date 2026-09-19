@@ -35,6 +35,7 @@ compatible adapters (raw and SOCKS5-framed backward channels).
 | `redact_auth(auth)` | fn | Returns `user:****` for logging; never leaks password |
 | `relay_bidirectional(a, b)` | async fn | Wrapper around `relay_bidirectional_with_timeout` with no timeout |
 | `relay_bidirectional_with_timeout(a, b, idle_timeout)` | async fn | Half-close-preserving relay; both sides drain independently |
+| `relay_bidirectional_boxed(a, b)` | async fn | `BoxStream` relay for TLS |
 
 ### Server (`server.rs`)
 
@@ -63,7 +64,7 @@ compatible adapters (raw and SOCKS5-framed backward channels).
 | `PproxyBackwardClient` | struct | One persistent worker per `+in` occurrence; auth bytes written raw (no newline, no accept/reject byte) |
 | `PproxyBackwardServer` | struct | Accepts control channels, pairs with external clients |
 | `PproxyBackwardFraming` | enum | `Raw` (byte pipe) or `Socks5` (pproxy 2.7.9 `+in` interop) |
-| `raw_auth(user, pass)` | fn | Builds `user:pass` bytes (no newline) |
+| `raw_auth(user, pass)` | fn | Builds `user:pass` bytes (no newline); signature `raw_auth(username: Option<&str>, password: Option<&str>) -> Vec<u8>` (`compat_pproxy.rs:626`) |
 
 ## Wire format / protocol mechanics
 
@@ -106,7 +107,7 @@ Client (PproxyBackwardClient)        Server (PproxyBackwardServer)
   |     external client               |
 ```
 
-The pproxy compat adapter does NOT send or read the 0x01/0x00 accept/reject byte. Auth bytes are raw (`format!("{user}:{pass}").into_bytes()` in `compat_pproxy.rs:584`). The `Socks5` framing mode additionally negotiates SOCKS5 hello/methods/CONNECT during the channel setup phase.
+The pproxy compat adapter does NOT send or read the 0x01/0x00 accept/reject byte. Auth bytes are raw (`format!("{user}:{pass}").into_bytes()` in `compat_pproxy.rs:628`). The `Socks5` framing mode additionally negotiates SOCKS5 hello/methods/CONNECT during the channel setup phase.
 
 ### Half-close relay
 
@@ -133,7 +134,7 @@ The pproxy compat adapter does NOT send or read the 0x01/0x00 accept/reject byte
 
 ### allow_bind enforcement
 
-`ReverseServerConfig::validate()` (`server.rs:95-121`) enforces:
+`ReverseServerConfig::validate()` (`server.rs:120-149`) enforces:
 
 | External bind | Auth configured | allow_bind non-empty | Result |
 |---|---|---|---|
@@ -142,7 +143,7 @@ The pproxy compat adapter does NOT send or read the 0x01/0x00 accept/reject byte
 | Non-loopback | Yes | No/empty | **Rejected** |
 | Non-loopback | Yes | Yes | OK |
 
-`is_bind_allowed` (`server.rs:72-78`) checks exact IP+port match. `same_bind` compares IPv4/IPv6 separately (no mapped-address normalization).
+`is_bind_allowed` (`server.rs:96`) checks exact IP+port match. `same_bind` compares IPv4/IPv6 separately (no mapped-address normalization).
 
 ## Error and failure model
 

@@ -26,7 +26,7 @@ Re-exported from `lib.rs` (:12-27): `handle_connect`, `ConnectRequest`,
 `forward_response`, `has_unsupported_expectation`, `BodyCopyLimits`, `BodyCopyReport`,
 `ForwardRequest`, `ForwardResponse`, `ForwardResponseReport`, `ForwardResult`, `RequestBodyKind`,
 `h2_connect_client`, `h2_connect_client_pooled`, `h2_connect_relay`,
-`H2ConnectError`, `H2PoolGuard`, `H2PoolKey`, `H2PoolRegistry`,
+`H2ConnectError`, `H2PoolGuard`, `H2PoolKey`, `H2PoolRegistry`, `H2PoolStats`,
 `H2ProtocolMetrics`, `H2StreamRead`, `H2StreamWrite`,
 `H2_POOL_REGISTRY`, `H2_PROTOCOL_METRICS`, `HttpDetector`, `HttpError`.
 
@@ -205,7 +205,7 @@ default and restrictive limits.
 ## Reviewer gotchas
 
 1. **Two `parse_header_line` fns**: `connect/server.rs:249` (public, no
-   control-char check, for fuzzing) vs `forward/server.rs:1053` (private,
+   control-char check, for fuzzing) vs `forward/server.rs:1085` (private,
    rejects NUL/CR/LF). Different contexts.
 2. **Request vs response trailer limits differ**: request-side 32 KiB
    (`BodyCopyLimits`, :22) vs response-side 64 KiB (:356). Both chunk-size

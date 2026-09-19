@@ -10,6 +10,7 @@ crate.
 | File | Role |
 |------|------|
 | `src/lib.rs` | `serve_connection()` entry point; `ConnectionConfig`, `ConnectionContext`, `SessionMetrics` trait (6 session/route/upstream/auth methods; runtime concerns moved to `eggress-metrics::RuntimeMetrics`), `UdpService` trait, `UdpAssociationHandle`, `NoopMetrics` |
+| `src/auth.rs` | `parse_basic_auth()` Basic-auth helper (crate-private) |
 | `src/accept/` | `mod.rs` (entry points + auth/session types) + `handlers.rs` (SOCKS5/SOCKS4/HTTP handshakes), `forward.rs` (CONNECT parsing, authority, 407 challenges), `detect.rs` (first-byte dispatch), `prefixed.rs` (peek-then-delegate stream): `AcceptedSession` (4 variants), `TunnelProtocol` (10 variants), `ReplyContext` (9 variants), `InboundAuthentication`, `AuthReuseCache` (IP-keyed, 4096 entries), `AcceptError`, `MAX_HEAD_SIZE` (32 KiB), `MAX_HEADER_LINES` (128) |
 | `src/execute/` | `mod.rs` (`execute()` dispatcher, `open_route()`, `SessionReport`, `SessionOutcome` (7 variants), `FailureCategory` (15 variants); chain execution via `eggress-outbound::build_chain_executor`) |
 | `src/reply.rs` | Protocol-correct success/failure replies: `send_tunnel_success()`, `send_tunnel_failure()`, `send_http_forward_failure()`, `send_http_expectation_failed()` (417), `send_http_upgrade_unsupported()` (501) |
@@ -55,8 +56,8 @@ pub trait UdpService: Send + Sync { /* create_association, is_enabled, active_co
 
 ## How it works — `serve_connection` pipeline
 
-1. **Metrics start** — `record_session_start()` if metrics configured (`lib.rs:125`).
-2. **Handshake with timeout** — `tokio::time::timeout(handshake_timeout, accept_with_fixed_target_for_peer(...))` wraps the entire accept phase (`lib.rs:129-142`). Timeout → `HandshakeTimedOut`.
+1. **Metrics start** — `record_session_start()` if metrics configured (`lib.rs:132-134`).
+2. **Handshake with timeout** — `tokio::time::timeout(handshake_timeout, accept_with_fixed_target_for_peer(...))` wraps the entire accept phase (`lib.rs:136-149`). Timeout → `HandshakeTimedOut`.
 3. **Protocol detection** (`accept.rs`) — first byte: `0x05` → SOCKS5, `0x04` → SOCKS4, otherwise → HTTP method detection via `detect_http_method()` (16-byte method/prefix cap). Single-protocol listeners (Shadowsocks, Trojan, Raw, Echo) skip detection.
 4. **Authentication** — per-connection or `AuthReuseCache` lookup. SOCKS5/4/HTTP use `subtle::ConstantTimeEq`.
 5. **Dispatch** — `execute()` on `AcceptedSession`: Tunnel → `execute_tunnel`, HttpForward → `execute_http_forward`, UdpAssociate → `execute_udp_associate`, Echo → `execute_echo`.
@@ -66,7 +67,7 @@ pub trait UdpService: Send + Sync { /* create_association, is_enabled, active_co
    `eggress-relay`: 64 KiB buffers, one-second bounded post-half-close drain;
    any directional I/O failure collapses to legacy `TerminationReason::Error`).
 9. **Failure reply** — `send_tunnel_failure()` (`reply.rs:58`) maps `SessionOpenError` to per-protocol codes.
-10. **Metrics end** — exactly one `record_session(&report)` before returning (`lib.rs:192`). Every code path reaches this block.
+10. **Metrics end** — exactly one `record_session(&report)` before returning (`lib.rs:192`ff). Every code path reaches this block.
 
 ## Error & failure model
 
@@ -151,6 +152,8 @@ H2/WebSocket failure: stream shutdown (no framed error code). HTTP forward failu
 | `ssh` | `SshHopHandler`, `SshSessionCache` |
 | `quic` | `QuicHopHandler`, `H3HopHandler` |
 | `legacy-crypto` | Legacy Shadowsocks cipher methods |
+| `insecure-tls` | Per-hop `?insecure` verifier (test-gated; never default) |
+| `insecure-quic` | Test-only QUIC cert bypass (never default) |
 
 ### Hop handler registry (`eggress-outbound::build_chain_executor`)
 
@@ -170,7 +173,7 @@ Trojan, WebSocket] (extended), [ShadowsocksR] (pproxy-legacy), Raw, Unix,
 - **Constant-time auth**: SOCKS5 username (`accept.rs:758`), HTTP Basic (`accept.rs:983`, `advanced.rs:96`) use `subtle::ConstantTimeEq`.
 - **AuthReuseCache**: IP-keyed, max 4096, lazy expiry, LRU eviction (`accept.rs:31-75`). pproxy-compat only; native listeners authenticate every connection.
 - **Header limits**: 32 KiB head (`MAX_HEAD_SIZE`), 128 lines (`MAX_HEADER_LINES`) (`accept/forward.rs:240-243`).
-- **Transparent unsafe**: workspace's single `unsafe` block — `getsockopt(SO_ORIGINAL_DST)` FFI. Two `#[allow(unsafe_code)]` annotations: `query_original_dst` (sockaddr init + getsockopt) and `parse_sockaddr` (sockaddr_in/in6 reinterpretation with length validation).
+- **Transparent unsafe**: workspace's single `unsafe` block — `getsockopt(SO_ORIGINAL_DST)` FFI. Three `#[allow(unsafe_code)]` annotations in `listener/transparent.rs`: `query_original_dst` (sockaddr init + getsockopt), `parse_sockaddr` (sockaddr_in/in6 reinterpretation with length validation), plus tests.
 - **Unix socket safety**: `UnixListener::bind()` refuses to unlink non-socket files or symlinks (`listener/unix.rs:96-122`); only `FileType::is_socket()` passes.
 - **Trojan fallback**: on password mismatch, if `fallback` is set, relay to fallback target instead of rejecting (`accept.rs:632-646`).
 - **H2/WS listener auth**: `serve_h2_connection()` and `serve_websocket_connection()` perform per-stream/per-connection auth with the same CT comparison.
@@ -211,7 +214,7 @@ Run: `cargo test -p eggress-server`
 3. `SessionReport::rejected()` produces `RouteFailed` + `PolicyDenied`; NOT a separate `SessionOutcome`.
 4. Non-extended build: `shadowsocks_metrics` field becomes `Option<()>`.
 5. `HttpOnlyHopHandler` (in `eggress-outbound`) rewrites origin-form to absolute-form for pproxy `httponly` compat — not a general rewriter.
-6. `PrefixedStream` (`accept.rs:263`) replays bytes consumed during detection — every accept path wraps the stream.
+6. `PrefixedStream` (`accept/prefixed.rs`) replays bytes consumed during detection — every accept path wraps the stream.
 7. `open_route()` maps `RouteError::NoEligibleUpstream` and `RouteError::UnknownGroup` to `PolicyDenied` (`execute.rs:324-328`).
 8. Concrete hop handlers live in `eggress-outbound`; do not reintroduce a
    server-local registry. Shared helpers (`target_to_socks_addr`,

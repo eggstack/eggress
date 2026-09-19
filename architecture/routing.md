@@ -17,7 +17,7 @@ swap.
 | `src/explain.rs` | `Router::explain()` DTO construction (non-mutating preview preserved) |
 | `src/compat.rs` | `CompatRegexRule` + `RegexError` (pproxy `host:port` formatting) |
 | `src/upstream.rs` | `UpstreamRuntime` (chain, enabled flag, load counters, health cell, probe, config), `UpstreamGroup` (members + scheduler + fallback), `GroupFallback`, `validate_upstream_id` / `validate_group` |
-| `src/scheduler.rs` | `SchedulerKind`: FirstAvailable, RoundRobin, Random, LeastConnections; `Scheduler` trait with `select` + `preview`; injectable `RandomIndex` for deterministic tests |
+| `src/scheduler.rs` | `SchedulerKind`: FirstAvailable, RoundRobin, Random, LeastConnections; `Scheduler` trait with `select` + `select_enabled` (used by the `UseUnhealthy` fallback) + `preview`; injectable `RandomIndex` for deterministic tests |
 | `src/health.rs` | Six-state machine (`HealthState`), `HealthCell` (RwLock), `HealthConfig`, `HealthManager` (probe tasks + semaphore), `is_eligible`, `probe_tcp` |
 | `src/lease.rs` | `PendingLease` (in-flight, RAII decrement on drop) and `ActiveLease` (active count, RAII decrement on drop) |
 
@@ -174,9 +174,9 @@ No Cargo features gate routing functionality (all routing code is always compile
 
 | Area | Files / tests | What is covered |
 |---|---|---|
-| MatchExpr | `src/matcher.rs` + `src/lib.rs` tests | 30+ tests: host exact/suffix/regex, CIDR IPv4/v6, port exact/range/set, source CIDR/port, listener, protocol, identity, composite All/AnyOf/Not, empty All/AnyOf |
-| Router decide/select | `src/router.rs` + `src/lib.rs` tests | first-match-wins, default action, upstream group, reject, accessor methods |
-| Health state machine | `src/health.rs:325-561` | 15+ tests: every state transition, thread safety (100 threads), eligibility, timestamps, failure resets counter, Disabled terminal |
+| MatchExpr | `src/matcher.rs` (unit-test-free; covered by `src/lib.rs` tests) | 30+ tests: host exact/suffix/regex, CIDR IPv4/v6, port exact/range/set, source CIDR/port, listener, protocol, identity, composite All/AnyOf/Not, empty All/AnyOf |
+| Router decide/select | `src/router.rs` (unit-test-free; covered by `src/lib.rs` tests) | first-match-wins, default action, upstream group, reject, accessor methods |
+| Health state machine | `src/health.rs:308-630` | 15+ tests: every state transition, thread safety (100 threads), eligibility, timestamps, failure resets counter, Disabled terminal |
 | Jitter | `src/health.rs:598-616` | 1000 iterations, validates +/- 20% range |
 | Probe | `src/health.rs:563-596` | TCP probe success, failure, timeout |
 | Schedulers | `src/scheduler.rs:346-428` | FirstAvailable order, disabled skip, RoundRobin, Random determinism, LeastConnections |

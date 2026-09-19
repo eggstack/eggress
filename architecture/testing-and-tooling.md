@@ -12,7 +12,9 @@ Test-only library consumed as dev-dependency.
 | Module | Role |
 |---|---|
 | `lib.rs` | `get_free_port()`, `start_echo_server()`, `start_half_close_server()` — async test servers and port allocation |
-| `oracle/` | Oracle interpreter resolution: `$EGRESS_ORACLE_PYTHON` -> legacy `$EGRESS_PYTHON_BIN` -> `find_oracle_python` discovery |
+| `bin/strict_report.rs` | Strict-report binary (manifest/observation report generation) |
+| `oracle/` | Scenario/supervisor/observation helpers for the frozen oracle |
+| `differential.rs` | Differential test harness plumbing + oracle interpreter resolution: `$EGRESS_ORACLE_PYTHON` -> legacy `$EGRESS_PYTHON_BIN` -> `find_oracle_python` discovery |
 | `pproxy_oracle.rs` | pproxy 2.7.9 oracle process management |
 | `manifest.rs` | Parity manifest loading and validation |
 | `canonical_manifest.rs` | Canonical manifest types |
@@ -22,7 +24,6 @@ Test-only library consumed as dev-dependency.
 | `corpus.rs` | Test corpus management |
 | `case_model.rs` | Test case model |
 | `composition.rs` | Composition test helpers |
-| `differential.rs` | Differential test harness plumbing |
 | `eggress_runner.rs` | Eggress process runner |
 | `fixtures.rs` | Fixture management |
 | `report.rs` | Report generation |
@@ -72,6 +73,7 @@ Grouped by purpose:
 | Certification | `run_pproxy_certification.sh`, `run_strict_api_comparison.sh`, `run_strict_pproxy_api.py`, `run_strict_pproxy_api.sh`, `run_strict_pproxy_interop.sh` |
 | Evidence / validation | `build_strict_evidence_index.py`, `compare_observations.py`, `validate_pproxy_parity_manifest.py`, `demonstrate_regression_injections.py`, `demonstrate_regression_injections.sh` |
 | Release smoke | `release_artifact_smoke.py`, `test_wheel.sh`, `publish-remaining.sh` |
+| Release preflight / portability | `release-preflight.sh`, `install-zig.sh` |
 | Perf / soak | `perf/run_local_baseline.sh`, `perf/run_pproxy_comparison.sh`, `perf/run_soak.sh` |
 | Snapshot / probe | `snapshot_pproxy_api.py`, `pproxy_surface_probe.py`, `probe_pproxy_chain_topology.py`, `smoke_clients.py` |
 
@@ -181,11 +183,13 @@ cargo check --manifest-path fuzz/Cargo.toml --bins
 
 # Dependency/advisory checks (dependency changes, release prep)
 cargo deny check
-cargo audit --ignore RUSTSEC-2025-0134
+cargo audit --ignore RUSTSEC-2025-0134 --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0009
 
 # External compatibility (opt-in, installs pproxy==2.7.9)
 EGRESS_REQUIRE_EXTERNAL_INTEROP=1 \
   cargo test -p eggress-cli --test differential_pproxy -- --ignored --test-threads=1
+EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 \
+  cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored --test-threads=1
 ```
 
 ## Reviewer gotchas

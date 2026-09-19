@@ -58,8 +58,8 @@ direct connector with DNS-rebinding protection, and the multi-hop
 
 ### Connector (`connector.rs`)
 
-- `Connector` trait (dyn-compatible via `trait_variant`): `connect(&self, target: &TargetAddr) -> Result<BoxStream, ConnectError>`
-- `DirectConnector::connect_with_options()`: optional local_bind, optional DNS-rebinding check
+- `LocalConnector` trait (dyn-compatible `Connector: Send` variant via `trait_variant`): `connect(&self, target: &TargetAddr) -> Result<BoxStream, ConnectError>`
+- `DirectConnector::connect_with_options()`: optional local_bind, optional DNS-rebinding check (`enforce_dns_rebinding_check` for DNS answers) plus `enforce_literal_ip_check` (also screens literal IPs)
 - `is_reserved_or_private_ip()`: covers loopback, link-local, private, unspecified, multicast, broadcast, documentation (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24, 192.88.99.0/24), benchmarking (198.18.0.0/15), reserved-future (240.0.0.0/4), this-network (0.0.0.0/8), IPv6 loopback/link-local/unique-local/unspecified/multicast/documentation/discard; IPv4-mapped v6 addresses are translated and checked against v4 ranges. Domain lookups are rejected if any returned address is reserved, even when the same response also contains a public address; this conservative split-horizon policy prevents an unsafe answer from being selected during DNS rebinding checks.
 
 ### Relay facade (`relay.rs`)
@@ -148,8 +148,8 @@ direct connector with DNS-rebinding protection, and the multi-hop
 
 ## Configuration/features
 
-- No feature flags in eggress-core itself
 - `socket2` for socket options; `tokio-util` for `CancellationToken`
+- One feature flag: `insecure-tls` (gates `insecure=true` chains; cf. `chain.rs`)
 - Workspace `unsafe_code = "deny"` applies
 
 ## Security notes

@@ -9,7 +9,8 @@ routing decisions), UDP association status, and reverse server state.
 | File | Role |
 |------|------|
 | `src/lib.rs` | `AdminError` enum (Bind, Accept, Server); re-exports public types |
-| `src/server.rs` | `AdminServer` accept loop, `AdminState`, `AdminSnapshotProvider` trait, `AdminSnapshot`, `StaticAdminSnapshot`, `ListenerInfo`, bearer/basic auth via constant-time compare, `MAX_ADMIN_CONNECTIONS = 64`, 30 s connection timeout |
+| `src/client.rs` | Route-explain HTTP/1.1 client (`AdminEndpoint`, `parse_admin_url`, `AdminClientError`) |
+| `src/server.rs` | `AdminServer` accept loop, `AdminState`, `AdminSnapshotProvider` trait, `AdminSnapshot`, `StaticAdminSnapshot`, `ListenerInfo`, bearer/basic auth via constant-time compare, per-IP auth-failure limiter (5 fails/60 s → 30 s block), `MAX_ADMIN_CONNECTIONS = 64`, 30 s connection timeout |
 | `src/routes.rs` | Router + all endpoint handlers; `MAX_ADMIN_BODY = 16 KiB`, `MAX_IDENTITY_LEN = 256`, streaming body collection via `collect_limited()` |
 | `src/pac.rs` | PAC generation with `js_escape()` (quotes, backslashes, C0 controls, U+2028/U+2029 line separators) |
 | `src/static_content.rs` | `serve_static()` — returns a `StaticRoute` body with its configured content type |
@@ -18,7 +19,7 @@ routing decisions), UDP association status, and reverse server state.
 ## Public API surface
 
 ```rust
-pub struct AdminServer { listener: TcpListener, cancel: CancellationToken }
+pub struct AdminServer { pub(crate) listener: TcpListener, cancel: CancellationToken }
 
 pub struct AdminState {
     pub metrics: Arc<MetricsRegistry>,
@@ -68,7 +69,7 @@ pub struct StaticAdminSnapshot { pub snapshot: AdminSnapshot }
 ## How it works — request handling pipeline
 
 1. **Accept** — `AdminServer::run()` loops on `self.listener.accept()`. Each connection acquires a semaphore permit from a pool of 64 (`server.rs:96-105`). If no permit is available, the connection is dropped immediately.
-2. **Auth check** — before dispatching, `authorized()` (`server.rs:30-59`) checks `AdminState.auth`:
+2. **Auth check** — before dispatching, `authorized()` (`server.rs:109`) checks `AdminState.auth`:
    - **Bearer**: `Authorization: Bearer <token>` compared via `subtle::ConstantTimeEq`
    - **Basic**: `Authorization: Basic <base64>` decoded, split on `:`, CT-compared
    - On failure: `401` with `WWW-Authenticate: Bearer, Basic` header
@@ -105,7 +106,7 @@ Thread-safe registry (`RwLock<HashMap<ReverseServerId, ReverseServerEntry>>`). R
 
 - **Snapshot freshness**: handlers fetch a fresh `AdminSnapshot` from the provider per request, so config reloads are immediately visible.
 - **Non-loopback warning**: binding to a non-loopback address emits a tracing warning; auth is recommended (401 with `WWW-Authenticate: Bearer, Basic` otherwise).
-- **Readiness flips before drain**: readiness must become `false` before connection drain begins (tested invariant: `lib.rs:454-469`).
+- **Readiness flips before drain**: readiness must become `false` before connection drain begins (tested invariant: `lib.rs:456`).
 - **Auth constant-time**: both Bearer token and Basic username/password comparisons use `subtle::ConstantTimeEq` to prevent timing side-channels (`server.rs:115,135-136`).
 - **Auth per-request**: auth is checked inside the service_fn closure per request, not per-connection, so keep-alive connections are still gated.
 - **Body limit streaming**: `collect_limited()` rejects bodies exceeding 16 KiB chunk-by-chunk, avoiding unbounded memory allocation (`routes.rs:388-412`).

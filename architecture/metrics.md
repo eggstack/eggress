@@ -17,6 +17,8 @@ no parallel labeled totals). Full table in `src/lib.rs` crate docs.
 
 | Component | Role |
 |---|---|
+| `lib.rs` | Crate root; re-exports + module declarations (`shadowsocks` gated on `extended`) |
+| `tests.rs` | 50 integration-style unit tests |
 | `registry.rs` | `MetricsRegistry` struct (fields `pub(crate)`), `new()` (family registration), `Default` |
 | `labels.rs` | Label sets (`RouteLabels`, `UpstreamLabels`, `DecodeErrorLabels`, `UpstreamOpenLabels`, `UpstreamFailureLabels`, `UnsupportedTransportLabels`, `H2ConnectionLabels`, `H2StreamLabels`) + bounded route labels |
 | `session.rs` | `SessionMetrics` impl (session/route/upstream/auth only) + direct recording methods |
@@ -57,7 +59,7 @@ The `MetricsRegistry` implements `eggress_server::SessionMetrics` (`src/session.
 
 ### Direct recording methods
 
-UDP: `record_udp_association_created` / `_closed` / `_failure`, `record_udp_packet_up(bytes)` / `_down(bytes)`, `record_udp_dropped()`, `record_udp_decode_error(kind)`, `record_udp_target_flow_created` / `_closed`, `record_udp_upstream_association_created` / `_closed` / `_failure`, `record_udp_upstream_packet_up(bytes)` / `_down(bytes)`. (Association timeouts surface only via the `UdpMetrics` bridge atomics — there is no direct-recording timeout method.)
+UDP: `record_udp_association_created` / `_closed` / `_failure`, `record_udp_packet_up(bytes)` / `_down(bytes)`, `record_udp_dropped()`, `record_udp_decode_error(kind)`, `record_udp_target_flow_created` / `_closed`, `record_udp_upstream_association_created` / `_closed` / `record_udp_upstream_failure`, `record_udp_upstream_packet_up(bytes)` / `_down(bytes)`. (Association timeouts surface only via the `UdpMetrics` bridge atomics — there is no direct-recording timeout method.)
 
 Platform: `record_transparent_connection_accepted` / `_original_dst_failed` / `_route_reject`, `record_unix_listener_connection_accepted` / `_bind_failure`, `record_platform_capability_check_failure`.
 
@@ -96,7 +98,7 @@ This pattern guarantees that each scrape increments Prometheus counters by exact
 
 ### H2 bridge from global atomics
 
-H2 metrics originate from `H2_PROTOCOL_METRICS` (`eggress-protocol-http/src/h2_connect.rs:65-66`), a `Lazy<Arc<H2ProtocolMetrics>>` with 10 `AtomicU64` fields (`connections_opened`, `connections_closed`, `streams_opened`, `streams_closed`, `goaway_received`, `handshake_failures`, `auth_failures`, `flow_control_stalls`, `pool_exhausted`, `bytes_relayed`). `sync_h2()` (`src/h2.rs`) applies delta-promotion at render time. Active counts are `opened - closed`.
+H2 metrics originate from `H2_PROTOCOL_METRICS` (`eggress-protocol-http/src/h2_connect.rs:66-67`), a `LazyLock<Arc<H2ProtocolMetrics>>` with 10 `AtomicU64` fields (`connections_opened`, `connections_closed`, `streams_opened`, `streams_closed`, `goaway_received`, `handshake_failures`, `auth_failures`, `flow_control_stalls`, `pool_exhausted`, `bytes_relayed`). `sync_h2()` (`src/h2.rs`) applies delta-promotion at render time. Active counts are `opened - closed`.
 
 ### Transparent proxy and decode error bridges
 
@@ -113,7 +115,7 @@ Bridged UDP decode errors are incremented per `kind` label AND aggregated as `ki
 
 ## Configuration and features
 
-- The `extended` feature gates `ShadowsocksMetrics` bridging and the `ss_*` metric fields. Without it, all Shadowsocks metrics are compiled out and never appear in Prometheus output.
+- The `extended` feature gates `ShadowsocksMetrics` bridging and the `ss_*` metric fields. Without it, all Shadowsocks metrics are compiled out and never appear in Prometheus output. (`default = full → extended`; `common` is an empty no-op.)
 - No runtime configuration is needed; all metrics are registered in `MetricsRegistry::new()`.
 
 ## Security notes
@@ -127,7 +129,7 @@ Bridged UDP decode errors are incremented per `kind` label AND aggregated as `ki
 - `MetricsRegistry` is designed for concurrent access. All Prometheus `Counter`/`Gauge` types are internally atomic.
 - Bridge slots (`bridged_udp_metrics`, `bridged_shadowsocks_metrics`, transparent counters, H2 prev-values) use `Mutex` with poisoned-lock recovery. Lock contention is minimal because `render_prometheus()` is the sole consumer and is typically called periodically (scrape interval).
 - `UdpMetrics` and `ShadowsocksMetrics` use `AtomicU64` counters with `Ordering::Relaxed` on the hot path (relay forwarding), avoiding any lock in the data plane.
-- `H2_PROTOCOL_METRICS` is a global `Lazy<Arc<...>>` -- no registration required; the protocol layer writes atomics directly.
+- `H2_PROTOCOL_METRICS` is a global `LazyLock<Arc<...>>` -- no registration required; the protocol layer writes atomics directly.
 - `MetricsRegistry` is typically held by the runtime and admin. The embed handle's `metrics_text()` uses the same registry without HTTP.
 
 ## Test coverage map
@@ -143,7 +145,7 @@ Bridged UDP decode errors are incremented per `kind` label AND aggregated as `ki
 | `session_failure_increments_failures` | `SessionOutcome::RouteFailed` increments `connection_failures_total` |
 | `reload_success_and_failure` | Reload counters track success/failure correctly |
 | `bridge_delta_tracking_across_renders` (src/tests.rs) | First render: no deltas. Second render after recording: deltas appear. Third render with no activity: counters stay at previous value (no double-count) |
-| `bridge_*_appear_in_prometheus` (20+ tests) | Each bridged counter family (packets, bytes, drops, decode errors, target flows, upstream, standalone flows, malformed, rejected, reaps) appears in Prometheus output |
+| `bridge_*_appear_in_prometheus` (15 tests) | Each bridged counter family (packets, bytes, drops, decode errors, target flows, upstream, standalone flows, malformed, rejected, reaps) appears in Prometheus output |
 | `bridge_active_*_gauge_returns_to_zero` (4 tests) | Gauges for associations, target flows, standalone flows all return to 0 after create+close pairs |
 | `transparent_proxy_*` | Transparent proxy counters, bridged counters |
 | `h2_protocol_metrics_appear_in_prometheus` (src/tests.rs) | H2 global atomics are promoted into Prometheus output |

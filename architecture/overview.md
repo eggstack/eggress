@@ -339,7 +339,7 @@ summary of the discrete pieces:
   `run_strict_pproxy_*`), evidence/validation
   (`validate_pproxy_parity_manifest.py`, `compare_observations.py`,
   regression-injection demos), release smoke (`release_artifact_smoke.py`,
-  `test_wheel.sh`), release preflight/portability
+  `test_wheel.sh`, `publish-remaining.sh`), release preflight/portability
   (`release-preflight.sh`, `install-zig.sh`), perf/soak (`scripts/perf/`),
   snapshots (`snapshot_pproxy_api.py`, `pproxy_surface_probe.py`).
 - **Installers — `packaging/`.** `install.sh` (Unix) + `install.ps1`

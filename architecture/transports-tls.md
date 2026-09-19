@@ -8,7 +8,7 @@ The only TLS implementation in the workspace (no OpenSSL anywhere). Wraps
 | File | Role |
 |---|---|
 | `src/client.rs` | `TlsClientConfigBuilder`: system/custom CA PEM, ALPN, insecure mode, server-name override, `InsecureVerifier` (test/feature-gated) |
-| `src/server.rs` | `TlsServerConfigBuilder`: cert chain + key PEM (PKCS#8), ALPN, `load_cert_chain_pem`, `load_private_key_pem` |
+| `src/server.rs` | `TlsServerConfigBuilder`: cert chain + key PEM (PKCS#8), ALPN (`load_cert_chain_pem` exported; `load_private_key_pem` is a private helper, not exported) |
 | `src/roots.rs` | `load_system_roots` (webpki-roots), `load_pem_roots` (PEM -> RootCertStore), `load_pem_certs` (PEM -> Vec<CertificateDer>). Empty PEM is an error in `load_pem_roots` |
 | `src/transport.rs` | `tls_connect(stream, config, server_name)` / `tls_accept(stream, config)`: BoxStream in, TLS-wrapped BoxStream out |
 | `src/lib.rs` | Re-exports, `install_default_crypto_provider()` (ring, once), test helper `self_signed_cert()` |

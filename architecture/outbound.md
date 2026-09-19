@@ -23,6 +23,7 @@ full-service facade (`eggress_embed::outbound::*` stays source-compatible).
 ### Executor (`src/executor.rs`)
 
 ```rust
+// Signatures are cfg-gated per feature; see src/executor.rs:112-119 verbatim:
 pub struct OutboundExecutorOptions {
     pub tls_override: Option<Arc<rustls::ClientConfig>>,
     #[cfg(feature = "extended")]
@@ -31,7 +32,11 @@ pub struct OutboundExecutorOptions {
     pub ssh_sessions: Option<Arc<SshSessionCache>>,
 }
 
-pub fn build_chain_executor(tls_override, shadowsocks_metrics, ssh_sessions) -> ChainExecutor;
+pub fn build_chain_executor(
+    tls_override: Option<&Arc<rustls::ClientConfig>>,
+    shadowsocks_metrics: Option<Arc<ShadowsocksMetrics>>, // Option<()> without `extended`
+    ssh_sessions: Option<Arc<SshSessionCache>>,           // gated on `ssh`
+) -> ChainExecutor;
 pub fn build_chain_executor_with_options(options: OutboundExecutorOptions) -> ChainExecutor;
 ```
 
@@ -59,7 +64,7 @@ ALPN-specific cached configs and per-hop insecure behavior under the
 | `associate_udp_timeout(host, port, timeout)` (feature `udp`) | Same with establishment timeout |
 | `active_udp_associations()` | Live listener-free UDP count |
 | `upstream_count()` / `hop_count()` | Configured upstream count / chain hop count (0 for direct) |
-| `validate_outbound_config(toml)` (feature `toml`) | Static validation, returns hop count |
+| `validate_outbound_config(toml)` (feature `toml`, `#[cfg(feature = "toml")]`) | Static validation, returns hop count |
 
 `from_pproxy_uri()` preserves every `__` hop in source order. Only a single
 `direct` hop takes the direct fast path; multi-hop `direct`, backward

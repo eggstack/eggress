@@ -75,7 +75,7 @@ A correct hash followed by a malformed CRLF produces `AuthFailed` -- identical t
 
 ### TLS
 
-`trojan_connect` (`tcp.rs:229-274`) performs TLS via `eggress_transport_tls::TlsClientConfigBuilder` with system root certificates. A default config is memoized in a `OnceLock<Arc<rustls::ClientConfig>>` (`tcp.rs:238`). Only successful builds are cached; transient failures do not poison the singleton.
+`trojan_connect` (`tcp.rs:229-274`) performs TLS via `eggress_transport_tls::TlsClientConfigBuilder` with system root certificates. A default config is memoized in a `OnceLock<Arc<rustls::ClientConfig>>` (`tcp.rs:238`). Only successful builds are cached — failed builds are not cached, so later `tls_config=None` calls retry building (never poisoned).
 
 ## Feature gates
 
@@ -86,7 +86,7 @@ No optional features. The crate has a fixed dependency set: `sha2`, `subtle`, `r
 - SHA224 is preimage-resistant but not designed for password storage (no salt, no iterations). This is the Trojan protocol design, not an eggress choice.
 - `encode_trojan_request` rejects domains longer than 255 bytes or empty domains (`tcp.rs:48-53`).
 - The TLS transport provides confidentiality and integrity for the handshake and all subsequent data.
-- `OnceLock` memoization (`tcp.rs:238`) means the default TLS config is built at most once per process; if `with_system_roots()` fails on first call, subsequent calls with `tls_config=None` will also fail (the `OnceLock` remains unset).
+- `OnceLock` memoization (`tcp.rs:238`) means the default TLS config is built at most once per process and cached only on success; a failed `with_system_roots()` build is not cached, so later `tls_config=None` calls retry instead of inheriting the failure.
 
 ## Test coverage map
 
@@ -102,7 +102,7 @@ No optional features. The crate has a fixed dependency set: `sha2`, `subtle`, `r
 | TLS SNI mismatch | `tcp.rs:777-825` | Wrong server name fails TLS verification |
 | Custom CA trust | `tcp.rs:830-904` | CA-signed cert chain validation |
 | Oversized/malformed | `tcp.rs:908-1103` | Truncated hash, oversized ATYP, non-UTF8 domain, empty domain, empty stream |
-| Diagnostic codes | `error.rs:64-132` | All 6 TrojanError variants map to correct codes, display is snake_case |
+| Diagnostic codes | `error.rs:9-62` | 5 `TrojanError` variants map to 5 of 6 `TrojanDiagnosticCode` codes (`InvalidTarget` is display-only, unreachable via `diagnostic_code()`), display is snake_case |
 | Property tests | `tests/request_properties.rs` | 6 proptest properties: hash length, hex-only, deterministic, distinct inputs, even length |
 | Fuzz smoke | `tests/fuzz_smoke.rs` | Request encode, password hash, accept parser |
 | Fuzz targets | `fuzz/fuzz_targets/trojan_request.rs`, `trojan_accept.rs` | Arbitrary bytes to `encode_trojan_request`, `password_hash`, `trojan_accept` |
