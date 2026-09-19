@@ -173,10 +173,10 @@ Failures are typed (`DaemonizeError::UnsupportedPlatform` → 6,
 | Feature | Includes | Description |
 |---|---|---|
 | `full` (default) | `common`+`extended`+`operations`+`reverse`+`pproxy-compat` | All standard protocols |
-| `common` | `eggress-runtime/common` | HTTP, SOCKS4/5, Shadowsocks, Trojan |
-| `extended` | `eggress-runtime/extended` | WebSocket, raw, H2 |
+| `common` | `eggress-runtime/common` | Core protocols always available (HTTP, SOCKS4/5, raw, TLS, UDP); empty gate, no optional deps |
+| `extended` | `eggress-runtime/extended` | Adds Shadowsocks, Trojan, WebSocket (+ metrics/UDP wiring) |
 | `pproxy-compat` | `dep:eggress-pproxy-compat` | pproxy translation + check + run |
-| `operations` | `dep:eggress-system-proxy` | `system-proxy inspect` |
+| `operations` | `dep:eggress-system-proxy` + `eggress-runtime/operations` | `system-proxy inspect` + runtime operations gate (admin snapshot wiring) |
 | `reverse` | `eggress-runtime/reverse` | Reverse proxy control channel |
 | `ssh` | `eggress-runtime/ssh`, `eggress-pproxy-compat/ssh` | SSH transport |
 | `quic` | `eggress-config/quic`, `eggress-runtime/quic`, `eggress-pproxy-compat/quic`, `dep:eggress-transport-quic`, `dep:eggress-protocol-h3` | QUIC + H3 |

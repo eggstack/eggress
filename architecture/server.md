@@ -17,7 +17,7 @@ crate.
 | `src/error.rs` | `SessionOpenError` with `From` impls for `ConnectError`, `ChainError`, `HttpError`, `Socks5Error` (handshake path via the shared `eggress-outbound::classify`) |
 | `src/advanced.rs` | `serve_h2_connection()` (H2 multiplexing), `serve_websocket_connection()` (WS upgrade). Gated on `feature = "extended"`. |
 | `src/listener/unix.rs` | `UnixListener` with lifecycle management; refuses to unlink non-socket files or symlinks even when `unlink_existing=true` |
-| `src/listener/transparent.rs` | Linux `SO_ORIGINAL_DST` retrieval — workspace's single documented `unsafe` block (ADR at `docs/adr/ADR_transparent_proxy_unsafe_boundary.md`) |
+| `src/listener/transparent.rs` | Linux `SO_ORIGINAL_DST` retrieval — workspace's single documented `unsafe` site (three annotated functions in one file; ADR at `docs/adr/ADR_transparent_proxy_unsafe_boundary.md`) |
 
 ## Public API surface
 

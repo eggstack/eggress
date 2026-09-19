@@ -12,7 +12,7 @@ Current version locations — all must be moved in lockstep:
 | File | Field | Notes |
 |------|-------|-------|
 | `Cargo.toml` (workspace) | `[workspace.package]` `version` | Authoritative workspace version |
-| `Cargo.toml` (workspace) | every internal `=x.y.z` pin under `[workspace.dependencies]` (~24 entries) | Required for crates.io resolution |
+| `Cargo.toml` (workspace) | every internal `=x.y.z` pin under `[workspace.dependencies]` (27 entries; `eggress-python` has no workspace pin) | Required for crates.io resolution |
 | `crates/eggress-python/pyproject.toml` | `project.version` | Python wheel |
 | `python-pproxy-compat/pyproject.toml` | `project.version` (+ its `eggress==x.y.z` dependency pin) | Opt-in compat distribution |
 

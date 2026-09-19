@@ -206,6 +206,7 @@ private `connect_tcp_inner()` with the legacy methods and return
 | `common` | HTTP/SOCKS core, TLS transport, UDP, raw |
 | `extended` | Adds Shadowsocks, Trojan, WebSocket |
 | `pproxy-compat` | pproxy URI translation (`from_pproxy_uri`) and compatibility options |
+| `pproxy-legacy` | Bounded SSR TCP framing + six built-in plugins (in default `full`; forwards to runtime+outbound) |
 | `operations` | Runtime operations gate (`eggress-runtime/operations`: admin snapshot provider wiring) |
 | `reverse` | Reverse proxy control channel |
 | `ssh` | Native/TOML SSH upstream transport; does not activate `pproxy-compat` |

@@ -1,13 +1,13 @@
 # Eggress Roadmap
 
-This document references the main roadmap in [EGGRESS_ROADMAP.md](../EGGRESS_ROADMAP.md).
+This document is the canonical roadmap.
 
 ## Current Status
 
 All core milestones are complete. The Rust-native CLI and runtime are
 production-ready with broad pproxy 2.7.9 behavioral compatibility. See the
-active [compatibility matrix](../docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
-and [capability manifest](../docs/parity/pproxy_capability_manifest.toml).
+active [compatibility matrix](parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
+and [capability manifest](parity/pproxy_capability_manifest.toml).
 
 Known boundaries:
 - Legacy Shadowsocks stream ciphers remain intentional non-parity (opt-in via `legacy-crypto` feature).
@@ -181,6 +181,6 @@ blocking milestones.
 
 ## Next Phase
 
-See the active [compatibility matrix](../docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
-for current claims and the [capability manifest](../docs/parity/pproxy_capability_manifest.toml)
+See the active [compatibility matrix](parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
+for current claims and the [capability manifest](parity/pproxy_capability_manifest.toml)
 for detailed evidence.

@@ -144,7 +144,7 @@ Policy docs: `docs/CI_STATUS.md`, `docs/TESTING.md`.
 ### Containerfile
 
 Multi-stage build: `rust:1.85-slim` builder -> `gcr.io/distroless/cc-debian12:nonroot`.
-Exposes ports 8080 (admin), 1080 (proxy), 9090 (metrics). Entry point: `/eggress`.
+Exposes ports 8080, 1080, 9090 (no role mapping in the Containerfile). Entry point: `/eggress`.
 
 ## Verification workflow
 

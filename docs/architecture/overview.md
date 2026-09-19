@@ -1,5 +1,11 @@
 # Eggress Architecture Overview
 
+> Historical note: the maintained per-component deep dives live in
+> [`architecture/`](../../architecture/overview.md) (indexed from
+> `architecture/overview.md`). This directory retains earlier per-crate notes
+> and is not updated for every change — prefer the top-level directory for
+> review.
+
 Eggress is a Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical compatibility with Python `pproxy==2.7.9`. Built on Tokio, it uses stream-native composition: protocols and transports operate on boxed async byte streams (`BoxStream`), enabling arbitrary multi-hop chaining without generics propagating through the architecture.
 
 ## System Context
