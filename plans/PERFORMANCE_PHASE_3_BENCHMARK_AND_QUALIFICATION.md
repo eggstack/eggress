@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION — 2026-09-20**
+**IMPLEMENTED — 2026-09-20**
 
 ## Parent roadmap
 
@@ -274,6 +274,27 @@ A future plan must first define:
 - interaction with proxy chains, TLS SNI, and H2 pooling already present elsewhere.
 
 Do not implement HTTP forward upstream reuse in this performance campaign.
+
+## Closure and local qualification
+
+Benchmarks now cover setup-inclusive plus steady-state TCP relay (1 KiB,
+64 KiB, 1 MiB, and bounded 16-tunnel concurrency), route selection through
+`Router::route()` for 1/8/32/128 members with healthy/mixed health and
+round-robin/least-connections schedulers, local standalone UDP hot flows and
+multi-target admission, and default TLS/executor/listener configuration
+construction. Existing codec-only UDP coverage remains.
+
+The 2026-09-20 qualification run used the environment recorded in
+`docs/performance/BASELINE_2026_09_20.md`. Representative smoke medians were
+approximately 10 ns for cached default TLS access, 181 ns for executor
+construction, 23.5 µs for listener server-config construction, 200 µs for a
+steady 64 KiB relay, 665 µs for 16 concurrent 64 KiB relays, 31 µs for a 64 B
+UDP hot flow, and 264 µs for eight target-flow admissions. These are local
+qualification observations, not portable CI thresholds.
+
+No relay buffer-size or UDP pooling change was justified by the evidence; the
+compatibility facade retains 64 KiB and current owned-buffer semantics. HTTP
+forward upstream reuse remains deferred.
 
 ## Acceptance criteria
 

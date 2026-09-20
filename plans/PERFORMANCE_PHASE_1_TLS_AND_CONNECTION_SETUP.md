@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION — 2026-09-20**
+**IMPLEMENTED — 2026-09-20**
 
 ## Parent roadmap
 
@@ -244,6 +244,18 @@ Stop and reassess rather than adding complexity if:
 - listener-scoped UDP service sharing reveals mutable state that was intentionally connection-local.
 
 In those cases, document the discovered invariant and retain the safe existing behavior for that sub-workstream.
+
+## Closure
+
+- `eggress-transport-tls` now exposes process-shared verified and H2 client
+  configurations, with separate feature-gated insecure caches. Overrides and
+  custom builder state remain caller-owned.
+- Runtime listener preparation builds one `Arc<ServerConfig>` per listener
+  generation and shares one `RuntimeUdpService` per generation. Invalid TLS
+  material still fails during preparation.
+- `PermitStream` owns a concrete `TcpStream`; the accepted boundary boxes it
+  once, and supervisor TLS wrapping passes the existing `BoxStream` directly.
+- Focused compile/tests passed for TLS, outbound, core, and runtime paths.
 
 ## Acceptance criteria
 

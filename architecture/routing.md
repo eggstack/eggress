@@ -18,7 +18,7 @@ swap.
 | `src/compat.rs` | `CompatRegexRule` + `RegexError` (pproxy `host:port` formatting) |
 | `src/upstream.rs` | `UpstreamRuntime` (chain, enabled flag, load counters, health cell, probe, config), `UpstreamGroup` (members + scheduler + fallback), `GroupFallback`, `validate_upstream_id` / `validate_group` |
 | `src/scheduler.rs` | `SchedulerKind`: FirstAvailable, RoundRobin, Random, LeastConnections; `Scheduler` trait with `select` + `select_enabled` (used by the `UseUnhealthy` fallback) + `preview`; injectable `RandomIndex` for deterministic tests |
-| `src/health.rs` | Six-state machine (`HealthState`), `HealthCell` (RwLock), `HealthConfig`, `HealthManager` (probe tasks + semaphore), `is_eligible`, `probe_tcp` |
+| `src/health.rs` | Six-state machine (`HealthState`), `HealthCell` (locked full snapshot plus atomic state fast path), `HealthConfig`, `HealthManager` (probe tasks + semaphore), `is_eligible`, `probe_tcp` |
 | `src/lease.rs` | `PendingLease` (in-flight, RAII decrement on drop) and `ActiveLease` (active count, RAII decrement on drop) |
 
 ## Public API surface
@@ -164,7 +164,7 @@ No Cargo features gate routing functionality (all routing code is always compile
 ## Concurrency and lifecycle
 
 - `SharedRoutingService` uses `arc_swap::ArcSwap` for lock-free snapshot reads. `swap()` and `swap_arc()` store new inner values; `load()` returns an `Arc` that can be held across the decision.
-- `HealthCell` uses `RwLock<HealthSnapshot>` with poisoned-lock recovery (`unwrap_or_else(|e| e.into_inner())`).
+- `HealthCell` keeps transition counters/timestamps under `RwLock<HealthSnapshot>` with poisoned-lock recovery, while `state()` publishes/reads a total `AtomicU8` enum mapping with `Relaxed` ordering. The atomic is only a summarized eligibility value; the lock-backed snapshot remains authoritative.
 - `HealthManager` spawns one task per upstream with a `JoinSet`; probes are bounded by a 10-permit semaphore. `stop_all()` aborts all tasks.
 - All atomic counters use `Ordering::Relaxed` -- sufficient for approximate metrics and health checks.
 - `Router` groups are wrapped in `Arc` for clone-safe sharing across connections.

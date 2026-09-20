@@ -927,13 +927,19 @@ version = "1.0.7"
 dependencies = [
  "criterion",
  "eggress-core",
+ "eggress-outbound",
  "eggress-protocol-http",
  "eggress-protocol-socks",
  "eggress-relay",
  "eggress-routing",
+ "eggress-transport-tls",
+ "eggress-udp",
+ "eggress-uri",
  "ipnet",
+ "rcgen",
  "regex",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

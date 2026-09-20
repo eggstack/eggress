@@ -140,16 +140,13 @@ fn build_chain_executor_inner(
     // Build shared TLS client config for upstream hops
     let shared_tls_config = match tls_override {
         Some(config) => Some(config.clone()),
-        None => {
-            let builder = eggress_transport_tls::TlsClientConfigBuilder::new();
-            match builder.with_system_roots().and_then(|b| b.build()) {
-                Ok(config) => Some(config),
-                Err(e) => {
-                    tracing::warn!("failed to build shared TLS config: {e}");
-                    None
-                }
+        None => match eggress_transport_tls::default_client_config() {
+            Ok(config) => Some(config),
+            Err(e) => {
+                tracing::warn!("failed to build shared TLS config: {e}");
+                None
             }
-        }
+        },
     };
 
     #[cfg(feature = "extended")]
@@ -166,12 +163,7 @@ fn build_chain_executor_inner(
     let insecure_shared_tls_config: Option<Arc<rustls::ClientConfig>> = if tls_override.is_some() {
         None
     } else {
-        let builder = eggress_transport_tls::TlsClientConfigBuilder::new();
-        match builder
-            .with_system_roots()
-            .map(|b| b.with_insecure())
-            .and_then(|b| b.build())
-        {
+        match eggress_transport_tls::default_insecure_client_config() {
             Ok(cfg) => Some(cfg),
             Err(e) => {
                 tracing::debug!("failed to build insecure TLS config: {e}");
@@ -223,11 +215,7 @@ fn build_chain_executor_inner(
     // and re-parse system roots on every handshake (O-05).
     let tls_wrapper_default = shared_tls_config.clone();
     let tls_wrapper_h2: Option<Arc<rustls::ClientConfig>> = if tls_override.is_none() {
-        let builder = eggress_transport_tls::TlsClientConfigBuilder::new();
-        match builder.with_system_roots().and_then(|b| {
-            b.with_alpn(vec![b"h2".to_vec(), b"http/1.1".to_vec()])
-                .build()
-        }) {
+        match eggress_transport_tls::default_h2_client_config() {
             Ok(cfg) => Some(cfg),
             Err(e) => {
                 tracing::debug!("failed to build h2 TLS config: {e}");
@@ -244,14 +232,7 @@ fn build_chain_executor_inner(
     #[cfg(feature = "insecure-tls")]
     let insecure_wrapper_h2: Option<Arc<rustls::ClientConfig>> =
         if tls_override.is_none() && insecure_shared_tls_config.is_some() {
-            let builder = eggress_transport_tls::TlsClientConfigBuilder::new();
-            match builder
-                .with_system_roots()
-                .map(|b| b.with_insecure())
-                .and_then(|b| {
-                    b.with_alpn(vec![b"h2".to_vec(), b"http/1.1".to_vec()])
-                        .build()
-                }) {
+            match eggress_transport_tls::default_insecure_h2_client_config() {
                 Ok(cfg) => Some(cfg),
                 Err(e) => {
                     tracing::debug!("failed to build insecure h2 TLS config: {e}");
@@ -351,4 +332,37 @@ fn build_chain_executor_inner(
         .with_tls_wrapper(tls_wrapper)
         .with_shared_tls_config(shared_tls_config)
         .with_insecure_shared_tls_config(insecure_shared_tls_config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_executor_configs_share_process_cached_tls_state() {
+        eggress_transport_tls::install_default_crypto_provider();
+        let first = build_chain_executor_with_options(OutboundExecutorOptions::new());
+        let second = build_chain_executor_with_options(OutboundExecutorOptions::new());
+        assert!(std::ptr::eq(
+            first.shared_tls_config().unwrap().as_ref(),
+            second.shared_tls_config().unwrap().as_ref()
+        ));
+    }
+
+    #[test]
+    fn custom_tls_override_bypasses_process_default_cache() {
+        eggress_transport_tls::install_default_crypto_provider();
+        let default = eggress_transport_tls::default_client_config().unwrap();
+        let custom = eggress_transport_tls::TlsClientConfigBuilder::new()
+            .with_system_roots()
+            .unwrap()
+            .build()
+            .unwrap();
+        let executor = build_chain_executor_with_options(
+            OutboundExecutorOptions::new().with_tls_override(custom.clone()),
+        );
+        let configured = executor.shared_tls_config().unwrap();
+        assert!(Arc::ptr_eq(configured, &custom));
+        assert!(!Arc::ptr_eq(configured, &default));
+    }
 }

@@ -218,6 +218,25 @@ support opt-in server-authenticated TLS with optional mTLS
 (`[[reverse_servers.tls]]` / `[[reverse_clients.tls]]`); `pproxy_compat` wire
 remains plaintext.
 
+### Runtime performance model
+
+The runtime reuses immutable default outbound TLS client configurations,
+prepares inbound listener TLS state and UDP services once per listener
+generation, and keeps the generic relay/standalone UDP hot paths efficient
+without changing public protocol behavior. Informational Criterion coverage
+is split into setup-inclusive and steady-state relay cases, route selection,
+actual local UDP relay flows, and TLS construction:
+
+```bash
+cargo bench --bench tcp_relay
+cargo bench --bench route_match
+cargo bench --bench udp_relay
+cargo bench --bench tls_setup
+```
+
+These benchmarks are not CI timing gates; use same-host before/after runs for
+performance decisions.
+
 ### Raw stream relay
 
 ```toml

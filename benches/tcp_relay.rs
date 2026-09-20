@@ -23,6 +23,119 @@ async fn run_echo_server(listener: tokio::net::TcpListener) {
     }
 }
 
+async fn run_echo_connection(mut stream: tokio::net::TcpStream) {
+    let mut buf = vec![0u8; 65536];
+    loop {
+        match stream.read(&mut buf).await {
+            Ok(0) => {
+                let _ = stream.shutdown().await;
+                break;
+            }
+            Ok(n) => {
+                if stream.write_all(&buf[..n]).await.is_err() {
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+}
+
+struct RelayFixture {
+    proxy_addr: std::net::SocketAddr,
+    stop: tokio::sync::broadcast::Sender<()>,
+    accept_tasks: Vec<tokio::task::JoinHandle<()>>,
+}
+
+impl RelayFixture {
+    async fn start(use_baseline: bool) -> Self {
+        let echo = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let echo_addr = echo.local_addr().unwrap();
+        let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_addr = proxy.local_addr().unwrap();
+        let (stop, _) = tokio::sync::broadcast::channel(1);
+
+        let mut echo_stop = stop.subscribe();
+        let echo_task = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = echo_stop.recv() => break,
+                    result = echo.accept() => match result {
+                        Ok((stream, _)) => { tokio::spawn(run_echo_connection(stream)); }
+                        Err(_) => break,
+                    },
+                }
+            }
+        });
+
+        let mut proxy_stop = stop.subscribe();
+        let proxy_task = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = proxy_stop.recv() => break,
+                    result = proxy.accept() => match result {
+                        Ok((mut client, _)) => {
+                            tokio::spawn(async move {
+                                let mut server = tokio::net::TcpStream::connect(echo_addr).await.unwrap();
+                                if use_baseline {
+                                    let _ = tokio::io::copy_bidirectional(&mut client, &mut server).await;
+                                } else {
+                                    let _ = eggress_relay::relay(&mut client, &mut server).await;
+                                }
+                            });
+                        }
+                        Err(_) => break,
+                    },
+                }
+            }
+        });
+
+        Self {
+            proxy_addr,
+            stop,
+            accept_tasks: vec![echo_task, proxy_task],
+        }
+    }
+
+    async fn transfer(&self, payload_len: usize) {
+        let mut client = tokio::net::TcpStream::connect(self.proxy_addr)
+            .await
+            .unwrap();
+        let payload = vec![0xABu8; payload_len];
+        client.write_all(&payload).await.unwrap();
+        client.shutdown().await.unwrap();
+        let mut received = Vec::with_capacity(payload_len);
+        client.read_to_end(&mut received).await.unwrap();
+        assert_eq!(received.len(), payload_len);
+    }
+
+    async fn transfer_concurrent(&self, count: usize, payload_len: usize) {
+        let mut tasks = tokio::task::JoinSet::new();
+        for _ in 0..count {
+            let addr = self.proxy_addr;
+            tasks.spawn(async move {
+                let mut client = tokio::net::TcpStream::connect(addr).await.unwrap();
+                let payload = vec![0xCDu8; payload_len];
+                client.write_all(&payload).await.unwrap();
+                client.shutdown().await.unwrap();
+                let mut received = Vec::with_capacity(payload_len);
+                client.read_to_end(&mut received).await.unwrap();
+                assert_eq!(received.len(), payload_len);
+            });
+        }
+        while let Some(result) = tasks.join_next().await {
+            result.unwrap();
+        }
+    }
+
+    async fn stop(self) {
+        let _ = self.stop.send(());
+        for task in self.accept_tasks {
+            let _ = task.await;
+        }
+    }
+}
+
 /// Proxy hop using the generic relay engine under test.
 async fn run_relay_proxy(
     listener: tokio::net::TcpListener,
@@ -114,6 +227,12 @@ fn tcp_relay_benchmark(c: &mut Criterion) {
         });
     });
 
+    group.bench_function("1MB_relay", |b| {
+        b.iter(|| {
+            rt.block_on(round_trip_via_relay(1024 * 1024));
+        });
+    });
+
     group.bench_function("1KB_copy_bidirectional_baseline", |b| {
         b.iter(|| {
             rt.block_on(round_trip_via_baseline(1024));
@@ -125,6 +244,28 @@ fn tcp_relay_benchmark(c: &mut Criterion) {
             rt.block_on(round_trip_via_baseline(65536));
         });
     });
+
+    let relay_fixture = rt.block_on(RelayFixture::start(false));
+    for (name, size) in [
+        ("steady_1KB_relay", 1024),
+        ("steady_64KB_relay", 65536),
+        ("steady_1MB_relay", 1024 * 1024),
+    ] {
+        group.bench_function(name, |b| {
+            b.iter(|| rt.block_on(relay_fixture.transfer(size)));
+        });
+    }
+    group.bench_function("steady_16x_64KB_relay", |b| {
+        b.iter(|| rt.block_on(relay_fixture.transfer_concurrent(16, 65536)));
+    });
+
+    let baseline_fixture = rt.block_on(RelayFixture::start(true));
+    group.bench_function("steady_64KB_copy_bidirectional_baseline", |b| {
+        b.iter(|| rt.block_on(baseline_fixture.transfer(65536)));
+    });
+
+    rt.block_on(relay_fixture.stop());
+    rt.block_on(baseline_fixture.stop());
 
     group.finish();
 }

@@ -7,7 +7,7 @@ The only TLS implementation in the workspace (no OpenSSL anywhere). Wraps
 
 | File | Role |
 |---|---|
-| `src/client.rs` | `TlsClientConfigBuilder`: system/custom CA PEM, ALPN, insecure mode, server-name override, `InsecureVerifier` (test/feature-gated) |
+| `src/client.rs` | `TlsClientConfigBuilder`: system/custom CA PEM, ALPN, insecure mode, server-name override, `InsecureVerifier` (test/feature-gated), process-shared default verified/H2 accessors |
 | `src/server.rs` | `TlsServerConfigBuilder`: cert chain + key PEM (PKCS#8), ALPN (`load_cert_chain_pem` exported; `load_private_key_pem` is a private helper, not exported) |
 | `src/roots.rs` | `load_system_roots` (webpki-roots), `load_pem_roots` (PEM -> RootCertStore), `load_pem_certs` (PEM -> Vec<CertificateDer>). Empty PEM is an error in `load_pem_roots` |
 | `src/transport.rs` | `tls_connect(stream, config, server_name)` / `tls_accept(stream, config)`: BoxStream in, TLS-wrapped BoxStream out |
@@ -82,6 +82,13 @@ The only TLS implementation in the workspace (no OpenSSL anywhere). Wraps
 
 ### Client config construction
 
+The ordinary system-root configurations are process-shared through `OnceLock`:
+`default_client_config()` and `default_h2_client_config()` return cloned
+`Arc`s to immutable verified configurations. Feature-gated insecure and H2
+variants use separate caches. Custom CA, mTLS, ALPN, and caller-provided
+overrides continue through the builder and are never inserted into these
+caches.
+
 1. `TlsClientConfigBuilder::build()` branches on `self.insecure`:
    - **Insecure** (gated on `test || feature = "insecure-tls"`): Uses `ClientConfig::builder().dangerous().with_custom_certificate_verifier(InsecureVerifier)`. The `InsecureVerifier` accepts any certificate and any handshake signature without validation.
    - **Secure**: Uses `ClientConfig::builder().with_root_certificates(self.root_store).with_no_client_auth()`.
@@ -107,7 +114,7 @@ Both `tls_connect` and `tls_accept` use `tokio-rustls`:
 | Consumer | Usage |
 |---|---|
 | `eggress-server` (`execute.rs`) | Upstream `+tls` hops: builds `TlsClientConfigBuilder` with system roots or custom CA, calls `tls_connect` on the box stream |
-| `eggress-runtime` (`supervisor/connection.rs` `wrap_tls_server()`) | Listener TLS: builds `TlsServerConfigBuilder` from prepared config, calls `tls_accept` on inbound streams (shared by standard/transparent/Unix paths) |
+| `eggress-runtime` (`supervisor/connection.rs`) | Listener TLS: prepares one `Arc<ServerConfig>` per listener generation, then `wrap_tls_server()` only calls `tls_accept` on inbound streams (shared by standard/transparent/Unix paths) |
 | `eggress-protocol-trojan` (`tcp.rs`) | Trojan client: builds `TlsClientConfigBuilder` with system roots, calls `tls_connect` for the Trojan-over-TLS channel |
 | `eggress-protocol-reverse` (`tls.rs`, `server.rs`, `client.rs`) | Native reverse control TLS/mTLS: server builds once via `TlsServerConfigBuilder` (+ optional client CA/require), client builds once via `TlsClientConfigBuilder` (+ optional client cert/key) and reuses `Arc` across reconnects; `tls_accept`/`tls_connect` wrap control TCP before reverse framing |
 

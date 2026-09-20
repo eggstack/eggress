@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use tokio::net::TcpListener as TokioTcpListener;
+use tokio::net::{TcpListener as TokioTcpListener, TcpStream};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio_util::sync::CancellationToken;
 
@@ -59,7 +59,7 @@ pub struct AcceptedConnection {
 /// `eggress-runtime` instead; a single connection must use one or the other,
 /// never both, to avoid double-counting `active_connections`.
 struct PermitStream {
-    inner: BoxStream,
+    inner: TcpStream,
     _permit: OwnedSemaphorePermit,
 }
 
@@ -167,7 +167,7 @@ impl TcpListener {
 
         let local_addr = stream.local_addr()?;
         let stream: BoxStream = Box::new(PermitStream {
-            inner: Box::new(stream),
+            inner: stream,
             _permit: permit,
         });
 

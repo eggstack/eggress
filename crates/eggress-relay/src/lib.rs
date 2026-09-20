@@ -36,7 +36,7 @@ use std::fmt;
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 /// Default per-direction copy buffer: 64 KiB, matching historical Eggress behavior.
 pub const DEFAULT_BUFFER_SIZE: usize = 64 * 1024;
@@ -225,32 +225,277 @@ impl std::error::Error for RelayFailure {
     }
 }
 
-async fn copy_direction<R, W>(
-    reader: &mut R,
-    writer: &mut W,
-    counter: &mut u64,
-    buffer: &mut [u8],
-) -> std::io::Result<()>
+struct DirectionState {
+    buffer: Vec<u8>,
+    read_len: usize,
+    write_pos: usize,
+    bytes: u64,
+    eof: bool,
+    shutdown_complete: bool,
+}
+
+impl DirectionState {
+    fn new(buffer_size: usize) -> Self {
+        Self {
+            buffer: vec![0; buffer_size],
+            read_len: 0,
+            write_pos: 0,
+            bytes: 0,
+            eof: false,
+            shutdown_complete: false,
+        }
+    }
+}
+
+enum DirectionPoll {
+    Progress,
+    Complete,
+    Failed(std::io::Error),
+}
+
+/// Poll one direction while retaining both complete streams in the parent
+/// future. The bounded step budget prevents a stream that is always ready from
+/// monopolising a poll and starving the opposite direction.
+fn poll_direction<R, W>(
+    mut reader: std::pin::Pin<&mut R>,
+    mut writer: std::pin::Pin<&mut W>,
+    state: &mut DirectionState,
+    cx: &mut std::task::Context<'_>,
+) -> std::task::Poll<DirectionPoll>
 where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    use tokio::io::AsyncReadExt;
-    loop {
-        let n = reader.read(buffer).await?;
-        if n == 0 {
-            if let Err(error) = writer.shutdown().await {
-                if !matches!(
-                    error.kind(),
-                    std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::ConnectionReset
+    let mut made_progress = false;
+
+    for _ in 0..16 {
+        if state.write_pos < state.read_len {
+            match writer
+                .as_mut()
+                .poll_write(cx, &state.buffer[state.write_pos..state.read_len])
+            {
+                std::task::Poll::Ready(Ok(0)) => {
+                    return std::task::Poll::Ready(DirectionPoll::Failed(std::io::Error::new(
+                        std::io::ErrorKind::WriteZero,
+                        "relay write made no progress",
+                    )));
+                }
+                std::task::Poll::Ready(Ok(written)) => {
+                    state.write_pos += written;
+                    state.bytes += written as u64;
+                    made_progress = true;
+                    continue;
+                }
+                std::task::Poll::Ready(Err(error)) => {
+                    return std::task::Poll::Ready(DirectionPoll::Failed(error));
+                }
+                std::task::Poll::Pending => return std::task::Poll::Pending,
+            }
+        }
+
+        if state.read_len != 0 {
+            state.read_len = 0;
+            state.write_pos = 0;
+        }
+
+        if state.eof {
+            if state.shutdown_complete {
+                return std::task::Poll::Ready(DirectionPoll::Complete);
+            }
+            match writer.as_mut().poll_shutdown(cx) {
+                std::task::Poll::Ready(Ok(())) => {
+                    state.shutdown_complete = true;
+                    return std::task::Poll::Ready(DirectionPoll::Complete);
+                }
+                std::task::Poll::Ready(Err(error))
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::ConnectionReset
+                    ) =>
+                {
+                    state.shutdown_complete = true;
+                    return std::task::Poll::Ready(DirectionPoll::Complete);
+                }
+                std::task::Poll::Ready(Err(error)) => {
+                    return std::task::Poll::Ready(DirectionPoll::Failed(error));
+                }
+                std::task::Poll::Pending => return std::task::Poll::Pending,
+            }
+        }
+
+        let mut read_buf = ReadBuf::new(&mut state.buffer);
+        match reader.as_mut().poll_read(cx, &mut read_buf) {
+            std::task::Poll::Ready(Ok(())) => {
+                state.read_len = read_buf.filled().len();
+                if state.read_len == 0 {
+                    state.eof = true;
+                } else {
+                    made_progress = true;
+                }
+                continue;
+            }
+            std::task::Poll::Ready(Err(error)) => {
+                return std::task::Poll::Ready(DirectionPoll::Failed(error));
+            }
+            std::task::Poll::Pending => return std::task::Poll::Pending,
+        }
+    }
+
+    if made_progress {
+        cx.waker().wake_by_ref();
+        std::task::Poll::Ready(DirectionPoll::Progress)
+    } else {
+        std::task::Poll::Pending
+    }
+}
+
+struct RelayFuture<C, S> {
+    client: C,
+    server: S,
+    upstream: DirectionState,
+    downstream: DirectionState,
+    half_close: HalfClosePolicy,
+    first_closed: Option<RelaySide>,
+    drain_deadline: Option<std::pin::Pin<Box<tokio::time::Sleep>>>,
+}
+
+impl<C, S> RelayFuture<C, S> {
+    fn new(client: C, server: S, options: RelayOptions) -> Self {
+        let buffer_size = options.buffer_size.get();
+        Self {
+            client,
+            server,
+            upstream: DirectionState::new(buffer_size),
+            downstream: DirectionState::new(buffer_size),
+            half_close: options.half_close,
+            first_closed: None,
+            drain_deadline: None,
+        }
+    }
+
+    fn start_drain(&mut self, first_closed: RelaySide) {
+        self.first_closed = Some(first_closed);
+        if let HalfClosePolicy::DrainFor(duration) = self.half_close {
+            self.drain_deadline = Some(Box::pin(tokio::time::sleep(duration)));
+        }
+    }
+}
+
+impl<C, S> std::future::Future for RelayFuture<C, S>
+where
+    C: AsyncRead + AsyncWrite + Unpin,
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    type Output = Result<RelayReport, RelayFailure>;
+
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        let this = self.get_mut();
+
+        if this.first_closed.is_none() {
+            match poll_direction(
+                std::pin::Pin::new(&mut this.client),
+                std::pin::Pin::new(&mut this.server),
+                &mut this.upstream,
+                cx,
+            ) {
+                std::task::Poll::Ready(DirectionPoll::Complete) => {
+                    this.start_drain(RelaySide::Client);
+                }
+                std::task::Poll::Ready(DirectionPoll::Failed(source)) => {
+                    return std::task::Poll::Ready(Err(RelayFailure {
+                        direction: RelayDirection::Upstream,
+                        source,
+                        bytes_upstream: this.upstream.bytes,
+                        bytes_downstream: this.downstream.bytes,
+                    }));
+                }
+                std::task::Poll::Ready(DirectionPoll::Progress) | std::task::Poll::Pending => {}
+            }
+
+            if this.first_closed.is_none() {
+                match poll_direction(
+                    std::pin::Pin::new(&mut this.server),
+                    std::pin::Pin::new(&mut this.client),
+                    &mut this.downstream,
+                    cx,
                 ) {
-                    return Err(error);
+                    std::task::Poll::Ready(DirectionPoll::Complete) => {
+                        this.start_drain(RelaySide::Server);
+                    }
+                    std::task::Poll::Ready(DirectionPoll::Failed(source)) => {
+                        return std::task::Poll::Ready(Err(RelayFailure {
+                            direction: RelayDirection::Downstream,
+                            source,
+                            bytes_upstream: this.upstream.bytes,
+                            bytes_downstream: this.downstream.bytes,
+                        }));
+                    }
+                    std::task::Poll::Ready(DirectionPoll::Progress) | std::task::Poll::Pending => {}
                 }
             }
-            return Ok(());
+
+            if this.first_closed.is_none() {
+                return std::task::Poll::Pending;
+            }
         }
-        writer.write_all(&buffer[..n]).await?;
-        *counter += n as u64;
+
+        if let Some(deadline) = this.drain_deadline.as_mut() {
+            if std::future::Future::poll(deadline.as_mut(), cx).is_ready() {
+                return std::task::Poll::Ready(Ok(RelayReport {
+                    bytes_upstream: this.upstream.bytes,
+                    bytes_downstream: this.downstream.bytes,
+                    termination: RelayTermination::DrainTimedOut {
+                        first_closed: this.first_closed.expect("drain has a first close"),
+                    },
+                }));
+            }
+        }
+
+        let first_closed = this.first_closed.expect("drain has a first close");
+        let remaining = match first_closed {
+            RelaySide::Client => poll_direction(
+                std::pin::Pin::new(&mut this.server),
+                std::pin::Pin::new(&mut this.client),
+                &mut this.downstream,
+                cx,
+            ),
+            RelaySide::Server => poll_direction(
+                std::pin::Pin::new(&mut this.client),
+                std::pin::Pin::new(&mut this.server),
+                &mut this.upstream,
+                cx,
+            ),
+        };
+
+        match remaining {
+            std::task::Poll::Ready(DirectionPoll::Complete) => {
+                std::task::Poll::Ready(Ok(RelayReport {
+                    bytes_upstream: this.upstream.bytes,
+                    bytes_downstream: this.downstream.bytes,
+                    termination: match first_closed {
+                        RelaySide::Client => RelayTermination::ClientClosed,
+                        RelaySide::Server => RelayTermination::ServerClosed,
+                    },
+                }))
+            }
+            std::task::Poll::Ready(DirectionPoll::Failed(source)) => {
+                std::task::Poll::Ready(Err(RelayFailure {
+                    direction: match first_closed {
+                        RelaySide::Client => RelayDirection::Downstream,
+                        RelaySide::Server => RelayDirection::Upstream,
+                    },
+                    source,
+                    bytes_upstream: this.upstream.bytes,
+                    bytes_downstream: this.downstream.bytes,
+                }))
+            }
+            std::task::Poll::Ready(DirectionPoll::Progress) | std::task::Poll::Pending => {
+                std::task::Poll::Pending
+            }
+        }
     }
 }
 
@@ -279,134 +524,7 @@ where
     C: AsyncRead + AsyncWrite + Unpin,
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let buffer_size = options.buffer_size.get();
-    let (mut client_read, mut client_write) = tokio::io::split(client);
-    let (mut server_read, mut server_write) = tokio::io::split(server);
-
-    let mut bytes_upstream: u64 = 0;
-    let mut bytes_downstream: u64 = 0;
-    // Heap-backed buffers keep the relay future small and make the size
-    // configurable; the size is a throughput/memory tuning control, not a
-    // framing boundary.
-    let mut buffer_upstream = vec![0u8; buffer_size];
-    let mut buffer_downstream = vec![0u8; buffer_size];
-
-    let mut upstream = Box::pin(copy_direction(
-        &mut client_read,
-        &mut server_write,
-        &mut bytes_upstream,
-        &mut buffer_upstream,
-    ));
-    let mut downstream = Box::pin(copy_direction(
-        &mut server_read,
-        &mut client_write,
-        &mut bytes_downstream,
-        &mut buffer_downstream,
-    ));
-
-    enum First {
-        Upstream(std::io::Result<()>),
-        Downstream(std::io::Result<()>),
-    }
-
-    let first = tokio::select! {
-        result = &mut upstream => First::Upstream(result),
-        result = &mut downstream => First::Downstream(result),
-    };
-
-    match first {
-        First::Upstream(Err(source)) => {
-            drop(upstream);
-            drop(downstream);
-            Err(RelayFailure {
-                direction: RelayDirection::Upstream,
-                source,
-                bytes_upstream,
-                bytes_downstream,
-            })
-        }
-        First::Downstream(Err(source)) => {
-            drop(upstream);
-            drop(downstream);
-            Err(RelayFailure {
-                direction: RelayDirection::Downstream,
-                source,
-                bytes_upstream,
-                bytes_downstream,
-            })
-        }
-        First::Upstream(Ok(())) => {
-            drop(upstream);
-            match drain_remaining(downstream, options.half_close).await {
-                DrainOutcome::Clean => Ok(RelayReport {
-                    bytes_upstream,
-                    bytes_downstream,
-                    termination: RelayTermination::ClientClosed,
-                }),
-                DrainOutcome::TimedOut => Ok(RelayReport {
-                    bytes_upstream,
-                    bytes_downstream,
-                    termination: RelayTermination::DrainTimedOut {
-                        first_closed: RelaySide::Client,
-                    },
-                }),
-                DrainOutcome::Failed(source) => Err(RelayFailure {
-                    direction: RelayDirection::Downstream,
-                    source,
-                    bytes_upstream,
-                    bytes_downstream,
-                }),
-            }
-        }
-        First::Downstream(Ok(())) => {
-            drop(downstream);
-            match drain_remaining(upstream, options.half_close).await {
-                DrainOutcome::Clean => Ok(RelayReport {
-                    bytes_upstream,
-                    bytes_downstream,
-                    termination: RelayTermination::ServerClosed,
-                }),
-                DrainOutcome::TimedOut => Ok(RelayReport {
-                    bytes_upstream,
-                    bytes_downstream,
-                    termination: RelayTermination::DrainTimedOut {
-                        first_closed: RelaySide::Server,
-                    },
-                }),
-                DrainOutcome::Failed(source) => Err(RelayFailure {
-                    direction: RelayDirection::Upstream,
-                    source,
-                    bytes_upstream,
-                    bytes_downstream,
-                }),
-            }
-        }
-    }
-}
-
-enum DrainOutcome {
-    Clean,
-    TimedOut,
-    Failed(std::io::Error),
-}
-
-async fn drain_remaining<F>(remaining: F, half_close: HalfClosePolicy) -> DrainOutcome
-where
-    F: std::future::Future<Output = std::io::Result<()>>,
-{
-    match half_close {
-        HalfClosePolicy::Drain => match remaining.await {
-            Ok(()) => DrainOutcome::Clean,
-            Err(source) => DrainOutcome::Failed(source),
-        },
-        HalfClosePolicy::DrainFor(duration) => {
-            match tokio::time::timeout(duration, remaining).await {
-                Ok(Ok(())) => DrainOutcome::Clean,
-                Ok(Err(source)) => DrainOutcome::Failed(source),
-                Err(_) => DrainOutcome::TimedOut,
-            }
-        }
-    }
+    RelayFuture::new(client, server, options).await
 }
 
 #[cfg(test)]

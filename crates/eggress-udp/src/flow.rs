@@ -264,27 +264,6 @@ impl Default for ClientFlowState {
     }
 }
 
-pub fn total_target_flows(clients: &HashMap<SocketAddr, ClientFlowState>) -> usize {
-    clients.values().map(|s| s.target_flows.len()).sum()
-}
-
-/// Capped variant for the per-datagram admission check (O-03): stops summing
-/// once `cap` is reached, since `can_use_flow` only needs to know whether the
-/// global total is below the limit.
-pub fn total_target_flows_capped(
-    clients: &HashMap<SocketAddr, ClientFlowState>,
-    cap: usize,
-) -> usize {
-    let mut total = 0usize;
-    for state in clients.values() {
-        total = total.saturating_add(state.target_flows.len());
-        if total >= cap {
-            break;
-        }
-    }
-    total
-}
-
 pub fn max_standalone_flows(limits: &UdpLimits) -> usize {
     if limits.max_standalone_flows > 0 {
         limits.max_standalone_flows
@@ -320,9 +299,10 @@ pub fn reap_idle_flows(
     clients: &mut HashMap<SocketAddr, ClientFlowState>,
     limits: &UdpLimits,
     metrics: &UdpMetrics,
-) {
+) -> usize {
     let now = Instant::now();
     let target_timeout = limits.target_idle_timeout;
+    let mut removed = 0usize;
 
     for state in clients.values_mut() {
         state.target_flows.retain(|_, entry| {
@@ -330,6 +310,7 @@ pub fn reap_idle_flows(
             if !keep {
                 shutdown_flow(entry);
                 metrics.record_standalone_flow_reap();
+                removed += 1;
             }
             keep
         });
@@ -339,22 +320,29 @@ pub fn reap_idle_flows(
     clients.retain(|_, state| {
         let keep = now.duration_since(state.last_activity) < client_timeout;
         if !keep {
-            // `HashMap::retain` drops the value after this callback returns.
-            // Drain explicitly so the task cancellation is immediate and
-            // obvious even if the entry later gains another owner.
-            state.target_flows.clear();
+            for entry in state.target_flows.drain().map(|(_, entry)| entry) {
+                shutdown_flow(&entry);
+                removed += 1;
+            }
         }
         keep
     });
+    removed
 }
 
-pub fn close_all_flows(clients: &mut HashMap<SocketAddr, ClientFlowState>, metrics: &UdpMetrics) {
+pub fn close_all_flows(
+    clients: &mut HashMap<SocketAddr, ClientFlowState>,
+    metrics: &UdpMetrics,
+) -> usize {
+    let mut removed = 0usize;
     for state in clients.values_mut() {
         for entry in state.target_flows.drain().map(|(_, entry)| entry) {
             shutdown_flow(&entry);
             metrics.record_standalone_flow_closed();
+            removed += 1;
         }
     }
+    removed
 }
 
 pub fn socks_to_target_addr(addr: &SocksAddr) -> TargetAddr {

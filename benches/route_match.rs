@@ -1,12 +1,16 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use eggress_core::{ClientIdentity, ProtocolId, TargetAddr, TargetHost};
+use eggress_routing::upstream::{GroupFallback, UpstreamGroup, UpstreamRuntime};
+use eggress_routing::RouteService;
+use eggress_routing::{health::HealthState, scheduler::SchedulerKind};
 use eggress_routing::{
     CompiledRule, MatchExpr, PortMatcher, RouteActionSpec, RouteRequest, Router, RuleId,
     TransportKind, UpstreamGroupId,
 };
+use eggress_uri::parse_proxy_chain;
 use ipnet::IpNet;
 
 fn make_domain_target(domain: &str, port: u16) -> TargetAddr {
@@ -201,5 +205,69 @@ fn route_match_benchmark(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, route_match_benchmark);
+fn route_selection_benchmark(c: &mut Criterion) {
+    let mut group = c.benchmark_group("route_select");
+    let target = make_domain_target("service.example.com", 443);
+    let identity = ClientIdentity::Anonymous;
+    let request = RouteRequest {
+        target: &target,
+        source: None,
+        listener: "bench",
+        inbound_protocol: ProtocolId::Socks5,
+        identity: &identity,
+        transport: TransportKind::Tcp,
+    };
+
+    for size in [1usize, 8, 32, 128] {
+        for scheduler in [SchedulerKind::RoundRobin, SchedulerKind::LeastConnections] {
+            for mixed in [false, true] {
+                let group_id = UpstreamGroupId(Arc::from(format!("group-{size}-{mixed}")));
+                let chain = parse_proxy_chain("http://127.0.0.1:8080").unwrap();
+                let members = (0..size)
+                    .map(|index| {
+                        let state = if mixed && index % 3 == 0 {
+                            HealthState::Unhealthy
+                        } else if mixed && index % 3 == 1 {
+                            HealthState::Recovering
+                        } else {
+                            HealthState::Healthy
+                        };
+                        Arc::new(UpstreamRuntime::new_with_health(
+                            eggress_core::UpstreamId::new(format!("up-{size}-{index}")),
+                            chain.clone(),
+                            state,
+                        ))
+                    })
+                    .collect::<Vec<_>>();
+                let upstream_group = UpstreamGroup::new(
+                    group_id.clone(),
+                    scheduler,
+                    members.into(),
+                    GroupFallback::Reject,
+                );
+                let router = Router::with_groups(
+                    vec![],
+                    RouteActionSpec::UpstreamGroup(group_id.clone()),
+                    vec![(group_id, upstream_group)],
+                );
+                let name = format!(
+                    "members_{size}_{}_{}",
+                    match scheduler {
+                        SchedulerKind::RoundRobin => "round_robin",
+                        SchedulerKind::LeastConnections => "least_connections",
+                        _ => "other",
+                    },
+                    if mixed { "mixed_health" } else { "all_healthy" }
+                );
+                group.bench_function(name, |b| {
+                    b.iter(|| black_box(router.route(black_box(&request))))
+                });
+            }
+        }
+    }
+
+    group.finish();
+}
+
+criterion_group!(benches, route_match_benchmark, route_selection_benchmark);
 criterion_main!(benches);

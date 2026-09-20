@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -52,6 +53,38 @@ impl Default for HealthConfig {
 
 pub struct HealthCell {
     inner: RwLock<HealthSnapshot>,
+    /// A summarized state for routing eligibility reads. The full snapshot
+    /// remains authoritative for transitions and diagnostics; this atomic is
+    /// only a lock-free publication of the enum value. Relaxed ordering is
+    /// sufficient because callers that need correlated snapshot fields still
+    /// take `inner` and transitions publish the state while holding its write
+    /// lock.
+    state: AtomicU8,
+}
+
+fn encode_state(state: HealthState) -> u8 {
+    match state {
+        HealthState::Unknown => 0,
+        HealthState::Healthy => 1,
+        HealthState::Suspect => 2,
+        HealthState::Unhealthy => 3,
+        HealthState::Recovering => 4,
+        HealthState::Disabled => 5,
+    }
+}
+
+fn decode_state(value: u8) -> HealthState {
+    match value {
+        0 => HealthState::Unknown,
+        1 => HealthState::Healthy,
+        2 => HealthState::Suspect,
+        3 => HealthState::Unhealthy,
+        4 => HealthState::Recovering,
+        5 => HealthState::Disabled,
+        // Only this type writes the atomic. Treat an impossible value as the
+        // conservative initial state rather than exposing an invalid enum.
+        _ => HealthState::Unknown,
+    }
 }
 
 impl HealthCell {
@@ -67,6 +100,7 @@ impl HealthCell {
                 last_latency: None,
                 last_error: None,
             }),
+            state: AtomicU8::new(encode_state(initial)),
         }
     }
 
@@ -75,7 +109,7 @@ impl HealthCell {
     }
 
     pub fn state(&self) -> HealthState {
-        self.inner.read().unwrap_or_else(|e| e.into_inner()).state
+        decode_state(self.state.load(Ordering::Relaxed))
     }
 
     pub fn observe_success(&self, latency: Duration, config: &HealthConfig) {
@@ -118,6 +152,8 @@ impl HealthCell {
             }
             HealthState::Healthy => HealthState::Healthy,
         };
+        self.state
+            .store(encode_state(snap.state), Ordering::Relaxed);
     }
 
     pub fn observe_failure(&self, error: Option<String>, config: &HealthConfig) {
@@ -156,6 +192,8 @@ impl HealthCell {
                 }
             }
         };
+        self.state
+            .store(encode_state(snap.state), Ordering::Relaxed);
     }
 }
 
@@ -307,6 +345,21 @@ impl HealthManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn atomic_state_mapping_is_total_and_exact() {
+        for state in [
+            HealthState::Unknown,
+            HealthState::Healthy,
+            HealthState::Suspect,
+            HealthState::Unhealthy,
+            HealthState::Recovering,
+            HealthState::Disabled,
+        ] {
+            assert_eq!(decode_state(encode_state(state)), state);
+        }
+        assert_eq!(decode_state(u8::MAX), HealthState::Unknown);
+    }
     use std::sync::Arc;
 
     use crate::upstream::UpstreamRuntime;

@@ -31,7 +31,8 @@ pub(crate) use connection::PreparedListener;
 #[cfg(feature = "quic")]
 pub(crate) use connection::PreparedQuicListener;
 pub(crate) use connection::{
-    build_connection_config, wrap_tls_server, ConnectionBuildParams, InboundSecurity,
+    build_connection_config, prepare_tls_server_config, wrap_tls_server, ConnectionBuildParams,
+    InboundSecurity,
 };
 #[cfg(feature = "operations")]
 pub(crate) use operations::RuntimeAdminListenerInfos;
@@ -519,6 +520,13 @@ impl ServiceSupervisor {
                 };
 
                 let connection_limit = lcfg.connection_limit.unwrap_or(1024) as usize;
+                let prepared_tls =
+                    prepare_tls_server_config(lcfg.tls.as_ref()).map_err(|error| {
+                        RuntimeError::Other(format!(
+                            "listener '{}' has invalid prepared TLS configuration: {error}",
+                            lcfg.name
+                        ))
+                    })?;
 
                 // Handle Unix domain socket listeners separately
                 #[allow(unused_variables)]
@@ -545,10 +553,16 @@ impl ServiceSupervisor {
                                     auth,
                                     handshake_timeout,
                                     connection_limit as u64,
-                                    lcfg.tls.clone(),
+                                    prepared_tls.clone(),
                                     lcfg.shadowsocks.clone(),
                                     lcfg.trojan.clone(),
                                     lcfg.udp.clone(),
+                                    make_udp_service(
+                                        &state_ref,
+                                        &routing,
+                                        &lcfg.name,
+                                        lcfg.udp.as_ref(),
+                                    ),
                                 ));
                                 continue;
                             }
@@ -634,10 +648,16 @@ impl ServiceSupervisor {
                                 auth,
                                 handshake_timeout,
                                 connection_limit as u64,
-                                lcfg.tls.clone(),
+                                prepared_tls.clone(),
                                 lcfg.shadowsocks.clone(),
                                 lcfg.trojan.clone(),
                                 lcfg.udp.clone(),
+                                make_udp_service(
+                                    &state_ref,
+                                    &routing,
+                                    &lcfg.name,
+                                    lcfg.udp.as_ref(),
+                                ),
                             ));
                             continue;
                         }
@@ -728,6 +748,8 @@ impl ServiceSupervisor {
                         source: e,
                     })?;
                 tracing::info!("listening on {local_addr} ({})", lcfg.name);
+                let udp_service =
+                    make_udp_service(&state_ref, &routing, &lcfg.name, lcfg.udp.as_ref());
 
                 prepared.push(PreparedListener {
                     name: lcfg.name.clone(),
@@ -738,7 +760,8 @@ impl ServiceSupervisor {
                     auth,
                     handshake_timeout,
                     udp: lcfg.udp.clone(),
-                    tls: lcfg.tls.clone(),
+                    udp_service,
+                    tls: prepared_tls,
                     shadowsocks: lcfg.shadowsocks.clone(),
                     trojan: lcfg.trojan.clone(),
                     fixed_target: lcfg.fixed_target.clone(),
@@ -778,14 +801,14 @@ impl ServiceSupervisor {
                 for p in &prepared_quic {
                     addr_map.insert(p.name.clone(), Some(p.local_addr));
                 }
-                for (name, transparent_listener, _, _, _, _, _, _, _, _) in
+                for (name, transparent_listener, _, _, _, _, _, _, _, _, _) in
                     &transparent_listener_args
                 {
                     let addr = transparent_listener.local_addr().ok();
                     addr_map.insert(name.clone(), addr);
                 }
                 #[cfg(unix)]
-                for (name, _, _, _, _, _, _, _, _, _) in &unix_listener_args {
+                for (name, _, _, _, _, _, _, _, _, _, _) in &unix_listener_args {
                     // Unix domain sockets don't have a meaningful TCP socket address
                     addr_map.insert(name.clone(), None);
                 }
@@ -951,7 +974,8 @@ impl ServiceSupervisor {
                 tls_cfg,
                 ss_cfg,
                 trojan_cfg,
-                udp_cfg,
+                _udp_cfg,
+                udp_svc,
             ) in transparent_listener_args
             {
                 let routing = routing.clone();
@@ -1058,9 +1082,7 @@ impl ServiceSupervisor {
                         let tls_config = tls_cfg.clone();
                         let ss_config = ss_cfg.clone();
                         let trojan_config = trojan_cfg.clone();
-
-                        let udp_svc =
-                            make_udp_service(&state, &routing, &listener_name, udp_cfg.as_ref());
+                        let conn_udp_svc = udp_svc.clone();
 
                         #[cfg(feature = "ssh")]
                         let conn_ssh_sessions = listener_ssh_sessions.clone();
@@ -1089,7 +1111,7 @@ impl ServiceSupervisor {
                                 protocols: conn_protocols,
                                 authentication: conn_auth,
                                 metrics: conn_metrics,
-                                udp: udp_svc,
+                                udp: conn_udp_svc,
                                 tls_client_config,
                                 security: InboundSecurity {
                                     shadowsocks: ss_config,
@@ -1152,7 +1174,8 @@ impl ServiceSupervisor {
                 tls_cfg,
                 ss_cfg,
                 trojan_cfg,
-                udp_cfg,
+                _udp_cfg,
+                udp_svc,
             ) in unix_listener_args
             {
                 let routing = routing.clone();
@@ -1226,11 +1249,9 @@ impl ServiceSupervisor {
                         let tls_config = tls_cfg.clone();
                         let ss_config = ss_cfg.clone();
                         let trojan_config = trojan_cfg.clone();
+                        let conn_udp_svc = udp_svc.clone();
                         let socket_path_clone = socket_path.clone();
                         let listener_str_for_span = listener_str.clone();
-
-                        let udp_svc =
-                            make_udp_service(&state, &routing, &listener_name, udp_cfg.as_ref());
 
                         #[cfg(feature = "ssh")]
                         let conn_ssh_sessions = listener_ssh_sessions.clone();
@@ -1260,7 +1281,7 @@ impl ServiceSupervisor {
                                 protocols: conn_protocols,
                                 authentication: conn_auth,
                                 metrics: conn_metrics,
-                                udp: udp_svc,
+                                udp: conn_udp_svc,
                                 tls_client_config,
                                 security: InboundSecurity {
                                     shadowsocks: ss_config,
@@ -1624,12 +1645,7 @@ impl ServiceSupervisor {
                         let fixed_target = prepared_listener.fixed_target.clone();
                         let local_bind = prepared_listener.local_bind.clone();
 
-                        let udp_svc = make_udp_service(
-                            &state,
-                            &routing,
-                            &prepared_listener.name,
-                            prepared_listener.udp.as_ref(),
-                        );
+                        let udp_svc = prepared_listener.udp_service.clone();
                         #[cfg(feature = "ssh")]
                         let conn_ssh_sessions = listener_ssh_sessions.clone();
                         let stream_tasks = conn_tasks.clone();
@@ -1639,8 +1655,7 @@ impl ServiceSupervisor {
 
                             // Apply TLS if configured for this listener
                             let Some(stream) =
-                                wrap_tls_server(Box::new(conn.stream), tls_config.as_ref(), peer)
-                                    .await
+                                wrap_tls_server(conn.stream, tls_config.as_ref(), peer).await
                             else {
                                 return;
                             };

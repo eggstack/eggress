@@ -128,13 +128,19 @@ eggress-relay = { version = "=1.0.7", path = "crates/eggress-relay" }
 [dependencies]
 criterion.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 eggress-core.workspace = true
 eggress-relay.workspace = true
 eggress-routing.workspace = true
+eggress-uri.workspace = true
+eggress-udp.workspace = true
+eggress-outbound.workspace = true
+eggress-transport-tls.workspace = true
 eggress-protocol-socks.workspace = true
 eggress-protocol-http.workspace = true
 ipnet.workspace = true
 regex.workspace = true
+rcgen.workspace = true
 
 [[bench]]
 name = "tcp_relay"
@@ -150,6 +156,10 @@ harness = false
 
 [[bench]]
 name = "http_connect_upstream"
+harness = false
+
+[[bench]]
+name = "tls_setup"
 harness = false
 
 [workspace.lints.rust]

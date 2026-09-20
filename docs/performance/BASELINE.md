@@ -6,15 +6,15 @@ should be created as dated files and this index updated.
 
 ## Current baseline
 
-**Date:** 2026-07-03
-**File:** [`BASELINE_2026_07_03.md`](BASELINE_2026_07_03.md)
+**Date:** 2026-09-20
+**File:** [`BASELINE_2026_09_20.md`](BASELINE_2026_09_20.md)
 
 ## Environment
 
-- OS: macOS (darwin)
-- CPU: Apple Silicon (arm64)
-- Rust: stable (via rust-toolchain.toml)
-- Build profile: debug
+- OS: Ubuntu Linux 6.8.0-139-generic
+- CPU: Intel Core i9-9900K (x86_64)
+- Rust: rustc 1.85.0
+- Build profile: Criterion bench profile (release)
 
 ## Quick comparison
 

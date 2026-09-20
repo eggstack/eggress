@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION — 2026-09-20**
+**IMPLEMENTED — 2026-09-20**
 
 ## Parent roadmap
 
@@ -283,6 +283,19 @@ Stop and reassess if:
 - UDP flow mutations occur concurrently outside the presumed single owner and therefore cannot maintain an exact plain aggregate safely.
 
 A retained existing implementation for one blocked sub-workstream does not invalidate unrelated optimizations in the phase.
+
+## Closure
+
+- `eggress-relay` now polls two directional states while owning both complete
+  streams, with bounded per-poll progress and the existing half-close/error/
+  cancellation contract. No generic `tokio::io::split` remains in the engine.
+- Health state transitions remain lock-backed and authoritative while
+  eligibility reads use a total `AtomicU8` mapping with documented Relaxed
+  ordering.
+- Both standalone UDP owners maintain exact target-flow aggregates and update
+  them on insert, reap, client removal, and shutdown; the capped scan helper
+  was removed.
+- Focused routing, UDP, relay, core, and runtime checks passed.
 
 ## Acceptance criteria
 

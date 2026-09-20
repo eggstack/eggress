@@ -75,14 +75,14 @@ its boxes straight into this generic surface.
 
 ## How it works (control flow)
 
-1. `tokio::io::split` both streams into read/write halves (std-`Mutex`
-   based, no `Send` bound); allocate one heap `Vec<u8>` per direction sized
-   by `buffer_size` (tuning control, not a framing boundary — any non-zero
-   size is semantically transparent).
-2. Pin one `copy_direction` future per side (client→server = upstream,
-   server→client = downstream) and poll both concurrently with
-   `tokio::select!` over `&mut` pinned futures, so the survivor is retained
-   rather than dropped.
+1. Own both complete streams in one future and allocate one heap `Vec<u8>` per
+   direction sized by `buffer_size` (tuning control, not a framing boundary —
+   any non-zero size is semantically transparent). No generic
+   `tokio::io::split` or split-lock synchronization is used.
+2. Poll two directional copy states fairly from that single future. Each state
+   retains its read/write cursor, byte count, EOF, and shutdown progress, so
+   the complete streams remain available to both directions without nested
+   futures or detached tasks.
 3. Each direction: read into its buffer, `write_all`, bump its counter only
    after successful writes; on read EOF, `shutdown()` the opposite writer,
    tolerating `BrokenPipe`/`ConnectionReset` (half-close compatibility), then
@@ -159,9 +159,9 @@ behavior.
 
 - `tokio::select!` over `&mut` pinned futures (not by value) is load-bearing:
   by-value `select!` would drop the survivor instead of draining it.
-- `tokio::io::split` halves share a std-`Mutex` inner; concurrent direction
-  polls contend only for the duration of a single `poll_*`, never across
-  `.await` points.
+- The relay state machine owns both streams and uses a bounded per-poll step
+  budget. This avoids split-lock contention while preventing an always-ready
+  direction from starving its peer.
 - Timeout expiry drops the surviving direction future via `timeout` owning the
   boxed future — partial byte counts survive because counters live outside
   the dropped future.

@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION — 2026-09-20**
+**IMPLEMENTED — 2026-09-20**
 
 ## Baseline
 
@@ -94,9 +94,9 @@ Both may be worth tuning, but the current benchmark suite does not provide enoug
 
 | Order | Plan | Status | Purpose |
 |---|---|---|---|
-| 1 | [`PERFORMANCE_PHASE_1_TLS_AND_CONNECTION_SETUP.md`](PERFORMANCE_PHASE_1_TLS_AND_CONNECTION_SETUP.md) | Ready | Cache/build TLS state at the correct lifetime and remove redundant TCP/UDP connection setup work. |
-| 2 | [`PERFORMANCE_PHASE_2_RELAY_ROUTING_UDP_HOT_PATHS.md`](PERFORMANCE_PHASE_2_RELAY_ROUTING_UDP_HOT_PATHS.md) | Ready | Remove generic relay split synchronization, lock-backed health reads, and O(n) UDP flow accounting. |
-| 3 | [`PERFORMANCE_PHASE_3_BENCHMARK_AND_QUALIFICATION.md`](PERFORMANCE_PHASE_3_BENCHMARK_AND_QUALIFICATION.md) | Ready | Establish path-accurate evidence, qualify phases 1–2, and gate any secondary memory/allocation tuning. |
+| 1 | [`PERFORMANCE_PHASE_1_TLS_AND_CONNECTION_SETUP.md`](PERFORMANCE_PHASE_1_TLS_AND_CONNECTION_SETUP.md) | Implemented | Cache/build TLS state at the correct lifetime and remove redundant TCP/UDP connection setup work. |
+| 2 | [`PERFORMANCE_PHASE_2_RELAY_ROUTING_UDP_HOT_PATHS.md`](PERFORMANCE_PHASE_2_RELAY_ROUTING_UDP_HOT_PATHS.md) | Implemented | Remove generic relay split synchronization, lock-backed health reads, and O(1) UDP flow accounting. |
+| 3 | [`PERFORMANCE_PHASE_3_BENCHMARK_AND_QUALIFICATION.md`](PERFORMANCE_PHASE_3_BENCHMARK_AND_QUALIFICATION.md) | Implemented | Establish path-accurate evidence, qualify phases 1–2, and gate any secondary memory/allocation tuning. |
 
 Do not split these into per-function plans unless implementation discovers a correctness blocker that cannot safely be handled inside the owning phase.
 
@@ -159,3 +159,17 @@ This roadmap is complete only when all of the following are true:
 13. Workspace fmt/clippy/tests pass.
 14. No public API, configuration, protocol capability, or pproxy compatibility regression is introduced.
 15. HTTP forward upstream reuse remains out of scope unless a separate approved design plan is created.
+
+## Closure
+
+The three phases are implemented. Default TLS configuration access is
+process-shared, listener TLS and UDP state are generation-scoped, relay
+copying no longer uses generic split locks, health eligibility reads use an
+atomic summary, and standalone UDP admission maintains an exact owner-local
+aggregate. New Criterion fixtures exercise setup-inclusive and steady-state
+relay, route selection, actual standalone UDP flows, and TLS construction.
+
+The compatibility relay facade remains at two 64 KiB buffers with its bounded
+one-second drain. The qualification run did not provide evidence sufficient to
+change that public compatibility tuning or justify UDP pooling; both remain
+explicitly retained.

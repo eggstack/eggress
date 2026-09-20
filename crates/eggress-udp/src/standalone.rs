@@ -15,8 +15,7 @@ use crate::flow::resolve_endpoint;
 use crate::flow::target_to_socks_addr;
 use crate::flow::{
     can_use_flow, close_all_flows, local_udp_bind_addr, reap_idle_flows, socks_addr_equivalent,
-    socks_to_target_addr, total_target_flows_capped, ClientFlowState, TargetFlowEntry, UdpFlowKey,
-    UdpFlowKind,
+    socks_to_target_addr, ClientFlowState, TargetFlowEntry, UdpFlowKey, UdpFlowKind,
 };
 use crate::limits::UdpLimits;
 use crate::metrics::UdpMetrics;
@@ -54,6 +53,7 @@ pub async fn standalone_udp_relay(
     let mut buf = vec![0u8; config.limits.max_datagram_size];
     let target_idle_timeout = config.limits.target_idle_timeout;
     let mut clients: HashMap<SocketAddr, ClientFlowState> = HashMap::new();
+    let mut total_target_flows = 0usize;
     let (response_tx, mut response_rx) =
         tokio::sync::mpsc::channel::<ResponseMsg>(RESPONSE_CHANNEL_CAPACITY);
 
@@ -146,12 +146,6 @@ pub async fn standalone_udp_relay(
                     continue;
                 }
 
-                // Capped scan (O-03): admission only needs to know whether the
-                // global total is below the limit, so stop summing at the cap.
-                let total_flows = total_target_flows_capped(
-                    &clients,
-                    crate::flow::max_standalone_flows(&config.limits),
-                );
                 let state = clients.entry(client_addr).or_default();
                 state.touch();
 
@@ -169,11 +163,12 @@ pub async fn standalone_udp_relay(
                         let key = UdpFlowKey::Direct {
                             target: request.target.clone(),
                         };
-                        if !can_use_flow(state, &key, total_flows, &config.limits) {
+                        if !can_use_flow(state, &key, total_target_flows, &config.limits) {
                             config.udp_metrics.record_standalone_rejected();
                             continue;
                         }
 
+                        let was_existing = state.target_flows.contains_key(&key);
                         let entry = match state.target_flows.entry(key) {
                             std::collections::hash_map::Entry::Occupied(mut e) => {
                                 e.get_mut().touch();
@@ -199,6 +194,9 @@ pub async fn standalone_udp_relay(
                                 }
                             }
                         };
+                        if !was_existing {
+                            total_target_flows += 1;
+                        }
 
                         if let UdpFlowKind::Direct(ref f) = entry.flow {
                             if f.send(request.payload).await.is_err() {
@@ -222,12 +220,13 @@ pub async fn standalone_udp_relay(
                                 target: request.target.clone(),
                                 upstream_id: upstream.clone(),
                             };
-                            if !can_use_flow(state, &key, total_flows, &config.limits) {
+                            if !can_use_flow(state, &key, total_target_flows, &config.limits) {
                                 config.udp_metrics.record_standalone_rejected();
                                 drop(pending_lease);
                                 continue;
                             }
 
+                            let was_existing = state.target_flows.contains_key(&key);
                             let entry = match state.target_flows.entry(key) {
                                 std::collections::hash_map::Entry::Occupied(mut e) => {
                                     e.get_mut().touch();
@@ -327,6 +326,9 @@ pub async fn standalone_udp_relay(
                                     }
                                 }
                             };
+                            if !was_existing {
+                                total_target_flows += 1;
+                            }
 
                             match &entry.flow {
                                 UdpFlowKind::Socks5Upstream(f) => {
@@ -351,12 +353,13 @@ pub async fn standalone_udp_relay(
                                 target: request.target.clone(),
                                 upstream_id: upstream.clone(),
                             };
-                            if !can_use_flow(state, &key, total_flows, &config.limits) {
+                            if !can_use_flow(state, &key, total_target_flows, &config.limits) {
                                 config.udp_metrics.record_standalone_rejected();
                                 drop(pending_lease);
                                 continue;
                             }
 
+                            let was_existing = state.target_flows.contains_key(&key);
                             let entry = match state.target_flows.entry(key) {
                                 std::collections::hash_map::Entry::Occupied(mut e) => {
                                     e.get_mut().touch();
@@ -467,6 +470,9 @@ pub async fn standalone_udp_relay(
                                     })
                                 }
                             };
+                            if !was_existing {
+                                total_target_flows += 1;
+                            }
 
                             match &entry.flow {
                                 UdpFlowKind::ShadowsocksUpstream(f) => {
@@ -490,13 +496,14 @@ pub async fn standalone_udp_relay(
                                 target: request.target.clone(),
                                 upstream_id: upstream.clone(),
                             };
-                            if !can_use_flow(state, &key, total_flows, &config.limits) {
+                            if !can_use_flow(state, &key, total_target_flows, &config.limits) {
                                 config.udp_metrics.record_standalone_rejected();
                                 drop(pending_lease);
                                 continue;
                             }
 
                             let active_lease = pending_lease.established();
+                            let was_existing = state.target_flows.contains_key(&key);
                             let entry = match state.target_flows.entry(key) {
                                 std::collections::hash_map::Entry::Occupied(mut e) => {
                                     e.get_mut().touch();
@@ -561,6 +568,9 @@ pub async fn standalone_udp_relay(
                                     })
                                 }
                             };
+                            if !was_existing {
+                                total_target_flows += 1;
+                            }
 
                             if let UdpFlowKind::Composed(flow) = &mut entry.flow {
                                 if flow.send(&request.target, request.payload).await.is_err() {
@@ -582,7 +592,11 @@ pub async fn standalone_udp_relay(
                 }
             }
             _ = idle_tick.tick() => {
-                reap_idle_flows(&mut clients, &config.limits, &config.udp_metrics);
+                total_target_flows = total_target_flows.saturating_sub(reap_idle_flows(
+                    &mut clients,
+                    &config.limits,
+                    &config.udp_metrics,
+                ));
             }
             _ = cancel.cancelled() => {
                 break;
@@ -590,7 +604,9 @@ pub async fn standalone_udp_relay(
         }
     }
 
-    close_all_flows(&mut clients, &config.udp_metrics);
+    total_target_flows =
+        total_target_flows.saturating_sub(close_all_flows(&mut clients, &config.udp_metrics));
+    debug_assert_eq!(total_target_flows, 0);
 
     Ok(())
 }

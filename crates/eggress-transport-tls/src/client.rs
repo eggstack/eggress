@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use rustls::pki_types::pem::PemObject;
 #[cfg(any(test, feature = "insecure-tls"))]
@@ -6,6 +6,84 @@ use rustls::pki_types::CertificateDer;
 use rustls::ClientConfig;
 
 pub use crate::error::TlsError;
+
+static DEFAULT_CLIENT_CONFIG: OnceLock<Result<Arc<ClientConfig>, String>> = OnceLock::new();
+static DEFAULT_H2_CLIENT_CONFIG: OnceLock<Result<Arc<ClientConfig>, String>> = OnceLock::new();
+
+/// Return the process-shared verified client configuration for ordinary TLS.
+///
+/// The configuration contains only immutable public system roots and no
+/// destination-specific state. Callers that need custom roots, client
+/// identity, or a caller-owned override must continue to use the builder.
+pub fn default_client_config() -> Result<Arc<ClientConfig>, TlsError> {
+    DEFAULT_CLIENT_CONFIG
+        .get_or_init(|| {
+            TlsClientConfigBuilder::new()
+                .with_system_roots()
+                .and_then(|builder| builder.build())
+                .map_err(|error| error.to_string())
+        })
+        .as_ref()
+        .map(Arc::clone)
+        .map_err(|error| TlsError::Handshake(error.clone()))
+}
+
+/// Return the process-shared verified client configuration for H2-capable TLS.
+pub fn default_h2_client_config() -> Result<Arc<ClientConfig>, TlsError> {
+    DEFAULT_H2_CLIENT_CONFIG
+        .get_or_init(|| {
+            TlsClientConfigBuilder::new()
+                .with_system_roots()
+                .map(|builder| builder.with_h2_alpn())
+                .and_then(|builder| builder.build())
+                .map_err(|error| error.to_string())
+        })
+        .as_ref()
+        .map(Arc::clone)
+        .map_err(|error| TlsError::Handshake(error.clone()))
+}
+
+#[cfg(feature = "insecure-tls")]
+static DEFAULT_INSECURE_CLIENT_CONFIG: OnceLock<Result<Arc<ClientConfig>, String>> =
+    OnceLock::new();
+
+#[cfg(feature = "insecure-tls")]
+static DEFAULT_INSECURE_H2_CLIENT_CONFIG: OnceLock<Result<Arc<ClientConfig>, String>> =
+    OnceLock::new();
+
+/// Return the process-shared insecure configuration used by compatibility
+/// `?insecure` hops. This remains feature-gated and is never used for a
+/// caller-supplied TLS override.
+#[cfg(feature = "insecure-tls")]
+pub fn default_insecure_client_config() -> Result<Arc<ClientConfig>, TlsError> {
+    DEFAULT_INSECURE_CLIENT_CONFIG
+        .get_or_init(|| {
+            TlsClientConfigBuilder::new()
+                .with_system_roots()
+                .map(|builder| builder.with_insecure())
+                .and_then(|builder| builder.build())
+                .map_err(|error| error.to_string())
+        })
+        .as_ref()
+        .map(Arc::clone)
+        .map_err(|error| TlsError::Handshake(error.clone()))
+}
+
+/// Return the process-shared insecure H2-capable configuration.
+#[cfg(feature = "insecure-tls")]
+pub fn default_insecure_h2_client_config() -> Result<Arc<ClientConfig>, TlsError> {
+    DEFAULT_INSECURE_H2_CLIENT_CONFIG
+        .get_or_init(|| {
+            TlsClientConfigBuilder::new()
+                .with_system_roots()
+                .map(|builder| builder.with_insecure().with_h2_alpn())
+                .and_then(|builder| builder.build())
+                .map_err(|error| error.to_string())
+        })
+        .as_ref()
+        .map(Arc::clone)
+        .map_err(|error| TlsError::Handshake(error.clone()))
+}
 
 /// Builder for constructing `rustls::ClientConfig` from declarative configuration.
 pub struct TlsClientConfigBuilder {
@@ -336,5 +414,38 @@ mod tests {
         assert_eq!(config.alpn_protocols.len(), 2);
         assert_eq!(config.alpn_protocols[0], b"h2");
         assert_eq!(config.alpn_protocols[1], b"http/1.1");
+    }
+
+    #[test]
+    fn default_verified_configs_are_shared_and_h2_is_distinct() {
+        init();
+        let first = crate::default_client_config().unwrap();
+        let second = crate::default_client_config().unwrap();
+        assert!(Arc::ptr_eq(&first, &second));
+        assert!(first.alpn_protocols.is_empty());
+
+        let h2 = crate::default_h2_client_config().unwrap();
+        assert_eq!(
+            h2.alpn_protocols,
+            vec![b"h2".to_vec(), b"http/1.1".to_vec()]
+        );
+        assert!(!Arc::ptr_eq(&first, &h2));
+    }
+
+    #[cfg(feature = "insecure-tls")]
+    #[test]
+    fn default_insecure_configs_are_shared_and_isolated_from_verified() {
+        init();
+        let verified = crate::default_client_config().unwrap();
+        let insecure = crate::default_insecure_client_config().unwrap();
+        let insecure_again = crate::default_insecure_client_config().unwrap();
+        assert!(Arc::ptr_eq(&insecure, &insecure_again));
+        assert!(!Arc::ptr_eq(&verified, &insecure));
+        assert_eq!(
+            crate::default_insecure_h2_client_config()
+                .unwrap()
+                .alpn_protocols,
+            vec![b"h2".to_vec(), b"http/1.1".to_vec()]
+        );
     }
 }

@@ -6,10 +6,8 @@
 //! standard, transparent, Unix, and QUIC paths share one implementation
 //! instead of duplicating TLS wrapping and `ConnectionConfig` assembly.
 
-use std::time::Duration;
-
-#[cfg(feature = "quic")]
 use std::sync::Arc;
+use std::time::Duration;
 
 use eggress_core::listener::TcpListener;
 use eggress_core::ProtocolId;
@@ -24,7 +22,11 @@ pub(crate) struct PreparedListener {
     pub(crate) auth: eggress_server::accept::InboundAuthentication,
     pub(crate) handshake_timeout: Duration,
     pub(crate) udp: Option<eggress_config::compile::CompiledListenerUdpConfig>,
-    pub(crate) tls: Option<eggress_config::compile::CompiledListenerTlsConfig>,
+    pub(crate) udp_service: Option<Arc<dyn eggress_server::UdpService>>,
+    /// Compiled once while this listener generation is prepared. Accepted
+    /// sessions only clone the `Arc`; certificate/key PEM is never reparsed
+    /// on the connection path.
+    pub(crate) tls: Option<Arc<rustls::ServerConfig>>,
     pub(crate) shadowsocks: Option<eggress_config::model::ShadowsocksListenerConfig>,
     pub(crate) trojan: Option<eggress_config::model::ListenerTrojanConfig>,
     pub(crate) fixed_target: Option<eggress_core::TargetAddr>,
@@ -136,33 +138,32 @@ pub(crate) fn build_connection_config(
 /// Returns `None` when the connection must be dropped (invalid TLS material
 /// or failed TLS accept). Call sites translate `None` into an early task
 /// return, preserving the previous per-listener behavior exactly.
+pub(crate) fn prepare_tls_server_config(
+    tls: Option<&eggress_config::compile::CompiledListenerTlsConfig>,
+) -> Result<Option<Arc<rustls::ServerConfig>>, eggress_transport_tls::TlsError> {
+    let Some(tls_cfg) = tls else {
+        return Ok(None);
+    };
+
+    let mut builder = eggress_transport_tls::TlsServerConfigBuilder::new()
+        .with_certificate_pem(&tls_cfg.cert_pem)?
+        .with_key_pem(&tls_cfg.key_pem)?;
+    if !tls_cfg.alpn.is_empty() {
+        builder = builder.with_alpn(tls_cfg.alpn.clone());
+    }
+    builder.build().map(Some)
+}
+
 pub(crate) async fn wrap_tls_server(
     stream: eggress_core::BoxStream,
-    tls: Option<&eggress_config::compile::CompiledListenerTlsConfig>,
+    tls: Option<&Arc<rustls::ServerConfig>>,
     peer: std::net::SocketAddr,
 ) -> Option<eggress_core::BoxStream> {
-    let tls_cfg = match tls {
-        Some(cfg) => cfg,
+    let tls_config = match tls {
+        Some(config) => Arc::clone(config),
         None => return Some(stream),
     };
-    let server_config = match eggress_transport_tls::TlsServerConfigBuilder::new()
-        .with_certificate_pem(&tls_cfg.cert_pem)
-        .and_then(|b| b.with_key_pem(&tls_cfg.key_pem))
-        .and_then(|b| {
-            let b = if tls_cfg.alpn.is_empty() {
-                b
-            } else {
-                b.with_alpn(tls_cfg.alpn.clone())
-            };
-            b.build()
-        }) {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::error!(%peer, "TLS config error: {e}");
-            return None;
-        }
-    };
-    match eggress_transport_tls::tls_accept(stream, server_config).await {
+    match eggress_transport_tls::tls_accept(stream, tls_config).await {
         Ok(s) => Some(s),
         Err(e) => {
             tracing::debug!(%peer, "TLS accept failed: {e}");

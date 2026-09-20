@@ -1,12 +1,13 @@
 # Performance and Benchmarking
 
-Phase 34 — Performance, Soak, and Regression Gates
+Performance qualification — setup, hot paths, and coarse regression gates
 
 ## Overview
 
 This directory contains performance documentation for the eggress proxy
-framework. Phase 34 establishes a baseline for measurement discipline,
-not premature optimization.
+framework. The 2026-09-20 runtime campaign establishes path-accurate
+measurement for TLS/setup, relay, route selection, and standalone UDP without
+turning noisy wall-clock results into mandatory CI thresholds.
 
 ## Documents
 
@@ -14,6 +15,7 @@ not premature optimization.
 - [Regression Gate Policy](REGRESSION_GATE_POLICY.md) — which tests to run when, and what's blocking
 - [Python Binding Overhead](PYTHON_BINDING_OVERHEAD.md) — PyO3 wrapper overhead measurements
 - [Baseline 2026-07-03](BASELINE_2026_07_03.md) — initial baseline numbers
+- [Qualification 2026-09-20](BASELINE_2026_09_20.md) — Phase 1–3 local evidence
 
 ## Quick Start
 

@@ -12,8 +12,8 @@ health probes, reverse routing gate, and ordered shutdown.
 | `src/supervisor/startup.rs` | `init_supervisor()` (feature gates, bind pre-validation, metrics/UDP/health wiring, `RuntimeState` assembly), `resolve_udp_global_limit()`, `build_ssh_sessions(allow_insecure_host_keys: bool)` |
 | `src/supervisor/state.rs` | `RuntimeState` (snapshot, routing, session + runtime metrics, readiness, accounting, UDP registry, health, reverse state) + canonical `apply_compiled_config` transaction |
 | `src/supervisor/reload.rs` | `ReloadResult`, `classify_listeners()` + `classify_reload_config()` (restart-required contract) |
-| `src/supervisor/connection.rs` | `PreparedListener`/`PreparedQuicListener`, shared `wrap_tls_server()`, `build_connection_config()` (`ConnectionBuildParams`, `InboundSecurity`) |
-| `src/supervisor/udp_runtime.rs` | `RuntimeUdpService` (`UdpService` impl), `make_udp_service()`, `compute_advertise_ip()`, `prepare_shadowsocks_udp_relay()` |
+| `src/supervisor/connection.rs` | `PreparedListener`/`PreparedQuicListener`, per-generation prepared TLS/UDP state, shared `wrap_tls_server()`, `build_connection_config()` (`ConnectionBuildParams`, `InboundSecurity`) |
+| `src/supervisor/udp_runtime.rs` | `RuntimeUdpService` (`UdpService` impl), listener-generation `make_udp_service()`, `compute_advertise_ip()`, `prepare_shadowsocks_udp_relay()` |
 | `src/supervisor/operations.rs` | `RuntimeAdminListenerInfos` (`AdminSnapshotProvider` over the live snapshot) |
 | `src/supervisor/accounting.rs` | `ListenerConnectionSlot` (per-listener limits), `ActiveConnectionGuard` (exactly-once global accounting), accept-error backoff |
 | `src/supervisor/shutdown.rs` | `ShutdownPlan` + `shutdown_ordered()` (readiness false, listener stop, drain, admin last) |

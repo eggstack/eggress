@@ -91,6 +91,13 @@ Client -> recv_from() -> pin/touch -> decode_packet() -> validate_standalone_tar
   -> response_rx -> encode_socks5_udp_datagram() -> send_to(client_addr)
 ```
 
+Standalone UDP owners maintain an exact `total_target_flows` aggregate beside
+the client map. Admission reads that `usize` in O(1); successful insertion,
+idle reaping, client removal, and shutdown each adjust it exactly once. The
+aggregate is local to the owner task (including the feature-gated Shadowsocks
+standalone owner), so it does not introduce an eventually consistent atomic or
+global buffer/state pool.
+
 ### Upstream SOCKS5 Single-Hop
 
 ```

@@ -41,6 +41,12 @@ cargo test --workspace --locked
   `cargo check -p eggress-outbound --locked --no-default-features [--features …]`.
 - Python-facing changes: `(cd crates/eggress-python && ../../.venv/bin/maturin develop)` after creating `.venv` with `maturin>=1.0,<2.0`, `pytest`, `pytest-asyncio>=0.23,<1`, `cryptography>=42,<47`; also `pip install --no-deps ./python-pproxy-compat`. Always run pytest from repo root — `pytest.ini` forces `--import-mode=importlib` so `python/eggress` can't shadow the built `_eggress` extension. Target: `.venv/bin/python -m pytest python/tests tests/compat -q`.
 - `fuzz/` is a standalone workspace: `cargo check --manifest-path fuzz/Cargo.toml --bins`. Workspace commands don't cover it.
+- Performance qualification is informational rather than a CI threshold:
+  `cargo bench --bench tcp_relay`, `route_match`, `udp_relay`, and `tls_setup`
+  cover setup-inclusive/steady-state relay, route selection, actual local UDP
+  relay flow management, and TLS construction. Record host/toolchain/profile
+  details for before/after comparisons; do not change the compatibility
+  facade's 64 KiB relay buffer or add UDP pooling without evidence.
 - External suites are opt-in (they install/launch outside implementations); run only when the claim changed. Oracle is resolved from `$EGRESS_ORACLE_PYTHON`, then `$EGRESS_PYTHON_BIN`, then discovery; prebuilt venvs (`.venv-oracle`, `.venv-pproxy-279`) already exist at root:
 ```bash
 EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored --test-threads=1
