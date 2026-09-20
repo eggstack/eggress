@@ -2,7 +2,7 @@
 
 ## Status
 
-**IMPLEMENTED — 2026-09-20**
+**IMPLEMENTED; EVIDENCE POLISH OPEN — 2026-09-20**
 
 ## Baseline
 
@@ -96,7 +96,8 @@ Both may be worth tuning, but the current benchmark suite does not provide enoug
 |---|---|---|---|
 | 1 | [`PERFORMANCE_PHASE_1_TLS_AND_CONNECTION_SETUP.md`](PERFORMANCE_PHASE_1_TLS_AND_CONNECTION_SETUP.md) | Implemented | Cache/build TLS state at the correct lifetime and remove redundant TCP/UDP connection setup work. |
 | 2 | [`PERFORMANCE_PHASE_2_RELAY_ROUTING_UDP_HOT_PATHS.md`](PERFORMANCE_PHASE_2_RELAY_ROUTING_UDP_HOT_PATHS.md) | Implemented | Remove generic relay split synchronization, lock-backed health reads, and O(1) UDP flow accounting. |
-| 3 | [`PERFORMANCE_PHASE_3_BENCHMARK_AND_QUALIFICATION.md`](PERFORMANCE_PHASE_3_BENCHMARK_AND_QUALIFICATION.md) | Implemented | Establish path-accurate evidence, qualify phases 1–2, and gate any secondary memory/allocation tuning. |
+| 3 | [`PERFORMANCE_PHASE_3_BENCHMARK_AND_QUALIFICATION.md`](PERFORMANCE_PHASE_3_BENCHMARK_AND_QUALIFICATION.md) | Implemented; evidence follow-up required | Establish path-accurate benchmark surfaces and initial qualification. |
+| 4 | [`PERFORMANCE_EVIDENCE_AND_DOCUMENTATION_POLISH.md`](PERFORMANCE_EVIDENCE_AND_DOCUMENTATION_POLISH.md) | Ready | Close same-host before/after evidence, relay buffer matrix, prepared TLS-path evidence, and stale relay documentation. |
 
 Do not split these into per-function plans unless implementation discovers a correctness blocker that cannot safely be handled inside the owning phase.
 
@@ -106,7 +107,7 @@ Phase 1 may land independently and should be implemented first because it is low
 
 Phase 2 may begin after Phase 1 or on a separate branch, but final qualification should use the Phase 1 state so benchmark evidence reflects the intended aggregate runtime.
 
-Phase 3 is not optional documentation polish. It is the evidence/closure phase and must run after the code changes. Secondary relay buffer or UDP allocation changes may be implemented inside Phase 3 only when the new measurements justify them and the plan's stop conditions are satisfied.
+Phase 3 established the durable benchmark surfaces and initial post-change qualification. Post-implementation review found that its closure record does not yet satisfy the roadmap's same-host before/after evidence requirement and did not record the planned relay buffer-size matrix. `PERFORMANCE_EVIDENCE_AND_DOCUMENTATION_POLISH.md` is therefore the final corrective closure item. It is evidence/documentation-only: any newly justified runtime tuning requires a separate approved implementation plan.
 
 ## Explicit non-goals
 
@@ -160,16 +161,22 @@ This roadmap is complete only when all of the following are true:
 14. No public API, configuration, protocol capability, or pproxy compatibility regression is introduced.
 15. HTTP forward upstream reuse remains out of scope unless a separate approved design plan is created.
 
-## Closure
+## Closure state
 
-The three phases are implemented. Default TLS configuration access is
+The runtime implementation is complete: default TLS configuration access is
 process-shared, listener TLS and UDP state are generation-scoped, relay
 copying no longer uses generic split locks, health eligibility reads use an
 atomic summary, and standalone UDP admission maintains an exact owner-local
 aggregate. New Criterion fixtures exercise setup-inclusive and steady-state
 relay, route selection, actual standalone UDP flows, and TLS construction.
 
+Formal campaign closure remains open only for
+[`PERFORMANCE_EVIDENCE_AND_DOCUMENTATION_POLISH.md`](PERFORMANCE_EVIDENCE_AND_DOCUMENTATION_POLISH.md).
+The initial qualification record contains post-change observations but not the
+same-host pre-change comparisons required by acceptance criterion 11; it also
+does not contain the planned 16/32/64 KiB relay buffer matrix, and relay docs
+retain a few stale descriptions of the former pinned-future/select engine.
+
 The compatibility relay facade remains at two 64 KiB buffers with its bounded
-one-second drain. The qualification run did not provide evidence sufficient to
-change that public compatibility tuning or justify UDP pooling; both remain
-explicitly retained.
+one-second drain, and UDP owned-buffer semantics remain unchanged while this
+evidence-only corrective pass is open.
