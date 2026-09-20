@@ -510,11 +510,12 @@ where
 
 /// Relay with explicit options.
 ///
-/// The implementation runs both copy directions in the caller's task (no
-/// `tokio::spawn`): the two direction futures are polled concurrently, and the
-/// unfinished direction is dropped when an error or a bounded-drain deadline
-/// occurs. Cancelling the returned future drops both directions with it; no
-/// detached relay task can outlive it.
+/// A single [`RelayFuture`] owns both complete streams and their two
+/// directional copy states. It polls bounded work from each direction in the
+/// caller's task (no `tokio::spawn` or generic split locks), retains byte
+/// counters in those states, and drops both streams together when an error or
+/// bounded-drain deadline ends the relay. Cancelling the returned future also
+/// drops both streams; no detached relay task can outlive it.
 pub async fn relay_with_options<C, S>(
     client: C,
     server: S,

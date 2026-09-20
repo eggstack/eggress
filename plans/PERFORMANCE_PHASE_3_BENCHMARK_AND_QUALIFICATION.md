@@ -296,6 +296,11 @@ No relay buffer-size or UDP pooling change was justified by the evidence; the
 compatibility facade retains 64 KiB and current owned-buffer semantics. HTTP
 forward upstream reuse remains deferred.
 
+The remaining same-host before/after evidence, relay buffer matrix, prepared
+TLS-path component comparison, and stale relay-documentation cleanup are
+recorded in the final corrective follow-up
+[`PERFORMANCE_EVIDENCE_AND_DOCUMENTATION_POLISH.md`](PERFORMANCE_EVIDENCE_AND_DOCUMENTATION_POLISH.md).
+
 ## Acceptance criteria
 
 This phase is complete when:

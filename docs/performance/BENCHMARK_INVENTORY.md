@@ -8,11 +8,11 @@ Phase 34 — Performance, Soak, and Regression Gates
 
 | Benchmark | File | Purpose | Duration | Gating tier |
 |-----------|------|---------|----------|-------------|
-| `tcp_relay` | `benches/tcp_relay.rs` | Setup-inclusive and steady-state TCP relay via `eggress-relay` (1KB, 64KB, 1MB, bounded concurrency) + `copy_bidirectional` baseline | ~60s | Tier 0 |
+| `tcp_relay` | `benches/tcp_relay.rs` | Setup-inclusive and steady-state TCP relay via `eggress-relay` (1KB, 64KB, 1MB, bounded concurrency) + `copy_bidirectional` baseline; explicit 16/32/64 KiB buffer matrix | ~90s | Tier 0 |
 | `udp_codec` / `udp_runtime` | `benches/udp_relay.rs` | SOCKS5 codec framing plus local standalone UDP hot-flow and admission paths | ~30s | Tier 0 |
 | `route_match` / `route_select` | `benches/route_match.rs` | Rule matching plus `Router::route()` selection across group sizes, schedulers, and health mixes | ~40s | Tier 0 |
 | `http_connect_upstream` | `benches/http_connect_upstream.rs` | HTTP CONNECT upstream open latency (no auth, basic auth, 407) | ~20s | Tier 0 |
-| `tls_setup` | `benches/tls_setup.rs` | Cached default client access, executor construction, and listener server-config construction | ~20s | Tier 0 |
+| `tls_setup` | `benches/tls_setup.rs` | Cached default client access, executor construction, raw server-config construction, and component prepared-listener/per-connection TLS handshake comparison | ~30s | Tier 0 |
 
 ### Performance Smoke Tests (integration)
 

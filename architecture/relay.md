@@ -157,14 +157,14 @@ behavior.
 
 ## Reviewer gotchas
 
-- `tokio::select!` over `&mut` pinned futures (not by value) is load-bearing:
-  by-value `select!` would drop the survivor instead of draining it.
-- The relay state machine owns both streams and uses a bounded per-poll step
-  budget. This avoids split-lock contention while preventing an always-ready
-  direction from starving its peer.
-- Timeout expiry drops the surviving direction future via `timeout` owning the
-  boxed future — partial byte counts survive because counters live outside
-  the dropped future.
+- One `RelayFuture` owns both complete streams and their directional states;
+  there are no detached direction tasks or generic split locks.
+- The relay state machine uses a bounded per-poll step budget. This avoids
+  split-lock contention while preventing an always-ready direction from
+  starving its peer.
+- The first clean close selects the draining side. An optional `Sleep` deadline
+  is stored on the relay future, and timeout returns the current directional
+  byte counters without spawning or detaching work.
 - `BrokenPipe`/`ConnectionReset` from post-EOF `shutdown()` are tolerated
   exactly like the historical implementation; any other shutdown error fails
   the direction.

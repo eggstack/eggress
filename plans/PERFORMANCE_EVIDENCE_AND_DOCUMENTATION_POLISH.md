@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION — 2026-09-20**
+**IMPLEMENTED — 2026-09-20**
 
 ## Parent roadmap
 

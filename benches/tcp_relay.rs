@@ -1,4 +1,7 @@
+use std::num::NonZeroUsize;
+
 use criterion::{criterion_group, criterion_main, Criterion};
+use eggress_relay::{HalfClosePolicy, RelayOptions};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::runtime::Runtime;
 
@@ -47,8 +50,14 @@ struct RelayFixture {
     accept_tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 
+#[derive(Clone, Copy)]
+enum RelayMode {
+    CopyBidirectional,
+    Relay(RelayOptions),
+}
+
 impl RelayFixture {
-    async fn start(use_baseline: bool) -> Self {
+    async fn start(mode: RelayMode) -> Self {
         let echo = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let echo_addr = echo.local_addr().unwrap();
         let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -77,10 +86,13 @@ impl RelayFixture {
                         Ok((mut client, _)) => {
                             tokio::spawn(async move {
                                 let mut server = tokio::net::TcpStream::connect(echo_addr).await.unwrap();
-                                if use_baseline {
-                                    let _ = tokio::io::copy_bidirectional(&mut client, &mut server).await;
-                                } else {
-                                    let _ = eggress_relay::relay(&mut client, &mut server).await;
+                                match mode {
+                                    RelayMode::CopyBidirectional => {
+                                        let _ = tokio::io::copy_bidirectional(&mut client, &mut server).await;
+                                    }
+                                    RelayMode::Relay(options) => {
+                                        let _ = eggress_relay::relay_with_options(client, server, options).await;
+                                    }
                                 }
                             });
                         }
@@ -245,7 +257,9 @@ fn tcp_relay_benchmark(c: &mut Criterion) {
         });
     });
 
-    let relay_fixture = rt.block_on(RelayFixture::start(false));
+    let relay_fixture = rt.block_on(RelayFixture::start(RelayMode::Relay(
+        RelayOptions::default(),
+    )));
     for (name, size) in [
         ("steady_1KB_relay", 1024),
         ("steady_64KB_relay", 65536),
@@ -259,15 +273,37 @@ fn tcp_relay_benchmark(c: &mut Criterion) {
         b.iter(|| rt.block_on(relay_fixture.transfer_concurrent(16, 65536)));
     });
 
-    let baseline_fixture = rt.block_on(RelayFixture::start(true));
+    let baseline_fixture = rt.block_on(RelayFixture::start(RelayMode::CopyBidirectional));
     group.bench_function("steady_64KB_copy_bidirectional_baseline", |b| {
         b.iter(|| rt.block_on(baseline_fixture.transfer(65536)));
     });
 
     rt.block_on(relay_fixture.stop());
     rt.block_on(baseline_fixture.stop());
-
     group.finish();
+
+    let mut buffer_group = c.benchmark_group("tcp_relay_buffer_matrix");
+    for buffer_size in [16 * 1024, 32 * 1024, 64 * 1024] {
+        let fixture = rt.block_on(RelayFixture::start(RelayMode::Relay(RelayOptions::new(
+            NonZeroUsize::new(buffer_size).unwrap(),
+            HalfClosePolicy::Drain,
+        ))));
+        let label = format!("{buffer_size}_bytes");
+        buffer_group.bench_function(format!("{label}_1KB"), |b| {
+            b.iter(|| rt.block_on(fixture.transfer(1024)));
+        });
+        buffer_group.bench_function(format!("{label}_64KB"), |b| {
+            b.iter(|| rt.block_on(fixture.transfer(65536)));
+        });
+        buffer_group.bench_function(format!("{label}_1MB"), |b| {
+            b.iter(|| rt.block_on(fixture.transfer(1024 * 1024)));
+        });
+        buffer_group.bench_function(format!("{label}_16x_64KB"), |b| {
+            b.iter(|| rt.block_on(fixture.transfer_concurrent(16, 65536)));
+        });
+        rt.block_on(fixture.stop());
+    }
+    buffer_group.finish();
 }
 
 criterion_group!(benches, tcp_relay_benchmark);

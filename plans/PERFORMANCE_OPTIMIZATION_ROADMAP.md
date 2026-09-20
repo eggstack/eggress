@@ -2,7 +2,7 @@
 
 ## Status
 
-**IMPLEMENTED; EVIDENCE POLISH OPEN — 2026-09-20**
+**IMPLEMENTED — 2026-09-20**
 
 ## Baseline
 
@@ -97,7 +97,7 @@ Both may be worth tuning, but the current benchmark suite does not provide enoug
 | 1 | [`PERFORMANCE_PHASE_1_TLS_AND_CONNECTION_SETUP.md`](PERFORMANCE_PHASE_1_TLS_AND_CONNECTION_SETUP.md) | Implemented | Cache/build TLS state at the correct lifetime and remove redundant TCP/UDP connection setup work. |
 | 2 | [`PERFORMANCE_PHASE_2_RELAY_ROUTING_UDP_HOT_PATHS.md`](PERFORMANCE_PHASE_2_RELAY_ROUTING_UDP_HOT_PATHS.md) | Implemented | Remove generic relay split synchronization, lock-backed health reads, and O(1) UDP flow accounting. |
 | 3 | [`PERFORMANCE_PHASE_3_BENCHMARK_AND_QUALIFICATION.md`](PERFORMANCE_PHASE_3_BENCHMARK_AND_QUALIFICATION.md) | Implemented; evidence follow-up required | Establish path-accurate benchmark surfaces and initial qualification. |
-| 4 | [`PERFORMANCE_EVIDENCE_AND_DOCUMENTATION_POLISH.md`](PERFORMANCE_EVIDENCE_AND_DOCUMENTATION_POLISH.md) | Ready | Close same-host before/after evidence, relay buffer matrix, prepared TLS-path evidence, and stale relay documentation. |
+| 4 | [`PERFORMANCE_EVIDENCE_AND_DOCUMENTATION_POLISH.md`](PERFORMANCE_EVIDENCE_AND_DOCUMENTATION_POLISH.md) | Implemented | Final evidence/documentation closure: same-host comparisons, relay buffer matrix, prepared TLS-path evidence, and stale relay documentation cleanup. |
 
 Do not split these into per-function plans unless implementation discovers a correctness blocker that cannot safely be handled inside the owning phase.
 
@@ -170,13 +170,9 @@ atomic summary, and standalone UDP admission maintains an exact owner-local
 aggregate. New Criterion fixtures exercise setup-inclusive and steady-state
 relay, route selection, actual standalone UDP flows, and TLS construction.
 
-Formal campaign closure remains open only for
-[`PERFORMANCE_EVIDENCE_AND_DOCUMENTATION_POLISH.md`](PERFORMANCE_EVIDENCE_AND_DOCUMENTATION_POLISH.md).
-The initial qualification record contains post-change observations but not the
-same-host pre-change comparisons required by acceptance criterion 11; it also
-does not contain the planned 16/32/64 KiB relay buffer matrix, and relay docs
-retain a few stale descriptions of the former pinned-future/select engine.
-
-The compatibility relay facade remains at two 64 KiB buffers with its bounded
-one-second drain, and UDP owned-buffer semantics remain unchanged while this
-evidence-only corrective pass is open.
+The final qualification record in
+[`docs/performance/BASELINE_2026_09_20.md`](../docs/performance/BASELINE_2026_09_20.md)
+contains same-host before/after observations, the relay buffer matrix, and
+prepared TLS-path component evidence. The compatibility relay facade remains
+at two 64 KiB buffers with its bounded one-second drain, and UDP owned-buffer
+semantics remain unchanged.
