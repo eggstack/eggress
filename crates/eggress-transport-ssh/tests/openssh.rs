@@ -19,22 +19,29 @@ struct OpenSsh {
 
 impl OpenSsh {
     async fn start() -> Option<Self> {
-        if !command_available("sshd") || !command_available("ssh-keygen") {
-            eprintln!("skipping OpenSSH transport test: sshd/ssh-keygen unavailable");
+        // Resolve absolute tool paths: sshd re-exec requires an absolute
+        // path, and a relative `sshd -D` fails to listen while the fixture
+        // would silently skip. Absolute paths work on old and new OpenSSH.
+        let Some(sshd) = command_path("sshd") else {
+            eprintln!("skipping OpenSSH transport test: sshd unavailable");
             return None;
-        }
+        };
+        let Some(ssh_keygen) = command_path("ssh-keygen") else {
+            eprintln!("skipping OpenSSH transport test: ssh-keygen unavailable");
+            return None;
+        };
 
         let dir = tempfile::tempdir().ok()?;
         let host_key = dir.path().join("host_key");
         let private_key = dir.path().join("client_key");
         run_checked(
-            Command::new("ssh-keygen")
+            Command::new(&ssh_keygen)
                 .args(["-q", "-t", "ed25519", "-N", "", "-f"])
                 .arg(&host_key),
         )
         .ok()?;
         run_checked(
-            Command::new("ssh-keygen")
+            Command::new(&ssh_keygen)
                 .args(["-q", "-t", "ed25519", "-N", "", "-f"])
                 .arg(&private_key),
         )
@@ -52,7 +59,7 @@ impl OpenSsh {
         );
         std::fs::write(&config, config_text).ok()?;
 
-        let child = Command::new("sshd")
+        let child = Command::new(&sshd)
             .args(["-D", "-e", "-f"])
             .arg(&config)
             .stdout(Stdio::null())
@@ -67,6 +74,10 @@ impl OpenSsh {
             private_key,
         };
         if !wait_for_port(fixture.addr).await {
+            eprintln!(
+                "OpenSSH fixture did not become ready; skipping (sshd: {})",
+                sshd.display()
+            );
             return None;
         }
         Some(fixture)
@@ -100,11 +111,17 @@ impl Drop for OpenSsh {
     }
 }
 
-fn command_available(command: &str) -> bool {
-    Command::new("sh")
-        .args(["-c", &format!("command -v {command} >/dev/null 2>&1")])
-        .status()
-        .is_ok_and(|status| status.success())
+fn command_path(command: &str) -> Option<PathBuf> {
+    let output = Command::new("sh")
+        .args(["-c", &format!("command -v {command}")])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let path = String::from_utf8_lossy(&output.stdout);
+    let path = path.lines().next()?.trim();
+    (!path.is_empty()).then(|| PathBuf::from(path))
 }
 
 fn run_checked(command: &mut Command) -> io::Result<()> {
@@ -124,11 +141,30 @@ async fn ephemeral_port() -> io::Result<u16> {
 }
 
 async fn wait_for_port(addr: SocketAddr) -> bool {
+    // Wait for the SSH banner, not just TCP acceptance. A bare TCP connect
+    // can succeed while sshd is still starting, and the first real handshake
+    // then fails with a transient "connection reset" that flakes CI under
+    // load. Reading the banner proves sshd is serving SSH.
     for _ in 0..100 {
-        if tokio::net::TcpStream::connect(addr).await.is_ok() {
-            return true;
+        if let Ok(mut stream) = tokio::net::TcpStream::connect(addr).await {
+            let mut banner = [0u8; 128];
+            match tokio::time::timeout(
+                Duration::from_millis(200),
+                tokio::io::AsyncReadExt::read(&mut stream, &mut banner),
+            )
+            .await
+            {
+                Ok(Ok(count)) if count > 0 => {
+                    if String::from_utf8_lossy(&banner[..count]).contains("SSH-") {
+                        return true;
+                    }
+                }
+                _ => {
+                    // Connected but no banner yet; keep polling.
+                }
+            }
         }
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
     }
     false
 }
@@ -162,15 +198,7 @@ async fn open_channel(
     target: SocketAddr,
     hop_index: usize,
 ) -> Result<BoxStream, SshTransportError> {
-    let stream: BoxStream = Box::new(tokio::net::TcpStream::connect(fixture.addr).await.unwrap());
-    cache
-        .open_tcp_channel(
-            fixture.key(hop_index),
-            stream,
-            &target.ip().to_string(),
-            target.port(),
-        )
-        .await
+    open_channel_with_key(cache, fixture.key(hop_index), fixture.addr, target).await
 }
 
 #[tokio::test]
@@ -208,7 +236,10 @@ async fn openssh_password_failure_is_redacted_and_reconnect_is_explicit() {
         Ok(_) => panic!("invalid password unexpectedly authenticated"),
         Err(error) => error,
     };
-    assert!(matches!(error, SshTransportError::AuthenticationFailed));
+    assert!(
+        matches!(error, SshTransportError::AuthenticationFailed),
+        "unexpected SSH error for wrong password: {error:?}"
+    );
     assert!(!error.to_string().contains("definitely-not-the-password"));
 
     let key = fixture.key(0);
@@ -262,16 +293,62 @@ async fn openssh_password_auth_and_direct_tcpip_echo_when_configured() {
     echo_task.abort();
 }
 
+async fn connect_ssh_stream(addr: SocketAddr) -> BoxStream {
+    // Retry the TCP connect itself: sshd may not have bound yet even though
+    // the fixture probe passed, or the port may briefly refuse under load.
+    let mut last_error = None;
+    for _ in 0..50 {
+        match tokio::net::TcpStream::connect(addr).await {
+            Ok(stream) => return Box::new(stream) as BoxStream,
+            Err(error) => {
+                last_error = Some(error);
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+    }
+    panic!(
+        "sshd at {addr} did not accept TCP connections: {}",
+        last_error
+            .map(|error| error.to_string())
+            .unwrap_or_default()
+    );
+}
+
 async fn open_channel_with_key(
     cache: &SshSessionCache,
     key: SshSessionKey,
     ssh_addr: SocketAddr,
     target: SocketAddr,
 ) -> Result<BoxStream, SshTransportError> {
-    let stream: BoxStream = Box::new(tokio::net::TcpStream::connect(ssh_addr).await.unwrap());
-    cache
-        .open_tcp_channel(key, stream, &target.ip().to_string(), target.port())
-        .await
+    // Retry transient transport errors while sshd finishes starting. A TCP
+    // connect can succeed before sshd serves SSH, so the first handshake may
+    // reset. Authentication decisions (AuthenticationFailed and friends) are
+    // terminal and returned immediately.
+    let mut attempts = 0;
+    loop {
+        attempts += 1;
+        let stream = match tokio::net::TcpStream::connect(ssh_addr).await {
+            Ok(stream) => Box::new(stream) as BoxStream,
+            Err(_) if attempts < 50 => {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                continue;
+            }
+            Err(error) => {
+                return Err(SshTransportError::Connection(error.to_string()));
+            }
+        };
+        match cache
+            .open_tcp_channel(key.clone(), stream, &target.ip().to_string(), target.port())
+            .await
+        {
+            Ok(channel) => return Ok(channel),
+            Err(SshTransportError::Connection(_)) if attempts < 50 => {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                continue;
+            }
+            Err(error) => return Err(error),
+        }
+    }
 }
 
 #[tokio::test]
@@ -286,15 +363,25 @@ async fn openssh_supports_concurrent_channels_over_one_cached_session() {
         let cache = cache.clone();
         let fixture_key = fixture.key(0);
         tasks.push(tokio::spawn(async move {
-            let stream: BoxStream = Box::new(
-                tokio::net::TcpStream::connect(("127.0.0.1", fixture_key.port))
+            // Each handshake attempt needs a fresh transport; retry transient
+            // connection resets while sshd finishes starting under load.
+            let mut attempts = 0;
+            let mut channel = loop {
+                attempts += 1;
+                let stream =
+                    connect_ssh_stream(SocketAddr::from(([127, 0, 0, 1], fixture_key.port))).await;
+                match cache
+                    .open_tcp_channel(fixture_key.clone(), stream, "127.0.0.1", echo_addr.port())
                     .await
-                    .unwrap(),
-            );
-            let mut channel = cache
-                .open_tcp_channel(fixture_key, stream, "127.0.0.1", echo_addr.port())
-                .await
-                .unwrap();
+                {
+                    Ok(channel) => break channel,
+                    Err(SshTransportError::Connection(_)) if attempts < 50 => {
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        continue;
+                    }
+                    Err(error) => panic!("concurrent channel failed: {error:?}"),
+                }
+            };
             channel.write_all(&[index]).await.unwrap();
             let mut received = [0; 1];
             channel.read_exact(&mut received).await.unwrap();
@@ -319,17 +406,29 @@ async fn openssh_chain_tunnels_second_ssh_hop_through_first() {
     let (echo_addr, echo_task) = start_echo().await;
     let cache = SshSessionCache::new_compatibility();
 
-    let first_transport: BoxStream =
-        Box::new(tokio::net::TcpStream::connect(first.addr).await.unwrap());
-    let through_first = cache
-        .open_tcp_channel(
-            first.key(0),
-            first_transport,
-            &second.addr.ip().to_string(),
-            second.addr.port(),
-        )
-        .await
-        .unwrap();
+    let through_first = {
+        let mut attempts = 0;
+        loop {
+            attempts += 1;
+            let transport = connect_ssh_stream(first.addr).await;
+            match cache
+                .open_tcp_channel(
+                    first.key(0),
+                    transport,
+                    &second.addr.ip().to_string(),
+                    second.addr.port(),
+                )
+                .await
+            {
+                Ok(channel) => break channel,
+                Err(SshTransportError::Connection(_)) if attempts < 50 => {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    continue;
+                }
+                Err(error) => panic!("first SSH hop failed: {error:?}"),
+            }
+        }
+    };
     let mut through_second = cache
         .open_tcp_channel(
             second.key(1),
@@ -364,12 +463,25 @@ async fn openssh_forwards_to_remote_unix_socket() {
             let _ = stream.write_all(&buffer[..count]).await;
         }
     });
-    let stream: BoxStream = Box::new(tokio::net::TcpStream::connect(fixture.addr).await.unwrap());
     let cache = SshSessionCache::new_compatibility();
-    let mut channel = cache
-        .open_unix_channel(fixture.key(0), stream, &socket_path.display().to_string())
-        .await
-        .unwrap();
+    let mut channel = {
+        let mut attempts = 0;
+        loop {
+            attempts += 1;
+            let stream = connect_ssh_stream(fixture.addr).await;
+            match cache
+                .open_unix_channel(fixture.key(0), stream, &socket_path.display().to_string())
+                .await
+            {
+                Ok(channel) => break channel,
+                Err(SshTransportError::Connection(_)) if attempts < 50 => {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    continue;
+                }
+                Err(error) => panic!("unix channel failed: {error:?}"),
+            }
+        }
+    };
     channel.write_all(b"unix").await.unwrap();
     let mut received = [0; 4];
     channel.read_exact(&mut received).await.unwrap();
@@ -384,11 +496,24 @@ async fn openssh_remote_tcp_forward_accepts_incoming_channel() {
         return;
     };
     let cache = SshSessionCache::new_compatibility();
-    let stream: BoxStream = Box::new(tokio::net::TcpStream::connect(fixture.addr).await.unwrap());
-    let mut forward = cache
-        .start_remote_tcp_forward(fixture.key(0), stream, "127.0.0.1", 0)
-        .await
-        .unwrap();
+    let mut forward = {
+        let mut attempts = 0;
+        loop {
+            attempts += 1;
+            let stream = connect_ssh_stream(fixture.addr).await;
+            match cache
+                .start_remote_tcp_forward(fixture.key(0), stream, "127.0.0.1", 0)
+                .await
+            {
+                Ok(forward) => break forward,
+                Err(SshTransportError::Connection(_)) if attempts < 50 => {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    continue;
+                }
+                Err(error) => panic!("remote forward failed: {error:?}"),
+            }
+        }
+    };
     let mut incoming = tokio::net::TcpStream::connect(("127.0.0.1", forward.port()))
         .await
         .unwrap();

@@ -147,11 +147,26 @@ async fn ephemeral_port() -> io::Result<u16> {
 }
 
 async fn wait_for_port(addr: SocketAddr) -> io::Result<()> {
+    // Wait for the SSH banner, not just TCP acceptance, so the first real
+    // handshake does not reset while sshd is still starting under load.
     for _ in 0..100 {
-        if tokio::net::TcpStream::connect(addr).await.is_ok() {
-            return Ok(());
+        if let Ok(mut stream) = tokio::net::TcpStream::connect(addr).await {
+            let mut banner = [0u8; 128];
+            match tokio::time::timeout(
+                Duration::from_millis(200),
+                tokio::io::AsyncReadExt::read(&mut stream, &mut banner),
+            )
+            .await
+            {
+                Ok(Ok(count)) if count > 0 => {
+                    if String::from_utf8_lossy(&banner[..count]).contains("SSH-") {
+                        return Ok(());
+                    }
+                }
+                _ => {}
+            }
         }
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
     }
     Err(io::Error::new(
         io::ErrorKind::TimedOut,
@@ -194,10 +209,26 @@ async fn pproxy_connector_ssh_transports_bytes() {
     let connector =
         eggress_embed::outbound::OutboundConnector::from_pproxy_uri(&fixture.key_uri()).unwrap();
 
-    let (mut stream, info) = connector
-        .connect_tcp(&echo_addr.ip().to_string(), echo_addr.port())
-        .await
-        .unwrap();
+    // Retry transient transport resets while sshd finishes starting. This
+    // path uses a valid key, so any error here is a startup race or a real
+    // bug; retrying a real bug just delays the same failure.
+    let (mut stream, info) = {
+        let mut attempts = 0;
+        loop {
+            attempts += 1;
+            match connector
+                .connect_tcp(&echo_addr.ip().to_string(), echo_addr.port())
+                .await
+            {
+                Ok(established) => break established,
+                Err(_) if attempts < 50 => {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    continue;
+                }
+                Err(error) => panic!("embed SSH connect failed: {error:?}"),
+            }
+        }
+    };
     assert_eq!(info.hop_count, 1);
     stream.write_all(b"embed-ssh-echo").await.unwrap();
     let mut received = [0; 14];
