@@ -938,6 +938,7 @@ dependencies = [
  "ipnet",
  "rcgen",
  "regex",
+ "rustls",
  "tokio",
  "tokio-util",
 ]

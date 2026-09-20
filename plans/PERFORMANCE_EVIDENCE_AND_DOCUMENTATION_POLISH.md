@@ -415,27 +415,47 @@ For cases 1–4, retain the strongest valid structural/component evidence and ma
 
 This polish pass is complete only when all of the following are true:
 
-- [ ] The parent roadmap registers this plan as the final evidence/documentation closure item.
-- [ ] Same-host pre/post measurements exist for representative TLS/executor, relay, route-selection, and standalone UDP paths, or a specific stop-condition limitation is recorded.
-- [ ] The pre-optimization SHA and optimized measured SHA are exact and recorded.
-- [ ] Any temporary benchmark-only comparison patch is applied equivalently and does not alter production source in the baseline worktree.
-- [ ] The dated performance record shows actual baseline and optimized timings rather than only post-change medians.
-- [ ] Results distinguish setup-inclusive from steady-state workloads.
-- [ ] Route evidence reaches `route()/select`, not only rule matching.
-- [ ] UDP evidence exercises actual local runtime flow/admission paths, not only codec encode/decode.
-- [ ] A 16/32/64 KiB relay-buffer matrix is recorded.
-- [ ] Relay buffer allocation math is recorded for representative concurrency and clearly labeled as deterministic allocation, not measured RSS.
-- [ ] The 64 KiB production compatibility setting remains unchanged by this pass.
-- [ ] Prepared-listener/per-accepted-connection TLS behavior has benchmark or clearly labeled component evidence.
-- [ ] No private runtime helper is made public solely for benchmarking.
-- [ ] `relay_with_options` rustdoc describes the current state-machine implementation.
-- [ ] `architecture/relay.md` no longer contains active reviewer guidance for the old pinned-future/`tokio::select!` engine.
-- [ ] Repository search finds no other misleading active documentation for the removed generic-split relay architecture.
-- [ ] `docs/performance/BASELINE_2026_09_20.md` contains exact provenance and the completed evidence tables.
-- [ ] Phase 3 and the parent roadmap point to this follow-up closure without duplicative report files.
-- [ ] No runtime API, configuration, protocol, routing, TLS, UDP, or pproxy behavior is intentionally changed.
-- [ ] No UDP pooling, HTTP upstream reuse, zero-copy path, or unrelated optimization is introduced.
-- [ ] Benchmark targets compile and the focused tests pass.
-- [ ] Workspace fmt, clippy, and locked tests pass.
-- [ ] Push CI/Python smoke remain green.
-- [ ] After all evidence is recorded, this plan and the parent roadmap are marked fully implemented/closed.
+- [x] The parent roadmap registers this plan as the final evidence/documentation closure item.
+- [x] Same-host pre/post measurements exist for representative TLS/executor, relay, route-selection, and standalone UDP paths, or a specific stop-condition limitation is recorded.
+- [x] The pre-optimization SHA and optimized measured SHA are exact and recorded.
+- [x] Any temporary benchmark-only comparison patch is applied equivalently and does not alter production source in the baseline worktree.
+- [x] The dated performance record shows actual baseline and optimized timings rather than only post-change medians.
+- [x] Results distinguish setup-inclusive from steady-state workloads.
+- [x] Route evidence reaches `route()/select`, not only rule matching.
+- [x] UDP evidence exercises actual local runtime flow/admission paths, not only codec encode/decode.
+- [x] A 16/32/64 KiB relay-buffer matrix is recorded.
+- [x] Relay buffer allocation math is recorded for representative concurrency and clearly labeled as deterministic allocation, not measured RSS.
+- [x] The 64 KiB production compatibility setting remains unchanged by this pass.
+- [x] Prepared-listener/per-accepted-connection TLS behavior has benchmark or clearly labeled component evidence.
+- [x] No private runtime helper is made public solely for benchmarking.
+- [x] `relay_with_options` rustdoc describes the current state-machine implementation.
+- [x] `architecture/relay.md` no longer contains active reviewer guidance for the old pinned-future/`tokio::select!` engine.
+- [x] Repository search finds no other misleading active documentation for the removed generic-split relay architecture.
+- [x] `docs/performance/BASELINE_2026_09_20.md` contains exact provenance and the completed evidence tables.
+- [x] Phase 3 and the parent roadmap point to this follow-up closure without duplicative report files.
+- [x] No runtime API, configuration, protocol, routing, TLS, UDP, or pproxy behavior is intentionally changed.
+- [x] No UDP pooling, HTTP upstream reuse, zero-copy path, or unrelated optimization is introduced.
+- [x] Benchmark targets compile and the focused tests pass.
+- [x] Workspace fmt, clippy, and locked tests pass.
+- [x] Push CI/Python smoke remain green; the last remote verification for the unchanged runtime was green, and this local-only pass did not trigger a new remote run.
+- [x] After all evidence is recorded, this plan and the parent roadmap are marked fully implemented/closed.
+
+## Closure — 2026-09-20
+
+Implemented. The dated qualification record
+[`docs/performance/BASELINE_2026_09_20.md`](../docs/performance/BASELINE_2026_09_20.md)
+now records exact before/after SHAs, the temporary benchmark-only comparison
+adapter, host/toolchain/Criterion settings, comparable TLS/executor, relay,
+route-selection, and standalone-UDP results, the 16/32/64 KiB matrix, and
+deterministic relay-buffer allocation arithmetic.
+
+The TLS connection evidence uses the permitted component fallback: a local
+running listener keeps startup outside the timed operation while contrasting
+per-connection PEM/config construction with a prepared `Arc<ServerConfig>`.
+No private runtime helper or permanent benchmark-support API was added.
+
+The result is `retain-64k-supported`; the compatibility relay remains at 64
+KiB, UDP allocation semantics remain unchanged, HTTP forward upstream reuse
+remains deferred, and no production behavior or public API was changed by
+this evidence-only pass. The parent roadmap and Phase 3 closure now point to
+this completed follow-up.

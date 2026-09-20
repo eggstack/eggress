@@ -96,8 +96,8 @@ its boxes straight into this generic surface.
 6. A drain failure returns `RelayFailure` for the surviving direction; a
    drain expiry drops the survivor and returns
    `RelayTermination::DrainTimedOut { first_closed }` with current counts.
-7. Dropping the outer future drops both direction futures and all owned
-   halves — no detached task can outlive the relay.
+7. Dropping the outer future drops both directional states, both streams, and
+   all owned halves — no detached task can outlive the relay.
 
 ## Half-close semantics
 
