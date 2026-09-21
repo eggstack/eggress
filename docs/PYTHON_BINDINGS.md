@@ -202,7 +202,7 @@ Async handle to a running service. All methods return awaitables.
 conn = Connection('socks5://:1080', 'http://proxy:8080')
 ```
 
-Accepts pproxy-style URI arguments (variadic `*uris`). Translates them to eggress TOML configuration, creates an embedded service, and returns a managed connection object.
+Accepts pproxy-style URI arguments (variadic `*uris`). Builds shared semantic translation intermediates once, then projects them to native typed config/runtime forms for startup (no TOML serialize/parse round-trip) and to TOML for display/migration/diagnostics; creates an embedded service, and returns a managed connection object. TOML is a presentation/compatibility projection, not the execution path.
 
 ### Properties
 
@@ -914,22 +914,31 @@ and comprehensive API inventory documents under `docs/python/`.
   Concurrent `start()` calls on the same `EggressService` will fail.
 - **No listener hot-reload**: Adding or removing listeners requires a full
   restart.
-- **No Unix-domain sockets**: Not yet supported by the underlying Rust runtime.
+- **Unix-domain sockets**: supported by the Rust runtime
+  (`UnixListenerConfig`, compiled Unix listener state, `unix_socket` runtime
+  tests). Distinguish three layers: (1) runtime capability exists, (2) generic
+  `RuntimeConfig`/`EggressConfig::from_toml` exposes it through the
+  embed/Python service facade, (3) no dedicated Python Unix-listener
+  convenience class exists — configure via TOML/`EggressConfig`, not via a
+  special Python object.
 - **Platform-specific wheels**: Each platform/architecture requires its own
   built wheel.
 - **pproxy compat**: Shadowsocks TCP uses standard SIP003 AEAD framing
-  (wire-compatible with `shadowsocks-rust`/`ssserver`/`sslocal`). Inbound
-  Shadowsocks listeners are available via the Rust binary; the embed API
-  (which the Python bindings wrap) exposes TCP/UDP upstream Shadowsocks and
-  inbound listeners for SOCKS5/HTTP only in the current release. No Trojan
-  inbound listeners. Legacy stream ciphers require a wheel built with the
-  optional `legacy-crypto` feature and remain compatibility-only. SSH upstreams
-  are available only in wheels built with the optional ssh feature; SSH remains
+  (wire-compatible with `shadowsocks-rust`/`ssserver`/`sslocal`). Runtime
+  capability, service-facade exposure, and dedicated Python convenience API
+  are distinct: the generic `RuntimeConfig` path supports Shadowsocks/Trojan
+  listener sections; the embed/Python service facade exposes TCP/UDP upstream
+  Shadowsocks plus SOCKS5/HTTP inbound convenience paths in the current
+  release. Legacy stream ciphers require a wheel built with the optional
+  `legacy-crypto` feature and remain compatibility-only. SSH upstreams are
+  available only in wheels built with the optional `ssh` feature; SSH remains
   upstream-only. Linux pproxy daemon mode requires the optional
   `pproxy-daemon` feature. Multiple remotes default to round-robin.
-- **mypy**: PyO3 native types (`_inner` attribute) are invisible to mypy,
-  producing ~20 expected false-positive errors. This is known pre-release
-  typing debt. A future release will add `.pyi` stubs or type wrappers.
+- **mypy/typing**: `py.typed` marker plus maintained `.pyi` stubs ship for all
+  public modules (see “Type stubs” below). PyO3 private-implementation
+  attributes may still have limitations where tests/type checking prove them;
+  runtime/stub agreement is covered by public-export and API-boundary tests.
+  Do not claim complete static-typing quality beyond what is tested.
 
 ## Relationship to pproxy compatibility
 

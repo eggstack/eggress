@@ -11,11 +11,14 @@ full-service facade (`eggress_embed::outbound::*` stays source-compatible).
 
 | File | Role |
 |---|---|
-| `src/lib.rs` | Crate root; public re-exports |
+| `src/lib.rs` | Crate root; stable public facade (`OutboundConnector`, `OutboundInfo`, typed errors, `UdpAssociation`, `OUTBOUND_MAX_DATAGRAM_SIZE`, executor/helpers) |
 | `src/hops.rs` | One `HopHandler` per upstream protocol + `target_to_socks_addr` (`#[doc(hidden)]` shared seam) |
 | `src/executor.rs` | `OutboundExecutorOptions`, `build_chain_executor()` / `build_chain_executor_with_options()` |
 | `src/classify.rs` | Single typed classifier (`ClassifiedKind`, `classify_io_kind` / `classify_connect_error` / `classify_handshake_source`, `#[doc(hidden)]`) |
-| `src/connector.rs` | `OutboundConnector`, `OutboundInfo`, `OutboundConnectError` family, `UdpAssociation` (feature `udp`), TOML/pproxy/native constructors |
+| `src/connector.rs` | `OutboundConnector`, `OutboundInfo`, `OutboundRoute`, TOML/pproxy/native constructors, TCP execution (`connect_tcp*`), `associate_udp` orchestration; inline tests retained for locality |
+| `src/connect_error.rs` | Typed TCP failure surface: `OutboundConnectError`/`Kind`/`Stage`, `ClassifiedFailure`, classifier adaptation, protocol-label normalization (redacted Display) |
+| `src/udp.rs` | Listener-free UDP lifecycle: `UdpAssociation`, direct/SOCKS5 send/recv, resolution/conversion/accounting (`udp` feature; frozen capability, no pooling) |
+| `src/compat.rs` | pproxy boundary: constructor adaptation, credential-term extraction, redaction/scrubbing (over-redaction, bracket-aware), compat error mapping (`pproxy-compat` feature) |
 | `src/error.rs` | `OutboundError` (Config/Runtime/UnsupportedFeature/Internal, redacted) |
 
 ## Public API surface

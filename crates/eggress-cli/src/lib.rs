@@ -551,4 +551,34 @@ mod production_registry_tests {
             "production registry must cover Shadowsocks (got: {outcome})"
         );
     }
+
+    /// Maintenance Phase 3: freeze the shared `pproxy --test` target
+    /// contract consumed by both the CLI (`pproxy --test`,
+    /// `eggress upstream test`) and the Python `run_pproxy_test()` helper
+    /// (which calls `parse_pproxy_test_target` + `run_upstream_test`
+    /// directly). Agreement is by construction (same code), pinned here with
+    /// local fixtures only (no network).
+    #[test]
+    fn pproxy_test_target_parsing_contract() {
+        // host:port fast path (used by `eggress upstream test`).
+        let t = parse_pproxy_test_target("example.com:443").expect("host:port must parse");
+        assert_eq!(t.port, 443);
+        // URL-shaped targets with default ports.
+        let t = parse_pproxy_test_target("http://example.com").expect("http URL must parse");
+        assert_eq!(t.port, 80);
+        let t = parse_pproxy_test_target("https://example.com").expect("https URL must parse");
+        assert_eq!(t.port, 443);
+        let t =
+            parse_pproxy_test_target("http://example.com:8080").expect("explicit port must parse");
+        assert_eq!(t.port, 8080);
+        // IPv4 / IPv6 handling (host:port fast path; URL IPv6 bracket
+        // handling stays fail-closed as in the baseline).
+        let t = parse_pproxy_test_target("127.0.0.1:1080").expect("IPv4 host:port must parse");
+        assert_eq!(t.port, 1080);
+        let t = parse_pproxy_test_target("[::1]:1080").expect("IPv6 host:port must parse");
+        assert_eq!(t.port, 1080);
+        // Unsupported scheme fails closed (no silent fallback).
+        assert!(parse_pproxy_test_target("socks5://example.com:1080").is_err());
+        assert!(parse_pproxy_test_target("http://").is_err());
+    }
 }

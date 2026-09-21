@@ -2,7 +2,7 @@
 
 ## Status
 
-**PLANNED — 2026-09-21**
+**IMPLEMENTED — 2026-09-21**
 
 ## Parent
 
@@ -177,4 +177,12 @@ Do not mark the phase implemented without one of these explicit outcomes.
 
 ## Closure record
 
-Fill in place with Outcome A or Outcome B, implementation/evidence commit, dependency tree evidence, focused test names, and full-suite result.
+## Closure record
+
+Outcome B — dependency retained.
+
+`run_pproxy_test()` consumes `eggress_cli::parse_pproxy_test_target()` + `run_upstream_test()` (chain-aware tester, same chain/timeout/exit/redaction/no-listener contract). Existing owner APIs (`OutboundConnector`/core/config) could not reproduce exact semantics without new public API or duplicated tester (both forbidden); `test_upstream_connect()` stays a distinct raw probe. No public Rust/Python/CLI change; no duplication.
+
+Evidence: new `eggress-cli` unit test `pproxy_test_target_parsing_contract` (URL/IPv4/IPv6/defaults/fail-closed, local only); `cargo test -p eggress-cli --locked --lib` (11 passed); `cargo tree -p eggress-python` still includes `eggress-cli` by design; justification in `architecture/python-bindings.md` (Outcome B).
+
+(End of file - total 187 lines)

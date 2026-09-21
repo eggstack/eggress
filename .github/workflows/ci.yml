@@ -50,6 +50,8 @@ jobs:
         run: >-
           cargo check -p eggress-outbound --locked --no-default-features &&
           cargo check -p eggress-outbound --locked --no-default-features
+          --features toml &&
+          cargo check -p eggress-outbound --locked --no-default-features
           --features pproxy-compat &&
           cargo check -p eggress-outbound --locked --no-default-features
           --features ssh &&

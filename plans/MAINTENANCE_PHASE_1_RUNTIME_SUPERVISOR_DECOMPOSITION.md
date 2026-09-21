@@ -2,7 +2,7 @@
 
 ## Status
 
-**PLANNED — 2026-09-21**
+**IMPLEMENTED — 2026-09-21**
 
 ## Parent
 
@@ -198,4 +198,10 @@ A smaller extraction that preserves explicit ownership is preferable to a genera
 
 ## Closure record
 
-Fill in place with implementation commit, extracted private boundaries, focused lifecycle evidence, feature slices run, and any intentionally retained large block.
+## Closure record
+
+Implementation: extracted private `supervisor/listeners.rs` (`PreparedListenerSet`, `PreparedUnix/TransparentListener`, `prepare_listener_set`, `publish_listener_addresses`), `supervisor/services.rs` (`apply_compatibility_proxy`, `spawn_reverse_services`, `prebind_and_spawn_admin`), `supervisor/signals.rs` (`run_signal_loop`). `run()` is now an orchestrator (health → prepare/publish → UDP/accept loops → auxiliary → signals → `shutdown_ordered` single authority). No public API/config/feature/metric/log change; readiness/SIGHUP/shutdown ordering preserved.
+
+Evidence: `cargo test -p eggress-runtime --locked` (345 passed), `lifecycle_invariants` (18 passed), `eggress-embed --test start_stop` (9), `--test reload` (6); `cargo check` base + `common`/`extended`/`operations,reverse` slices; `architecture/runtime.md` module map updated.
+
+(End of file - total 206 lines)

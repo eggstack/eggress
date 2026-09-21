@@ -20,19 +20,17 @@
 //! kind/stage/hop/protocol facts are diagnostic, not retry recommendations.
 
 pub mod classify;
+mod compat;
+mod connect_error;
 mod connector;
 mod error;
 mod executor;
 mod hops;
+mod udp;
 
-#[cfg(not(feature = "udp"))]
+pub use connect_error::{OutboundConnectError, OutboundConnectErrorKind, OutboundConnectStage};
 pub use connector::OUTBOUND_MAX_DATAGRAM_SIZE;
-pub use connector::{
-    OutboundConnectError, OutboundConnectErrorKind, OutboundConnectStage, OutboundConnector,
-    OutboundInfo,
-};
-#[cfg(feature = "udp")]
-pub use connector::{UdpAssociation, OUTBOUND_MAX_DATAGRAM_SIZE};
+pub use connector::{OutboundConnector, OutboundInfo};
 pub use error::OutboundError;
 pub use executor::{
     build_chain_executor, build_chain_executor_with_options, OutboundExecutorOptions,
@@ -41,3 +39,5 @@ pub use executor::{
 /// session code (`#[doc(hidden)]` shared seam, not end-user API).
 #[doc(hidden)]
 pub use hops::target_to_socks_addr;
+#[cfg(feature = "udp")]
+pub use udp::UdpAssociation;

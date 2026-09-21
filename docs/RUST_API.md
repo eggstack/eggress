@@ -61,10 +61,33 @@ approved major-version strategy exists.
 
 The low-maintenance gate is ordinary Rust compilation and focused construction
 tests. It intentionally does not add `cargo-semver-checks`, public-API JSON,
-nightly rustdoc, or a generated API database to routine CI.
+nightly rustdoc, or a generated API database to routine CI. A manual
+`cargo-semver-checks` invocation was evaluated and rejected for ordinary CI:
+it would require nightly/API-baseline maintenance without catching the
+representative paths already covered below.
 
-Required feature slices are listed in `AGENTS.md` and cover outbound base,
-TOML, pproxy, SSH, and UDP combinations plus embed SSH/pproxy combinations.
-Representative contract tests exercise the embed config handoff, outbound
-constructors, and the compatibility re-export; lower-level crates retain
-their existing unit and integration tests as executable qualification.
+Required feature slices are listed in `AGENTS.md` and enforced in
+`.github/workflows/ci.yml`:
+
+- `eggress-outbound`: base, `toml`, `pproxy-compat`, `ssh`, `ssh+pproxy-compat`, `udp`;
+- `eggress-embed`: `ssh`, `pproxy-compat`, `ssh+pproxy-compat`.
+
+Representative (not exhaustive) downstream-shaped compile contracts:
+
+- `eggress-embed/tests/public_api.rs`: embed config handoff
+  (`EggressConfig::from_toml_str`/`from_compiled`), outbound authority
+  (`OutboundConnector::direct`/`from_chain`) plus `eggress_embed::outbound`
+  compatibility re-export, relay/routing/core paths, plus Phase 4
+  `supporting_config_runtime_paths_compile` (`eggress-config` TOML compile,
+  `eggress-runtime` supervisor/state/classify signatures) and
+  `protocol_representative_paths_compile` (HTTP/SOCKS via URI + `HttpDetector`/
+  `ConnectRequest`);
+- `eggress-server/tests/public_api.rs`: `NoopMetrics`, `UdpAssociationHandle`,
+  `SessionReport`, `ConnectionConfig`, `ConnectionContext`, `AuthReuseCache`;
+- lower-level crates retain their existing unit/integration tests as semantic
+  qualification; ordinary crate tests own behavior, contracts own import paths.
+
+Compatibility re-exports (`eggress_embed::outbound::*`, server re-exports)
+remain covered; private implementation movement (Phases 1–2) does not change
+public paths. No public item or feature changes visibility, name, location,
+default, or signature in this phase.

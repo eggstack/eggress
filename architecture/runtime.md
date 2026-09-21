@@ -8,15 +8,18 @@ health probes, reverse routing gate, and ordered shutdown.
 
 | File | Role |
 |------|------|
-| `src/supervisor.rs` | Orchestration facade: `ServiceSupervisor` public API (`start`/`start_from_config`/`start_from_config_with_compatibility` + deprecated legacy `start_from_config_with_options` shim/`run()`/`reload_config()`), `CompatibilityRuntimeHooks` + legacy `CompatibilityOptions` adapter + `SystemProxyRequest`, listener-prep dispatch, transport accept loops, admin/signal orchestration |
+| `src/supervisor.rs` | Orchestration facade: `ServiceSupervisor` public API (`start`/`start_from_config`/`start_from_config_with_compatibility` + deprecated legacy `start_from_config_with_options` shim/`run()`/`reload_config()`), `CompatibilityRuntimeHooks` + legacy `CompatibilityOptions` adapter + `SystemProxyRequest`, run-phase orchestration (health → listeners → UDP/accept loops → auxiliary → signals → shutdown) |
 | `src/supervisor/startup.rs` | `init_supervisor()` (feature gates, bind pre-validation, metrics/UDP/health wiring, `RuntimeState` assembly), `resolve_udp_global_limit()`, `build_ssh_sessions(allow_insecure_host_keys: bool)` |
 | `src/supervisor/state.rs` | `RuntimeState` (snapshot, routing, session + runtime metrics, readiness, accounting, UDP registry, health, reverse state) + canonical `apply_compiled_config` transaction |
 | `src/supervisor/reload.rs` | `ReloadResult`, `classify_listeners()` + `classify_reload_config()` (restart-required contract) |
 | `src/supervisor/connection.rs` | `PreparedListener`/`PreparedQuicListener`, per-generation prepared TLS/UDP state, shared `wrap_tls_server()`, `build_connection_config()` (`ConnectionBuildParams`, `InboundSecurity`) |
+| `src/supervisor/listeners.rs` | Private listener-preparation phase: `PreparedListenerSet` (`prepared`/`prepared_quic`/`unix`/`transparent`), `PreparedUnixListener`/`PreparedTransparentListener` (named replacements for 11-tuples), `prepare_listener_set()` (standard/Unix/transparent/QUIC bind + TLS + UDP service, sync failures before readiness), `publish_listener_addresses()` (startup-captured topology) |
+| `src/supervisor/services.rs` | Private auxiliary-service phase: `apply_compatibility_proxy()` (`--sys` select/apply, fail-closed without `operations`), `spawn_reverse_services()` (`reverse` servers/clients from snapshot), `prebind_and_spawn_admin()` (`operations` pre-bind before readiness, spawn last-shutdown task) |
+| `src/supervisor/signals.rs` | Private readiness/signal phase: `run_signal_loop()` (readiness after signal install, cancel/CTRL-C/SIGTERM, file-backed SIGHUP via `apply_compiled_config`, reload metrics) |
 | `src/supervisor/udp_runtime.rs` | `RuntimeUdpService` (`UdpService` impl), listener-generation `make_udp_service()`, `compute_advertise_ip()`, `prepare_shadowsocks_udp_relay()` |
 | `src/supervisor/operations.rs` | `RuntimeAdminListenerInfos` (`AdminSnapshotProvider` over the live snapshot) |
 | `src/supervisor/accounting.rs` | `ListenerConnectionSlot` (per-listener limits), `ActiveConnectionGuard` (exactly-once global accounting), accept-error backoff |
-| `src/supervisor/shutdown.rs` | `ShutdownPlan` + `shutdown_ordered()` (readiness false, listener stop, drain, admin last) |
+| `src/supervisor/shutdown.rs` | `ShutdownPlan` + `shutdown_ordered()` (single ordered shutdown authority: readiness false, listener stop, drain, admin last) |
 | `src/snapshot.rs` | `CompiledRuntimeSnapshot { generation, upstreams, router, timeouts, listeners, admin, reverse_servers, reverse_clients }`; `compile_runtime_snapshot(config, previous)` reuses unchanged upstream `Arc`s via ptr-identity when chain+health are identical; increments generation monotonically |
 | `src/reverse.rs` | `RouteEngineTargetResolver` gates reverse-client targets through `SharedRoutingService::decide()` with `transport=ReverseTcp`; routing is an authorization gate, not a redirect |
 | `src/platform.rs` | `PlatformCapability`, `CapabilityStatus`, `check_capability[_with_overrides]()`, `platform_info()` |

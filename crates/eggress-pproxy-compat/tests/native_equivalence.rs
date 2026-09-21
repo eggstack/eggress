@@ -30,6 +30,35 @@ fn assert_runtime_equivalent(
     assert_eq!(native.upstreams.len(), via_toml.upstreams.len());
     assert_eq!(native.groups.len(), via_toml.groups.len());
     assert_eq!(native.rules.len(), via_toml.rules.len());
+    // Maintenance Phase 5: dual-mapped listener/group fields must agree
+    // (auth/TLS/UDP presence, group scheduler). Compare semantic presence,
+    // not raw TOML formatting, so omission/default distinctions are caught.
+    for (index, (left, right)) in native
+        .listeners
+        .iter()
+        .zip(via_toml.listeners.iter())
+        .enumerate()
+    {
+        assert_eq!(
+            left.auth.is_some(),
+            right.auth.is_some(),
+            "listener {index} auth presence"
+        );
+        assert_eq!(
+            left.tls.is_some(),
+            right.tls.is_some(),
+            "listener {index} TLS presence"
+        );
+        assert_eq!(
+            left.udp.as_ref().map(|u| (u.enabled, u.mode)),
+            right.udp.as_ref().map(|u| (u.enabled, u.mode)),
+            "listener {index} UDP mode/enabled"
+        );
+    }
+    for (index, (left, right)) in native.groups.iter().zip(via_toml.groups.iter()).enumerate() {
+        assert_eq!(left.id, right.id, "group {index} id");
+        assert_eq!(left.scheduler, right.scheduler, "group {index} scheduler");
+    }
     for (index, (left, right)) in native
         .upstreams
         .iter()
@@ -228,4 +257,35 @@ fn unsupported_and_warnings_identical() {
     assert_eq!(native.warnings(), toml_output.warnings());
     assert_eq!(native.unsupported(), toml_output.unsupported());
     assert!(!native.unsupported().is_empty());
+}
+
+#[test]
+fn listener_auth_and_multi_remote_group_equivalent() {
+    // Maintenance Phase 5: listener auth + upstream/group duality.
+    // Local URI with credentials must produce identical auth presence in both
+    // projections; multiple remotes must agree on group scheduler/members.
+    let (args, locals, chains) = case(
+        "http://user1:pass1@127.0.0.1:8080",
+        &["socks5://127.0.0.1:1080", "http://127.0.0.1:8081"],
+    );
+    let native = translate_to_runtime_config(&args, &locals, &chains).expect("native auth");
+    let via_toml = compile_via_toml(&args, &locals, &chains);
+    assert_runtime_equivalent(&native.runtime, &via_toml);
+    assert!(!native.runtime.listeners.is_empty());
+    assert!(
+        native.runtime.listeners[0].auth.is_some(),
+        "auth listener must carry credentials in native projection"
+    );
+    assert!(
+        via_toml.listeners[0].auth.is_some(),
+        "auth listener must carry credentials in TOML projection"
+    );
+    let toml_output = translate_from_uris(&args, &locals, &chains).expect("toml");
+    assert_eq!(native.warnings(), toml_output.warnings());
+    assert_eq!(native.unsupported(), toml_output.unsupported());
+    // Credentials must not leak into redacted views (TOML config itself
+    // carries auth for execution; redaction applies to display/logging).
+    for chain in chains.iter() {
+        assert!(!chain.redacted_display().contains("pass1"));
+    }
 }

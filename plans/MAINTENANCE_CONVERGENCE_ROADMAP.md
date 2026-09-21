@@ -2,7 +2,7 @@
 
 ## Status
 
-**PLANNED — 2026-09-21**
+**IMPLEMENTED — 2026-09-21**
 
 ## Baseline
 
@@ -83,11 +83,11 @@ This is documentation-state debt, not missing runtime capability.
 
 | Order | Plan | Status | Purpose |
 |---|---|---|---|
-| 1 | [`MAINTENANCE_PHASE_1_RUNTIME_SUPERVISOR_DECOMPOSITION.md`](MAINTENANCE_PHASE_1_RUNTIME_SUPERVISOR_DECOMPOSITION.md) | Planned | Extract private runtime preparation/execution phases without changing lifecycle semantics. |
-| 2 | [`MAINTENANCE_PHASE_2_OUTBOUND_INTERNAL_DECOMPOSITION.md`](MAINTENANCE_PHASE_2_OUTBOUND_INTERNAL_DECOMPOSITION.md) | Planned | Split the outbound implementation hotspot into private domains while freezing every public path and behavior. |
-| 3 | [`MAINTENANCE_PHASE_3_PYTHON_CLI_OWNERSHIP.md`](MAINTENANCE_PHASE_3_PYTHON_CLI_OWNERSHIP.md) | Planned | Reassess and, only if behaviorally exact, remove the binding-to-CLI operational dependency using existing owner APIs. |
-| 4 | [`MAINTENANCE_PHASE_4_PUBLIC_API_AND_FEATURE_QUALIFICATION.md`](MAINTENANCE_PHASE_4_PUBLIC_API_AND_FEATURE_QUALIFICATION.md) | Planned | Expand lightweight public-path compile contracts and align CI feature slices with the maintained contract. |
-| 5 | [`MAINTENANCE_PHASE_5_DOCUMENTATION_AND_COMPAT_PROJECTION_CONVERGENCE.md`](MAINTENANCE_PHASE_5_DOCUMENTATION_AND_COMPAT_PROJECTION_CONVERGENCE.md) | Planned | Reconcile stale maintained docs and strengthen native/TOML compatibility projection drift protection without redesign. |
+| 1 | [`MAINTENANCE_PHASE_1_RUNTIME_SUPERVISOR_DECOMPOSITION.md`](MAINTENANCE_PHASE_1_RUNTIME_SUPERVISOR_DECOMPOSITION.md) | Implemented | Extract private runtime preparation/execution phases without changing lifecycle semantics. |
+| 2 | [`MAINTENANCE_PHASE_2_OUTBOUND_INTERNAL_DECOMPOSITION.md`](MAINTENANCE_PHASE_2_OUTBOUND_INTERNAL_DECOMPOSITION.md) | Implemented | Split the outbound implementation hotspot into private domains while freezing every public path and behavior. |
+| 3 | [`MAINTENANCE_PHASE_3_PYTHON_CLI_OWNERSHIP.md`](MAINTENANCE_PHASE_3_PYTHON_CLI_OWNERSHIP.md) | Implemented | Reassess and, only if behaviorally exact, remove the binding-to-CLI operational dependency using existing owner APIs. |
+| 4 | [`MAINTENANCE_PHASE_4_PUBLIC_API_AND_FEATURE_QUALIFICATION.md`](MAINTENANCE_PHASE_4_PUBLIC_API_AND_FEATURE_QUALIFICATION.md) | Implemented | Expand lightweight public-path compile contracts and align CI feature slices with the maintained contract. |
+| 5 | [`MAINTENANCE_PHASE_5_DOCUMENTATION_AND_COMPAT_PROJECTION_CONVERGENCE.md`](MAINTENANCE_PHASE_5_DOCUMENTATION_AND_COMPAT_PROJECTION_CONVERGENCE.md) | Implemented | Reconcile stale maintained docs and strengthen native/TOML compatibility projection drift protection without redesign. |
 
 ## Sequencing
 
@@ -148,19 +148,28 @@ Run the OpenSSH regression only when SSH-facing code/contracts are touched. Run 
 
 ## Campaign acceptance criteria
 
-- [ ] Runtime orchestration is internally decomposed enough that listener preparation, auxiliary service startup, run-loop/signals, and shutdown coordination have explicit private ownership boundaries.
-- [ ] Runtime startup/readiness/reload/shutdown behavior is unchanged and covered by focused lifecycle tests.
-- [ ] Outbound implementation domains are separated privately without changing any public item or compatibility re-export.
-- [ ] The Python-to-CLI dependency is either removed through existing stable owner APIs with exact behavior preservation, or retained with concrete evidence that removal would violate campaign constraints.
-- [ ] No duplicated operational helper is introduced merely to eliminate a dependency edge.
-- [ ] Representative downstream-style compile contracts cover important supporting Rust library surfaces in addition to the preferred facades.
-- [ ] CI feature-slice checks match the maintained documented slices, including the outbound TOML slice.
-- [ ] Ordinary CI remains bounded; no exhaustive feature matrix or mandatory API-diff database is added.
-- [ ] Maintained Python documentation no longer describes implemented Unix listener/stub capabilities as absent.
-- [ ] Native/TOML pproxy projection equivalence remains protected without eliminating either supported path.
-- [ ] No supported Rust/Python/CLI/config/protocol/transport/feature/compatibility surface changes.
-- [ ] Workspace Rust and Python gates are green.
+- [x] Runtime orchestration is internally decomposed enough that listener preparation, auxiliary service startup, run-loop/signals, and shutdown coordination have explicit private ownership boundaries.
+- [x] Runtime startup/readiness/reload/shutdown behavior is unchanged and covered by focused lifecycle tests.
+- [x] Outbound implementation domains are separated privately without changing any public item or compatibility re-export.
+- [x] The Python-to-CLI dependency is either removed through existing stable owner APIs with exact behavior preservation, or retained with concrete evidence that removal would violate campaign constraints.
+- [x] No duplicated operational helper is introduced merely to eliminate a dependency edge.
+- [x] Representative downstream-style compile contracts cover important supporting Rust library surfaces in addition to the preferred facades.
+- [x] CI feature-slice checks match the maintained documented slices, including the outbound TOML slice.
+- [x] Ordinary CI remains bounded; no exhaustive feature matrix or mandatory API-diff database is added.
+- [x] Maintained Python documentation no longer describes implemented Unix listener/stub capabilities as absent.
+- [x] Native/TOML pproxy projection equivalence remains protected without eliminating either supported path.
+- [x] No supported Rust/Python/CLI/config/protocol/transport/feature/compatibility surface changes.
+- [x] Workspace Rust and Python gates are green.
 
 ## Closure record
 
-Fill this section in place during implementation. Do not create a separate completion report unless a phase uncovers a new issue outside this campaign's constraints.
+All five phases landed in one maintenance convergence commit (see `git log --oneline -1`):
+
+- Phase 1 (runtime): private `listeners`/`services`/`signals` extraction; `run()` orchestrates; lifecycle unchanged.
+- Phase 2 (outbound): private `connect_error`/`udp`/`compat` extraction; public facade frozen.
+- Phase 3 (python/cli): Outcome B retain (`parse_pproxy_test_target` + `run_upstream_test` shared tester); contract test added.
+- Phase 4 (api/features): outbound `toml` slice in CI + `AGENTS.md`; representative contracts in embed/server; `RUST_API.md` reconciled.
+- Phase 5 (docs/compat): stale Python docs corrected; `native_equivalence` strengthened (auth/group); no behavior/claim change.
+
+Verification: workspace fmt/clippy/locked tests + outbound/embed feature slices + compat translator suites (see phase closures for focused evidence). No public Rust/Python/CLI/config/protocol/transport/feature/compat surface changes.
+

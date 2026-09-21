@@ -2,7 +2,7 @@
 
 ## Status
 
-**PLANNED — 2026-09-21**
+**IMPLEMENTED — 2026-09-21**
 
 ## Parent
 
@@ -214,4 +214,17 @@ In those cases, keep explicit code and rely on equivalence tests.
 
 ## Closure record
 
-Fill in place with corrected document paths, projection-equivalence test additions, any deliberately retained explicit mappings, and verification results.
+## Closure record
+
+Implementation (docs + equivalence only; no compat behavior/claim change):
+
+- Corrected `docs/PYTHON_BINDINGS.md` (native/TOML dual projection, Unix three-layer distinction, stubs shipped + `py.typed`, compat framing as runtime/facade/convenience layers).
+- Corrected `python/README.md` non-parity (multi-hop, generic TOML listeners, opt-in `legacy-crypto`/`ssh`/`pproxy-daemon`, Unix/redir/standalone UDP supported).
+- Marked `docs/python/EGRESS_PYTHON_API_CURRENT_STATE.md` as Phase 29 historical snapshot with current-state corrections (alias, `__all__`, gaps, native tables).
+- `architecture/pproxy-compat.md` + `architecture/python-bindings.md` already authoritative (shared intermediates, no TOML round-trip, equivalence gate) — no change.
+- Strengthened `native_equivalence.rs`: extended `assert_runtime_equivalent` with listener auth/TLS/UDP + group scheduler; added `listener_auth_and_multi_remote_group_equivalent` (auth presence, warnings/unsupported agreement, redacted views). No private helper extraction (explicit projections retained per stop conditions).
+- Stale current-state search reviewed; historical plans/reports retain baselines by policy.
+
+Evidence: `cargo test -p eggress-pproxy-compat --locked --test native_equivalence` (6 passed), `--test uri_syntax_equivalence`; `cargo test -p eggress-pproxy-compat --locked`.
+
+(End of file - total 229 lines)

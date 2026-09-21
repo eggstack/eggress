@@ -1,6 +1,24 @@
 # Eggress Python API — Current State
 
 > Phase 29 audit of the existing Python package surface.
+>
+> Historical snapshot: retained for milestone traceability. Current behavior is
+> documented in `docs/PYTHON_BINDINGS.md` and `architecture/python-bindings.md`.
+> Known stale claims in this snapshot (corrected in maintained docs, not
+> rewritten as history):
+>
+> - `check_pproxy_args` is **not** an alias for `translate_pproxy_args`: it
+>   returns `CompatibilityReport` (`tier`/`ok`/`warnings`/`unsupported`/
+>   `diagnostics`/`features`/`toml`/`parsed_uris`), while `translate_pproxy_args`
+>   returns `TranslationResult`.
+> - `eggress.__all__` is 128 entries (not 36).
+> - Protocol/cipher/plugin/scheduling/`main()` gaps listed for “Phase 29.3”
+>   are closed via `protocol.py`, `cipher.py`, `plugin.py`, `wrapper.py`
+>   (Milestone C/C4) — see maintained docs.
+> - Native-module tables omit `PyOutboundConnector`/`PyOutboundStream`,
+>   `system_proxy`, `route_explain`/`test_upstream_connect`, and reverse
+>   summaries — see `architecture/python-bindings.md` (13 classes, 18 functions,
+>   18 exceptions) for the current surface.
 
 ## Package Metadata
 

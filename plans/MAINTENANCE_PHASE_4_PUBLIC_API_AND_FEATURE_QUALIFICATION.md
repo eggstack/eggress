@@ -2,7 +2,7 @@
 
 ## Status
 
-**PLANNED — 2026-09-21**
+**IMPLEMENTED — 2026-09-21**
 
 ## Parent
 
@@ -201,4 +201,10 @@ Record uncovered major-version debt in `docs/RUST_API.md`; do not fix it by chan
 
 ## Closure record
 
-Fill in place with contract test paths, CI feature slices, any optional manual semver command adopted/rejected, and broad gate results.
+## Closure record
+
+Implementation: added outbound `toml` slice to `.github/workflows/ci.yml` + `AGENTS.md` (now base/`toml`/`pproxy-compat`/`ssh`/`ssh,pproxy-compat`/`udp`; embed `ssh`/`pproxy-compat`/`ssh+pproxy-compat` unchanged); extended `eggress-embed/tests/public_api.rs` with `supporting_config_runtime_paths_compile` (config TOML compile, runtime supervisor/classify signatures) and `protocol_representative_paths_compile` (HTTP/SOCKS via URI + `HttpDetector`/`ConnectRequest`); added `eggress-server/tests/public_api.rs` (NoopMetrics, handles, reports, config/context, auth cache). No visibility/feature/signature change; no mandatory semver tool (manual `cargo-semver-checks` rejected as baseline burden); `docs/RUST_API.md` reconciled.
+
+Evidence: `cargo test -p eggress-embed --locked --test public_api` (5 passed); `cargo test -p eggress-server --locked --test public_api` (1); `cargo test -p eggress-config --locked`, `-p eggress-runtime`, `-p eggress-server` (existing suites); feature slices checked.
+
+(End of file - total 209 lines)

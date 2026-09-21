@@ -197,11 +197,14 @@ print(result.unsupported)  # unsupported features
 
 ## Non-parity with pproxy
 
-- Shadowsocks TCP uses standard SIP003 AEAD framing (wire-compatible with `shadowsocks-rust`/`ssserver`/`sslocal`); single-hop upstream only
-- No inbound Shadowsocks or Trojan listeners (upstream-only) — inbound Shadowsocks listener is available in the Rust binary; Python bindings expose the embed API which omits this for now
-- No legacy stream ciphers (aes-ctr, aes-cfb, rc4-md5, etc.)
-- No SSH, Unix socket, or transparent proxy (redir) transport
-- No pproxy daemon mode (`--daemon`)
-- No `-ul`/`-ur` standalone UDP relay (uses SOCKS5 UDP ASSOCIATE)
+Distinguish runtime capability, service-facade exposure, and dedicated Python
+convenience API (see `docs/PYTHON_BINDINGS.md` and `architecture/python-bindings.md`):
+
+- Shadowsocks TCP uses standard SIP003 AEAD framing (wire-compatible with `shadowsocks-rust`/`ssserver`/`sslocal`); multi-hop TCP chains and UDP through composed SOCKS5/Shadowsocks hop chains are supported (see `docs/CAPABILITIES.md`)
+- Generic `RuntimeConfig`/`EggressConfig::from_toml` supports Shadowsocks/Trojan listener sections; Python convenience paths focus on SOCKS5/HTTP inbound plus TCP/UDP upstream Shadowsocks in the current release
+- Legacy stream ciphers (aes-ctr, aes-cfb, rc4-md5, etc.) behind opt-in `legacy-crypto` (compatibility-only)
+- SSH upstreams behind opt-in `ssh` (upstream-only); Unix-domain listeners supported by the runtime (`UnixListenerConfig`, configure via TOML/`EggressConfig`); transparent `redir://` supported on Linux
+- Linux pproxy daemon mode (`--daemon`) behind opt-in `pproxy-daemon`
+- Standalone UDP relay (`-ul`, mode `standalone_pproxy_udp`) supported
 - Multiple remotes default to round-robin (matches pproxy behavior)
 - Direct fallback requires explicit config

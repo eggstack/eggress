@@ -222,12 +222,45 @@ intentionally exposes the concept:
 | `eggress-config` / `eggress-routing` / `eggress-core` | lower-level config explanation and route-explain helpers intentionally exposed by the compatibility surface |
 | `eggress-uri` | credential-safe URI redaction |
 | `eggress-system-proxy` | explicit `apply_system_proxy` binding |
-| `eggress-cli` | existing upstream-test helper, not CLI presentation |
+| `eggress-cli` | existing chain-aware upstream-test helpers (`parse_pproxy_test_target`, `run_upstream_test`), not CLI presentation — retained per Maintenance Phase 3 Outcome B |
 | `eggress-runtime` | typed compatibility startup hooks and SSH policy capability |
 
 These are live architectural edges. Removing one would require a new owner API
 or would change an existing Python return/error contract, so this phase retains
 them and records the justification here.
+
+### Maintenance Phase 3 Outcome B — `eggress-python -> eggress-cli` retained
+
+`crates/eggress-python/src/compat.rs::run_pproxy_test()` consumes exactly:
+
+- `eggress_cli::parse_pproxy_test_target()` — URL/`host:port`/IPv4/IPv6 target
+  parsing with `http`/`https` defaults (80/443), shared with `pproxy --test`
+  and `eggress upstream test`;
+- `eggress_cli::run_upstream_test()` — chain-aware proxy test through the
+  production executor (same configured upstream chain, same timeout/exit-code/
+  redaction semantics, empty-upstream `0`, no listener, no TOML/argv round-trip).
+
+These are typed operational library functions, not argv/presentation
+reach-through: they accept compiled `RuntimeConfig` + typed target/timeout and
+return exit codes, with `test_upstream_connect()` remaining a distinct raw
+endpoint TCP probe.
+
+Removal via existing owner APIs was rejected because:
+
+- `OutboundConnector` / core executor surfaces could not reproduce the exact
+  target/timeout/exit-code/redaction/no-upstream contract without adding a new
+  public method (forbidden) or copying the full chain tester into the binding
+  (forbidden duplication, second tester risk);
+- `test_upstream_connect()` intentionally probes endpoint reachability only and
+  must not replace chain-aware testing;
+- CLI public helpers are preserved by campaign constraint and continue to own
+  the tester; the binding shares behavior instead of forking it.
+
+Agreement is by construction (same code) and pinned by
+`eggress-cli` unit test `pproxy_test_target_parsing_contract` (local fixtures,
+no network) plus existing CLI upstream-tester coverage. Future removal requires
+a stable owner API that already exposes chain-aware testing with identical
+result/exit/redaction semantics and no new public surface.
 
 ## See also
 

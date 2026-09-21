@@ -2,7 +2,7 @@
 
 ## Status
 
-**PLANNED — 2026-09-21**
+**IMPLEMENTED — 2026-09-21**
 
 ## Parent
 
@@ -196,4 +196,10 @@ A somewhat large `connector.rs` is acceptable if further extraction harms locali
 
 ## Closure record
 
-Fill in place with implementation commit, final private module map, preserved re-export evidence, feature slices, and test results.
+## Closure record
+
+Implementation: split `connector.rs` (2284→1404 lines) into private `connect_error.rs` (typed errors + classifier adaptation), `udp.rs` (`UdpAssociation` + direct/SOCKS5 lifecycle, `udp` feature), `compat.rs` (pproxy redaction/mapping, `pproxy-compat` feature). `lib.rs` remains the stable facade (`OutboundConnector`, `OutboundInfo`, typed errors, `UdpAssociation`, `OUTBOUND_MAX_DATAGRAM_SIZE`, executor/helpers); `eggress_embed::outbound::*` source-compatible. TCP execution single-sourced; UDP accounting/redaction frozen; no new crate/API. Tests retained in `connector.rs` for locality (stop-condition allowance).
+
+Evidence: `cargo test -p eggress-outbound --locked` (15 passed); `cargo check` base/`toml`/`pproxy-compat`/`ssh`/`ssh,pproxy-compat`/`udp`; `eggress-embed --test public_api` (3→5 after Phase 4), `--test outbound_detailed` (21); `architecture/outbound.md` updated.
+
+(End of file - total 204 lines)

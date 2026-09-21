@@ -40,7 +40,7 @@ cargo test --workspace --locked
   The fixture may skip only when OpenSSH tools are genuinely unavailable in
   optional local runs; CI installs `openssh-server` and requires the test.
 - For `eggress-outbound` feature-boundary changes, also run the no-default
-  base, `pproxy-compat`, `ssh`, `ssh,pproxy-compat`, and `udp` compile slices:
+  base, `toml`, `pproxy-compat`, `ssh`, `ssh,pproxy-compat`, and `udp` compile slices:
   `cargo check -p eggress-outbound --locked --no-default-features [--features …]`.
 - Python-facing changes: `(cd crates/eggress-python && ../../.venv/bin/maturin develop)` after creating `.venv` with `maturin>=1.0,<2.0`, `pytest`, `pytest-asyncio>=0.23,<1`, `cryptography>=42,<47`; also `pip install --no-deps ./python-pproxy-compat`. Always run pytest from repo root — `pytest.ini` forces `--import-mode=importlib` so `python/eggress` can't shadow the built `_eggress` extension. Target: `.venv/bin/python -m pytest python/tests tests/compat -q`.
 - `fuzz/` is a standalone workspace: `cargo check --manifest-path fuzz/Cargo.toml --bins`. Workspace commands don't cover it.

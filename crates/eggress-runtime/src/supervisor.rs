@@ -2,9 +2,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-#[cfg(feature = "operations")]
-use eggress_admin::AdminSnapshotProvider;
-use eggress_core::listener::{is_listener_cancelled, TcpListener, TcpListenerConfig};
+use eggress_core::listener::is_listener_cancelled;
 use eggress_core::ProtocolId;
 use eggress_routing::health::HealthManager;
 use eggress_routing::upstream::UpstreamRuntime;
@@ -14,25 +12,25 @@ use tokio_util::task::TaskTracker;
 use tracing::Instrument;
 
 use crate::error::RuntimeError;
-use crate::platform::{check_capability, PlatformCapability};
 
 pub(crate) mod accounting;
 pub(crate) mod connection;
+pub(crate) mod listeners;
 #[cfg(feature = "operations")]
 pub(crate) mod operations;
 pub(crate) mod reload;
+pub(crate) mod services;
 pub(crate) mod shutdown;
+pub(crate) mod signals;
 pub(crate) mod startup;
 pub(crate) mod state;
 pub(crate) mod udp_runtime;
 
 pub(crate) use accounting::{handle_accept_error, ActiveConnectionGuard, ListenerConnectionSlot};
-pub(crate) use connection::PreparedListener;
 #[cfg(feature = "quic")]
 pub(crate) use connection::PreparedQuicListener;
 pub(crate) use connection::{
-    build_connection_config, prepare_tls_server_config, wrap_tls_server, ConnectionBuildParams,
-    InboundSecurity,
+    build_connection_config, wrap_tls_server, ConnectionBuildParams, InboundSecurity,
 };
 #[cfg(feature = "operations")]
 pub(crate) use operations::RuntimeAdminListenerInfos;
@@ -41,7 +39,6 @@ pub(crate) use shutdown::{shutdown_ordered, ShutdownPlan};
 pub use state::RuntimeState;
 #[allow(unused_imports)]
 pub(crate) use udp_runtime::compute_advertise_ip;
-pub(crate) use udp_runtime::make_udp_service;
 #[cfg(feature = "extended")]
 pub(crate) use udp_runtime::prepare_shadowsocks_udp_relay;
 
@@ -443,9 +440,7 @@ impl ServiceSupervisor {
                 }
             }
             #[cfg(feature = "operations")]
-            let mut compatibility_system_proxy: Option<
-                eggress_system_proxy::AppliedProxy,
-            > = None;
+            let compatibility_system_proxy: Option<eggress_system_proxy::AppliedProxy>;
 
             #[cfg(feature = "operations")]
             let metrics_registry = metrics_registry_for_admin;
@@ -480,363 +475,28 @@ impl ServiceSupervisor {
                 tracing::warn!("no listeners configured; the proxy will not accept connections");
             }
 
-            let mut prepared = Vec::new();
-            #[cfg(feature = "quic")]
-            let mut prepared_quic = Vec::<PreparedQuicListener>::new();
+            // Phase 1: private listener-preparation ownership (listeners.rs).
             // The facade pre-builds the typed reuse handle; runtime only
             // threads it into inbound authentication (no pproxy arg parsing).
             let compatibility_auth_reuse = compatibility_hooks
                 .as_ref()
                 .and_then(|hooks| hooks.auth_reuse.clone());
-            #[cfg(unix)]
-            let mut unix_listener_args = Vec::new();
-            let mut transparent_listener_args = Vec::new();
-
-            for lcfg in &listener_configs {
-                let protocols: Vec<ProtocolId> = lcfg.protocols.to_vec();
-
-                let auth = match &lcfg.auth {
-                    Some(auth_cfg) => {
-                        if auth_cfg.auth_type == "password" {
-                            let username = auth_cfg.username.clone().unwrap_or_default();
-                            let password = auth_cfg.password.clone().unwrap_or_default();
-                            if let Some(reuse) = compatibility_auth_reuse.clone() {
-                                eggress_server::accept::InboundAuthentication::UsernamePasswordWithReuse {
-                                    username,
-                                    password,
-                                    reuse,
-                                }
-                            } else {
-                                eggress_server::accept::InboundAuthentication::UsernamePassword {
-                                    username,
-                                    password,
-                                }
-                            }
-                        } else {
-                            eggress_server::accept::InboundAuthentication::None
-                        }
-                    }
-                    None => eggress_server::accept::InboundAuthentication::None,
-                };
-
-                let connection_limit = lcfg.connection_limit.unwrap_or(1024) as usize;
-                let prepared_tls =
-                    prepare_tls_server_config(lcfg.tls.as_ref()).map_err(|error| {
-                        RuntimeError::Other(format!(
-                            "listener '{}' has invalid prepared TLS configuration: {error}",
-                            lcfg.name
-                        ))
-                    })?;
-
-                // Handle Unix domain socket listeners separately
-                #[allow(unused_variables)]
-                if let Some(ref unix_cfg) = lcfg.unix {
-                    #[cfg(unix)]
-                    {
-                        match eggress_server::listener::unix::create_unix_listener(
-                            &eggress_server::listener::unix::UnixListenerConfig::from_compiled(
-                                &unix_cfg.path,
-                                unix_cfg.unlink_existing,
-                                Some(unix_cfg.mode),
-                            ),
-                        ) {
-                            Ok(unix_listener) => {
-                                tracing::info!(
-                                    "unix socket listener created at {} ({})",
-                                    unix_cfg.path.display(),
-                                    lcfg.name
-                                );
-                                unix_listener_args.push((
-                                    lcfg.name.clone(),
-                                    unix_listener,
-                                    protocols,
-                                    auth,
-                                    handshake_timeout,
-                                    connection_limit as u64,
-                                    prepared_tls.clone(),
-                                    lcfg.shadowsocks.clone(),
-                                    lcfg.trojan.clone(),
-                                    lcfg.udp.clone(),
-                                    make_udp_service(
-                                        &state_ref,
-                                        &routing,
-                                        &lcfg.name,
-                                        lcfg.udp.as_ref(),
-                                    ),
-                                ));
-                                continue;
-                            }
-                            Err(e) => {
-                                tracing::error!(
-                                    "failed to bind unix socket at {} for listener '{}': {e}",
-                                    unix_cfg.path.display(),
-                                    lcfg.name
-                                );
-                                continue;
-                            }
-                        }
-                    }
-                    #[cfg(not(unix))]
-                    {
-                        tracing::error!(
-                            "unix socket listener '{}' skipped: not supported on this platform",
-                            lcfg.name
-                        );
-                        continue;
-                    }
-                }
-
-                // Handle transparent TCP listeners
-                if let Some(ref transparent_cfg) = lcfg.transparent {
-                    if transparent_cfg.enabled {
-                        let capability = check_capability(PlatformCapability::LinuxOriginalDstIpv4);
-                        if capability != crate::platform::CapabilityStatus::Available {
-                            #[cfg(feature = "operations")]
-                            state_ref
-                                .runtime_metrics
-                                .record_platform_capability_check_failure();
-                            let _cap_span = tracing::info_span!(
-                                "capability_check_failed",
-                                capability = %PlatformCapability::LinuxOriginalDstIpv4,
-                                status = %capability,
-                                listener = %lcfg.name,
-                            );
-                            tracing::warn!(
-                                "transparent proxy not available for listener '{}' ({}); \
-                                 falling back to normal TCP listener",
-                                lcfg.name,
-                                capability
-                            );
-                        } else {
-                            let bind_addr: std::net::SocketAddr =
-                                lcfg.bind.parse().map_err(|e| RuntimeError::ListenerBind {
-                                    addr: lcfg.bind.clone(),
-                                    source: std::io::Error::new(
-                                        std::io::ErrorKind::InvalidInput,
-                                        e,
-                                    ),
-                                })?;
-
-                            let transparent_listener =
-                                eggress_server::listener::transparent::TransparentListener::bind(
-                                    &bind_addr.to_string(),
-                                )
-                                .await
-                                .map_err(|e| {
-                                    RuntimeError::ListenerBind {
-                                        addr: lcfg.bind.clone(),
-                                        source: e,
-                                    }
-                                })?;
-
-                            let local_addr = transparent_listener.local_addr().map_err(|e| {
-                                RuntimeError::ListenerBind {
-                                    addr: lcfg.bind.clone(),
-                                    source: e,
-                                }
-                            })?;
-
-                            tracing::info!(
-                                "transparent TCP listener listening on {local_addr} ({})",
-                                lcfg.name
-                            );
-
-                            transparent_listener_args.push((
-                                lcfg.name.clone(),
-                                transparent_listener,
-                                protocols,
-                                auth,
-                                handshake_timeout,
-                                connection_limit as u64,
-                                prepared_tls.clone(),
-                                lcfg.shadowsocks.clone(),
-                                lcfg.trojan.clone(),
-                                lcfg.udp.clone(),
-                                make_udp_service(
-                                    &state_ref,
-                                    &routing,
-                                    &lcfg.name,
-                                    lcfg.udp.as_ref(),
-                                ),
-                            ));
-                            continue;
-                        }
-                    }
-                }
-
-                #[cfg(feature = "quic")]
-                if protocols.contains(&ProtocolId::Quic) || protocols.contains(&ProtocolId::Http3) {
-                    let tls = lcfg.tls.clone().ok_or_else(|| {
-                        RuntimeError::Other(format!(
-                            "QUIC/HTTP3 listener '{}' requires certificate and key material",
-                            lcfg.name
-                        ))
-                    })?;
-                    let bind_addr: std::net::SocketAddr =
-                        lcfg.bind.parse().map_err(|e| RuntimeError::ListenerBind {
-                            addr: lcfg.bind.clone(),
-                            source: std::io::Error::new(std::io::ErrorKind::InvalidInput, e),
-                        })?;
-                    let listener = eggress_transport_quic::QuicListener::bind(
-                        bind_addr,
-                        eggress_transport_quic::QuicServerConfig {
-                            certificate_pem: tls.cert_pem.clone(),
-                            private_key_pem: tls.key_pem.clone(),
-                            idle_timeout: Duration::from_secs(60),
-                            max_concurrent_streams: lcfg.connection_limit.unwrap_or(1024).max(1),
-                            alpn_protocols: if protocols.contains(&ProtocolId::Http3) {
-                                vec![b"h3".to_vec()]
-                            } else {
-                                Vec::new()
-                            },
-                        },
-                    )
-                    .await
-                    .map_err(|e| RuntimeError::ListenerBind {
-                        addr: lcfg.bind.clone(),
-                        source: std::io::Error::other(e.to_string()),
-                    })?;
-                    let local_addr =
-                        listener
-                            .local_addr()
-                            .map_err(|e| RuntimeError::ListenerBind {
-                                addr: lcfg.bind.clone(),
-                                source: std::io::Error::other(e.to_string()),
-                            })?;
-                    tracing::info!("QUIC listening on {local_addr} ({})", lcfg.name);
-                    prepared_quic.push(PreparedQuicListener {
-                        name: lcfg.name.clone(),
-                        protocols,
-                        listener,
-                        local_addr,
-                        auth,
-                        handshake_timeout,
-                        connection_limit: lcfg.connection_limit.unwrap_or(1024) as u64,
-                    });
-                    continue;
-                }
-
-                // Standard TCP listener path
-                let bind_addr: std::net::SocketAddr =
-                    lcfg.bind.parse().map_err(|e| RuntimeError::ListenerBind {
-                        addr: lcfg.bind.clone(),
-                        source: std::io::Error::new(std::io::ErrorKind::InvalidInput, e),
-                    })?;
-
-                let config = TcpListenerConfig {
-                    bind_addr,
-                    protocols: protocols.clone(),
-                    auth_required: false,
-                    handshake_timeout,
-                    connection_limit,
-                };
-
-                let listener = TcpListener::new_with_reuse_port(
-                    &config,
-                    listener_cancel.clone(),
-                    lcfg.reuse_port.unwrap_or(false),
-                )
-                .await
-                .map_err(|e| RuntimeError::ListenerBind {
-                    addr: lcfg.bind.clone(),
-                    source: e,
-                })?;
-                let local_addr = listener
-                    .local_addr()
-                    .map_err(|e| RuntimeError::ListenerBind {
-                        addr: lcfg.bind.clone(),
-                        source: e,
-                    })?;
-                tracing::info!("listening on {local_addr} ({})", lcfg.name);
-                let udp_service =
-                    make_udp_service(&state_ref, &routing, &lcfg.name, lcfg.udp.as_ref());
-
-                prepared.push(PreparedListener {
-                    name: lcfg.name.clone(),
-                    bind: lcfg.bind.clone(),
-                    protocols,
-                    listener,
-                    local_addr,
-                    auth,
-                    handshake_timeout,
-                    udp: lcfg.udp.clone(),
-                    udp_service,
-                    tls: prepared_tls,
-                    shadowsocks: lcfg.shadowsocks.clone(),
-                    trojan: lcfg.trojan.clone(),
-                    fixed_target: lcfg.fixed_target.clone(),
-                    local_bind: lcfg.local_bind.clone(),
-                });
-            }
-
-            #[cfg(feature = "operations")]
-            {
-                let listener_infos: Vec<eggress_admin::ListenerInfo> = prepared
-                    .iter()
-                    .map(|p| eggress_admin::ListenerInfo {
-                        name: p.name.clone(),
-                        bind: p.bind.clone(),
-                        local_addr: p.local_addr.to_string(),
-                        protocols: p.protocols.iter().map(|p| p.to_string()).collect(),
-                        udp_enabled: p.udp.as_ref().is_some_and(|u| u.enabled),
-                        mode: Some("standard".to_string()),
-                        capability_status: None,
-                        original_dst_support: None,
-                        unix_socket_path: None,
-                        unix_socket_unlink_existing: None,
-                    })
-                    .collect();
-                drop(listener_infos);
-            }
-
-            // Store listener addresses for admin snapshot, indexed by config order.
-            // Build a lookup map from all listener types (standard, transparent, unix).
-            {
-                let mut addr_map: std::collections::HashMap<String, Option<std::net::SocketAddr>> =
-                    std::collections::HashMap::new();
-                for p in &prepared {
-                    addr_map.insert(p.name.clone(), Some(p.local_addr));
-                }
-                #[cfg(feature = "quic")]
-                for p in &prepared_quic {
-                    addr_map.insert(p.name.clone(), Some(p.local_addr));
-                }
-                for (name, transparent_listener, _, _, _, _, _, _, _, _, _) in
-                    &transparent_listener_args
-                {
-                    let addr = transparent_listener.local_addr().ok();
-                    addr_map.insert(name.clone(), addr);
-                }
-                #[cfg(unix)]
-                for (name, _, _, _, _, _, _, _, _, _, _) in &unix_listener_args {
-                    // Unix domain sockets don't have a meaningful TCP socket address
-                    addr_map.insert(name.clone(), None);
-                }
-                let addrs: Vec<Option<std::net::SocketAddr>> = listener_configs
-                    .iter()
-                    .map(|lcfg| addr_map.get(&lcfg.name).copied().flatten())
-                    .collect();
-                let admin_addrs = addrs.clone();
-                match state_ref.listener_addrs.lock() {
-                    Ok(mut guard) => *guard = addrs,
-                    Err(error) => {
-                        tracing::warn!(
-                            "listener address state was poisoned; resetting it: {error}"
-                        );
-                        let mut guard = error.into_inner();
-                        *guard = addrs;
-                        state_ref.listener_addrs.clear_poison();
-                    }
-                }
-                #[cfg(feature = "operations")]
-                state_ref.publish_admin_listener_addrs(state_ref.snapshot.load_full(), admin_addrs);
-            }
+            let listener_set = listeners::prepare_listener_set(
+                &listener_configs,
+                compatibility_auth_reuse,
+                handshake_timeout,
+                &state_ref,
+                &routing,
+                &listener_cancel,
+            )
+            .await?;
+            listeners::publish_listener_addresses(&state_ref, &listener_configs, &listener_set);
 
             #[cfg(feature = "extended")]
             let mut shadowsocks_udp_relays = Vec::new();
             let mut echo_udp_relays = Vec::new();
 
-            for prepared_listener in &prepared {
+            for prepared_listener in &listener_set.prepared {
                 if let Some(ref udp_cfg) = prepared_listener.udp {
                     #[cfg(feature = "extended")]
                     if udp_cfg.mode == eggress_udp::UdpMode::ShadowsocksUdp {
@@ -964,19 +624,19 @@ impl ServiceSupervisor {
             }
 
             // Spawn transparent listener accept loops
-            for (
-                listener_name,
-                transparent_listener,
+            for listeners::PreparedTransparentListener {
+                name: listener_name,
+                listener: transparent_listener,
                 protocols,
                 auth,
-                hs_timeout,
+                handshake_timeout: hs_timeout,
                 connection_limit,
-                tls_cfg,
-                ss_cfg,
-                trojan_cfg,
-                _udp_cfg,
-                udp_svc,
-            ) in transparent_listener_args
+                tls: tls_cfg,
+                shadowsocks: ss_cfg,
+                trojan: trojan_cfg,
+                udp_service: udp_svc,
+                ..
+            } in listener_set.transparent
             {
                 let routing = routing.clone();
                 let state = state_ref.clone();
@@ -1164,19 +824,19 @@ impl ServiceSupervisor {
 
             // Spawn Unix domain socket accept loops
             #[cfg(unix)]
-            for (
-                listener_name,
-                unix_listener,
+            for listeners::PreparedUnixListener {
+                name: listener_name,
+                listener: unix_listener,
                 protocols,
                 auth,
-                hs_timeout,
+                handshake_timeout: hs_timeout,
                 connection_limit,
-                tls_cfg,
-                ss_cfg,
-                trojan_cfg,
-                _udp_cfg,
-                udp_svc,
-            ) in unix_listener_args
+                tls: tls_cfg,
+                shadowsocks: ss_cfg,
+                trojan: trojan_cfg,
+                udp_service: udp_svc,
+                ..
+            } in listener_set.unix
             {
                 let routing = routing.clone();
                 let state = state_ref.clone();
@@ -1336,64 +996,22 @@ impl ServiceSupervisor {
                 });
             }
 
-            // Spawn standard TCP accept loops
+            // Phase 1: compatibility operations ownership (services.rs).
+            // --sys selection/application stays pre-readiness and pre-accept;
+            // native startup (None) never mutates OS state.
             #[cfg(feature = "operations")]
-            let compatibility_proxy_selection = prepared
-                .iter()
-                .find(|listener| {
-                    listener.protocols.contains(&ProtocolId::Socks5)
-                        && listener.local_addr.port() != 0
-                })
-                .map(|listener| {
-                    (
-                        eggress_system_proxy::CompatibilityProxyKind::Socks5,
-                        listener.local_addr.port(),
-                    )
-                })
-                .or_else(|| {
-                    prepared
-                        .iter()
-                        .find(|listener| {
-                            listener.protocols.contains(&ProtocolId::Http)
-                                && listener.local_addr.port() != 0
-                        })
-                        .map(|listener| {
-                            (
-                                eggress_system_proxy::CompatibilityProxyKind::Http,
-                                listener.local_addr.port(),
-                            )
-                        })
-                });
-
-            // All compatibility TCP listeners are bound before this point,
-            // so --sys can use the actual selected port. Apply before any
-            // accept loop or admin task is started; an apply failure is
-            // therefore still a pre-run startup error. Only present when the
-            // compatibility facade explicitly opted in via
-            // `CompatibilityRuntimeHooks { system_proxy: Some(..) }`; native
-            // startup (`None`) never mutates OS proxy state.
-            if compatibility_hooks
-                .as_ref()
-                .and_then(|hooks| hooks.system_proxy)
-                .is_some()
             {
-                #[cfg(feature = "operations")]
-                {
-                    let selected = compatibility_proxy_selection.ok_or_else(|| {
-                        RuntimeError::Other(
-                            "--sys requires a usable local HTTP or SOCKS5 listener".to_string(),
-                        )
-                    })?;
-                    let address = std::net::SocketAddr::new(
-                        std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
-                        selected.1,
-                    );
-                    compatibility_system_proxy = Some(
-                        eggress_system_proxy::apply_compatibility_proxy(selected.0, address)
-                            .map_err(RuntimeError::Other)?,
-                    );
-                }
-                #[cfg(not(feature = "operations"))]
+                compatibility_system_proxy = services::apply_compatibility_proxy(
+                    &listener_set.prepared,
+                    &compatibility_hooks,
+                )?;
+            }
+            #[cfg(not(feature = "operations"))]
+            {
+                if compatibility_hooks
+                    .as_ref()
+                    .and_then(|hooks| hooks.system_proxy)
+                    .is_some()
                 {
                     return Err(RuntimeError::Other(
                         "--sys requires the operations feature".to_string(),
@@ -1402,7 +1020,7 @@ impl ServiceSupervisor {
             }
 
             #[cfg(feature = "quic")]
-            for prepared_listener in prepared_quic {
+            for prepared_listener in listener_set.prepared_quic {
                 let listener_name = prepared_listener.name.clone();
                 let listener_protocols: Arc<[ProtocolId]> = prepared_listener
                     .protocols
@@ -1601,7 +1219,7 @@ impl ServiceSupervisor {
                 }
             }
 
-            for prepared_listener in prepared {
+            for prepared_listener in listener_set.prepared {
                 let routing = routing.clone();
                 let state = state_ref.clone();
                 let conn_tasks = connection_tasks.clone();
@@ -1770,374 +1388,38 @@ impl ServiceSupervisor {
                 });
             }
 
-            // Spawn reverse servers and clients
+            // Phase 1: auxiliary-service ownership (services.rs).
+            // Reverse servers/clients spawn from startup-captured snapshot;
+            // routing remains an authorization gate.
             #[cfg(feature = "reverse")]
-            {
-                let current_snapshot = snapshot.load();
-                let reverse_servers = current_snapshot.reverse_servers.clone();
-                let reverse_clients = current_snapshot.reverse_clients.clone();
-                drop(current_snapshot);
+            services::spawn_reverse_services(&snapshot, &routing, &state_ref, &tasks, &cancel);
 
-                for rs_cfg in reverse_servers {
-                    if rs_cfg.pproxy_compat {
-                        let server_config =
-                            eggress_protocol_reverse::compat_pproxy::PproxyBackwardServerConfig {
-                                control_bind: rs_cfg.control_bind,
-                                external_bind: rs_cfg.external_bind,
-                                auth: eggress_protocol_reverse::compat_pproxy::raw_auth(
-                                    rs_cfg.auth_username.as_deref(),
-                                    rs_cfg.auth_password.as_deref(),
-                                ),
-                                max_control_connections: rs_cfg.max_control_connections as usize,
-                                max_pending_external: rs_cfg.max_pending_external as usize,
-                                read_timeout_ms: rs_cfg.read_timeout_ms,
-                                socks5_target: None,
-                                client_framing:
-                                    eggress_protocol_reverse::compat_pproxy::PproxyBackwardFraming::Raw,
-                            };
-                        let server =
-                            eggress_protocol_reverse::compat_pproxy::PproxyBackwardServer::new(
-                                server_config,
-                            );
-                        let server_cancel = server.cancel_token();
-                        let cancel_clone = cancel.clone();
-                        tasks.spawn(async move {
-                            let result = tokio::select! {
-                                r = server.run() => r,
-                                _ = cancel_clone.cancelled() => {
-                                    server_cancel.cancel();
-                                    Ok(())
-                                }
-                            };
-                            if let Err(e) = result {
-                                tracing::error!(error = %e, "pproxy backward server error");
-                            }
-                        });
-                        continue;
-                    }
-                    let server_tls = rs_cfg.tls.as_ref().map(|t| {
-                        eggress_protocol_reverse::tls::ReverseServerTlsConfig {
-                            cert_pem: t.cert_pem.clone(),
-                            key_pem: t.key_pem.clone(),
-                            client_ca_pem: t.client_ca_pem.clone(),
-                            require_client_cert: t.require_client_cert,
-                        }
-                    });
-                    let server_config = eggress_protocol_reverse::server::ReverseServerConfig {
-                        control_bind: rs_cfg.control_bind,
-                        external_bind: Some(rs_cfg.external_bind),
-                        auth_username: rs_cfg.auth_username.clone(),
-                        auth_password: rs_cfg.auth_password.clone(),
-                        max_control_connections: rs_cfg.max_control_connections,
-                        read_timeout_ms: rs_cfg.read_timeout_ms,
-                        allow_bind: rs_cfg.allow_bind.clone(),
-                        max_listeners_per_client: rs_cfg.max_listeners_per_client,
-                        max_streams_per_listener: rs_cfg.max_streams_per_listener,
-                        max_pending_external: rs_cfg.max_pending_external,
-                        tls: server_tls,
-                    };
-                    // Defense-in-depth: validate the configuration before
-                    // spawning the task so unsafe configurations fail at
-                    // startup rather than silently at bind time.
-                    if let Err(e) = server_config.validate() {
-                        tracing::error!(
-                            server_id = %rs_cfg.id,
-                            error = %e,
-                            "reverse server configuration validation failed; skipping",
-                        );
-                        continue;
-                    }
-                    let mut server =
-                        eggress_protocol_reverse::server::ReverseServer::new(server_config);
-                    server.set_metrics(state_ref.reverse_metrics.clone());
-                    let server_state = server.state_handle();
-                    let server_cancel = server.cancel_token();
-
-                    state_ref
-                        .reverse_registry
-                        .register(eggress_admin::ReverseServerEntry {
-                            id: eggress_admin::ReverseServerId::from(rs_cfg.id.as_str()),
-                            control_bind: rs_cfg.control_bind.to_string(),
-                            state: server_state,
-                        });
-
-                    let cancel_clone = cancel.clone();
-                    tasks.spawn(async move {
-                        let result = tokio::select! {
-                            r = server.run() => r,
-                            _ = cancel_clone.cancelled() => {
-                                server_cancel.cancel();
-                                Ok(())
-                            }
-                        };
-                        if let Err(e) = result {
-                            tracing::error!(error = %e, "reverse server error");
-                        }
-                    });
-                }
-
-                for rc_cfg in reverse_clients {
-                    let host = rc_cfg
-                        .default_target_host
-                        .clone()
-                        .unwrap_or_else(|| "127.0.0.1".to_string());
-                    let port = rc_cfg.default_target_port.unwrap_or(0);
-
-                    let parallel = rc_cfg.parallel_connections.max(1);
-                    for conn_idx in 0..parallel {
-                        if rc_cfg.pproxy_compat {
-                            let client_config = eggress_protocol_reverse::compat_pproxy::PproxyBackwardClientConfig {
-                                server_addr: rc_cfg.server_addr,
-                                server_chain: rc_cfg.server_chain.clone(),
-                                auth: eggress_protocol_reverse::compat_pproxy::raw_auth(
-                                    rc_cfg.auth_username.as_deref(),
-                                    rc_cfg.auth_password.as_deref(),
-                                ),
-                                reconnect_initial_ms: rc_cfg.reconnect_initial_ms,
-                                reconnect_max_ms: rc_cfg.reconnect_max_ms,
-                                read_timeout_ms: rc_cfg.read_timeout_ms,
-                                target_connect_timeout_ms: 10_000,
-                                server_framing:
-                                    eggress_protocol_reverse::compat_pproxy::PproxyBackwardFraming::Raw,
-                            };
-                            let client =
-                                eggress_protocol_reverse::compat_pproxy::PproxyBackwardClient::new(
-                                    client_config,
-                                    std::sync::Arc::new(
-                                        crate::reverse::RouteEngineTargetResolver::new(
-                                            routing.clone(),
-                                            host.clone(),
-                                            port,
-                                            std::sync::Arc::from(rc_cfg.id.as_str()),
-                                            Some(rc_cfg.server_addr),
-                                        ),
-                                    ),
-                                );
-                            let cancel_clone = cancel.clone();
-                            let client_cancel = client.cancel_token();
-                            let client_id = rc_cfg.id.clone();
-                            let server_addr = rc_cfg.server_addr;
-                            tasks.spawn(async move {
-                                let result = tokio::select! {
-                                    r = client.run() => r,
-                                    _ = cancel_clone.cancelled() => {
-                                        client_cancel.cancel();
-                                        Ok(())
-                                    }
-                                };
-                                if let Err(e) = result {
-                                    tracing::error!(error = %e, client_id = %client_id, server = %server_addr, conn = conn_idx, "pproxy backward client error");
-                                }
-                            });
-                            continue;
-                        }
-                        let client_tls = rc_cfg.tls.as_ref().map(|t| {
-                            eggress_protocol_reverse::tls::ReverseClientTlsConfig {
-                                ca_pem: t.ca_pem.clone(),
-                                server_name: t.server_name.clone(),
-                                client_cert_pem: t.client_cert_pem.clone(),
-                                client_key_pem: t.client_key_pem.clone(),
-                            }
-                        });
-                        let client_config = eggress_protocol_reverse::client::ReverseClientConfig {
-                            server_addr: rc_cfg.server_addr,
-                            auth_username: rc_cfg.auth_username.clone(),
-                            auth_password: rc_cfg.auth_password.clone(),
-                            reconnect_initial_ms: rc_cfg.reconnect_initial_ms,
-                            reconnect_max_ms: rc_cfg.reconnect_max_ms,
-                            default_target_host: rc_cfg.default_target_host.clone(),
-                            default_target_port: rc_cfg.default_target_port,
-                            read_timeout_ms: rc_cfg.read_timeout_ms,
-                            drain_grace_ms: rc_cfg.drain_grace_ms,
-                            target_connect_timeout_ms: 10_000,
-                            tls: client_tls,
-                        };
-                        let mut client =
-                            eggress_protocol_reverse::client::ReverseClient::new(client_config);
-                        client.set_metrics(state_ref.reverse_metrics.clone());
-
-                        let resolver = crate::reverse::RouteEngineTargetResolver::new(
-                            routing.clone(),
-                            host.clone(),
-                            port,
-                            std::sync::Arc::from(rc_cfg.id.as_str()),
-                            Some(rc_cfg.server_addr),
-                        );
-                        client.set_resolver(std::sync::Arc::new(resolver));
-
-                        let cancel_clone = cancel.clone();
-                        let client_cancel = client.cancel_token();
-                        let client_id = rc_cfg.id.clone();
-                        let server_addr = rc_cfg.server_addr;
-
-                        tasks.spawn(async move {
-                            let result = tokio::select! {
-                                r = client.run() => r,
-                                _ = cancel_clone.cancelled() => {
-                                    client_cancel.cancel();
-                                    Ok(())
-                                }
-                            };
-                            if let Err(e) = result {
-                                tracing::error!(error = %e, client_id = %client_id, server = %server_addr, conn = conn_idx, "reverse client error");
-                            }
-                        });
-                    }
-                }
-            }
-
-            // Pre-bind admin listener before marking readiness so bind failures
-            // are surfaced as startup errors rather than silent background failures.
+            // Phase 1: auxiliary-service ownership (services.rs).
+            // Admin pre-bind stays synchronous before readiness so bind
+            // failures remain startup errors.
             #[cfg(feature = "operations")]
-            let pre_bound_admin = if let Some(ref admin_cfg) = admin_config {
-                if admin_cfg.enabled {
-                    let bind = admin_cfg.bind.clone();
-                    let admin_cancel_token = admin_cancel.clone();
-                    match eggress_admin::AdminServer::new(&bind, admin_cancel_token).await {
-                        Ok(s) => Some(s),
-                        Err(e) => {
-                            return Err(RuntimeError::ListenerBind {
-                                addr: bind,
-                                source: std::io::Error::new(
-                                    std::io::ErrorKind::AddrInUse,
-                                    e.to_string(),
-                                ),
-                            });
-                        }
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
+            services::prebind_and_spawn_admin(
+                admin_config.clone(),
+                &admin_cancel,
+                &admin_tasks,
+                &state_ref,
+                &metrics_registry,
+                listener_infos_provider.clone(),
+            )
+            .await?;
 
-            #[cfg(feature = "operations")]
-            if let (Some(server), Some(admin_cfg)) = (pre_bound_admin, admin_config.as_ref()) {
-                let metrics_enabled = admin_cfg.metrics;
-                let state_ref = state_ref.clone();
-                let provider: Arc<dyn AdminSnapshotProvider> = listener_infos_provider.clone();
-                if let Ok(addr) = server.local_addr() {
-                    match state_ref.admin_local_addr.lock() {
-                        Ok(mut guard) => *guard = Some(addr),
-                        Err(error) => {
-                            tracing::warn!(
-                                "admin listener address state was poisoned; resetting it: {error}"
-                            );
-                            let mut guard = error.into_inner();
-                            *guard = Some(addr);
-                            state_ref.admin_local_addr.clear_poison();
-                        }
-                    }
-                }
-                let admin_auth = admin_cfg.auth.clone();
-                admin_tasks.spawn(async move {
-                    let admin_state = eggress_admin::AdminState {
-                        metrics: metrics_registry.clone(),
-                        start_time: state_ref.start_time,
-                        readiness: state_ref.readiness.clone(),
-                        active_connections: Some(state_ref.active_connections.clone()),
-                        provider,
-                        udp_registry: state_ref.udp_registry.clone(),
-                        #[cfg(feature = "reverse")]
-                        reverse_registry: state_ref.reverse_registry.clone(),
-                        #[cfg(not(feature = "reverse"))]
-                        reverse_registry: std::sync::Arc::new(eggress_admin::ReverseRegistry::new()),
-                        metrics_enabled,
-                        auth: admin_auth,
-                    };
-                    if let Err(e) = server.run(admin_state).await {
-                        tracing::error!("admin server error: {e}");
-                    }
-                });
-            }
-
-            #[cfg(unix)]
-            {
-                let mut sigterm =
-                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate());
-                let mut sighup =
-                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup());
-
-                if let Err(ref e) = sigterm {
-                    tracing::warn!("failed to register SIGTERM handler: {e}");
-                }
-                if let Err(ref e) = sighup {
-                    tracing::warn!("failed to register SIGHUP handler: {e}");
-                }
-
-                // Readiness also means signal handling is installed. This
-                // prevents a reload signal from racing startup.
-                readiness.store(true, Ordering::Release);
-
-                loop {
-                    tokio::select! {
-                        _ = cancel.cancelled() => {
-                            tracing::info!("shutdown requested via cancel token");
-                            break;
-                        }
-                        _ = tokio::signal::ctrl_c() => {
-                            tracing::info!("shutdown signal received");
-                            break;
-                        }
-                        _ = async { sigterm.as_mut().ok()?.recv().await }, if sigterm.is_ok() => {
-                            tracing::info!("shutdown signal received");
-                            break;
-                        }
-                        _ = async { sighup.as_mut().ok()?.recv().await }, if sighup.is_ok() && !config_path.is_empty() => {
-                            tracing::info!("reload signal received, reloading config from {config_path}");
-                            let config_path_clone = config_path.clone();
-                            let load_result = tokio::task::spawn_blocking(move || {
-                                eggress_config::compile::load_and_compile(&config_path_clone)
-                            }).await;
-                            match load_result {
-                                Ok(Ok(new_rt_config)) => {
-                                    // Single canonical transaction owns
-                                    // classification, snapshot build, publish,
-                                    // routing/admin/health/pool/metrics side
-                                    // effects. Metrics are recorded inside.
-                                    match state_ref.apply_compiled_config(&new_rt_config) {
-                                        ReloadResult::Applied { generation: gen, upstreams: upstream_count } => {
-                                            tracing::info!(
-                                                generation = gen,
-                                                upstreams = upstream_count,
-                                                "config reloaded successfully"
-                                            );
-                                        }
-                                        ReloadResult::Rejected { reason } => {
-                                            tracing::error!("reload rejected: {reason}");
-                                        }
-                                        ReloadResult::Failed { error } => {
-                                            tracing::error!("reload failed (snapshot build): {error}");
-                                        }
-                                    }
-                                }
-                                Ok(Err(e)) => {
-                                    runtime_metrics.record_reload(false);
-                                    tracing::error!("reload failed (config load): {e}");
-                                }
-                                Err(join_err) => {
-                                    runtime_metrics.record_reload(false);
-                                    tracing::error!("reload task panicked: {join_err}");
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            #[cfg(not(unix))]
-            {
-                readiness.store(true, Ordering::Release);
-                tokio::select! {
-                    _ = cancel.cancelled() => {
-                        tracing::info!("shutdown requested via cancel token");
-                    }
-                    _ = tokio::signal::ctrl_c() => {
-                        tracing::info!("shutdown signal received");
-                    }
-                }
-            }
+            // Phase 1: readiness/signal run-loop ownership (signals.rs).
+            // Readiness publishes at the same point (after signal handling
+            // installed); SIGHUP stays file-backed only via the canonical
+            // reload transaction.
+            signals::run_signal_loop(
+                &readiness,
+                &cancel,
+                &config_path,
+                &state_ref,
+                &runtime_metrics,
+            )
+            .await;
 
             shutdown_ordered(ShutdownPlan {
                 readiness: readiness.clone(),
