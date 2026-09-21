@@ -399,7 +399,7 @@ This corrective plan may be marked **IMPLEMENTED** only when all are true:
 
 Fill this section in place during implementation. Do not create another closure plan if the criteria above pass.
 
-- Implementation commit: `ae22153`
+- Implementation commit: `6a1b67c`
 - Native write contract evidence: `python/tests/test_api_boundary_closure.py::TestNativeWriteContract::test_native_write_completes_without_drain` (peer receipt without drain) + `test_sync_wrapper_write_echoes_without_explicit_drain`; native `PyOutboundStream.write()` restored to submit+barrier completion in `crates/eggress-python/src/outbound.rs`, `write_blocking_for_sync` removed from runtime and `_eggress.pyi`.
 - Async write-pump/private-submit evidence: `test_async_write_uses_private_submit_and_drain_completes`, `test_async_ordered_writes_plus_drain`, `test_async_write_keeps_loop_schedulable`, `test_write_eof_ordered_after_async_submissions`, `test_async_drain_surfaces_terminal_failure`, `test_close_wait_closed_leaves_no_pump_running`; async path uses private native `_submit_write` (absent from `eggress.__all__` and `_eggress.pyi` per `test_private_submit_exists_but_not_public`).
 - Exception identity evidence: `TestExceptionIdentityMatrix` (11-name identity across native/`connection`/`exceptions`/top-level, hierarchy, stub agreement, managed/sync/async catch, `AsyncBridge` identity preservation, closed-stream family); `LoopMismatchError`/`UnsupportedCompositionError` are native aliases in `python/eggress/connection.py`.
