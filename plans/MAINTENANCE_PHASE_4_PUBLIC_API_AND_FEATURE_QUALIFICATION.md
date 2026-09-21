@@ -188,23 +188,31 @@ Record uncovered major-version debt in `docs/RUST_API.md`; do not fix it by chan
 
 ## Acceptance criteria
 
-- [ ] Representative supporting-crate public paths have downstream-shaped compile/use contracts.
-- [ ] Preferred embed/outbound/relay facade contracts remain covered.
-- [ ] Compatibility re-export paths touched by structural refactors remain covered.
-- [ ] The outbound `toml` no-default feature slice is enforced in CI.
-- [ ] Documented outbound and embed qualification slices agree with actual CI commands.
-- [ ] Optional QUIC/SSH/legacy checks remain bounded to touched/meaningful slices.
-- [ ] No public item or feature changes visibility, name, location, default, or signature.
-- [ ] No mandatory nightly/API-database/semver tool is added to ordinary CI.
-- [ ] `docs/RUST_API.md` accurately describes the qualification strategy.
-- [ ] Workspace fmt, clippy, and locked tests pass.
-
-## Closure record
+- [x] Representative supporting-crate public paths have downstream-shaped compile/use contracts.
+- [x] Preferred embed/outbound/relay facade contracts remain covered.
+- [x] Compatibility re-export paths touched by structural refactors remain covered.
+- [x] The outbound `toml` no-default feature slice is enforced in CI.
+- [x] Documented outbound and embed qualification slices agree with actual CI commands.
+- [x] Optional QUIC/SSH/legacy checks remain bounded to touched/meaningful slices.
+- [x] No public item or feature changes visibility, name, location, default, or signature.
+- [x] No mandatory nightly/API-database/semver tool is added to ordinary CI.
+- [x] `docs/RUST_API.md` accurately describes the qualification strategy.
+- [x] Workspace fmt, clippy, and locked tests pass.
 
 ## Closure record
 
 Implementation: added outbound `toml` slice to `.github/workflows/ci.yml` + `AGENTS.md` (now base/`toml`/`pproxy-compat`/`ssh`/`ssh,pproxy-compat`/`udp`; embed `ssh`/`pproxy-compat`/`ssh+pproxy-compat` unchanged); extended `eggress-embed/tests/public_api.rs` with `supporting_config_runtime_paths_compile` (config TOML compile, runtime supervisor/classify signatures) and `protocol_representative_paths_compile` (HTTP/SOCKS via URI + `HttpDetector`/`ConnectRequest`); added `eggress-server/tests/public_api.rs` (NoopMetrics, handles, reports, config/context, auth cache). No visibility/feature/signature change; no mandatory semver tool (manual `cargo-semver-checks` rejected as baseline burden); `docs/RUST_API.md` reconciled.
 
-Evidence: `cargo test -p eggress-embed --locked --test public_api` (5 passed); `cargo test -p eggress-server --locked --test public_api` (1); `cargo test -p eggress-config --locked`, `-p eggress-runtime`, `-p eggress-server` (existing suites); feature slices checked.
+Evidence map (baseline `ba4102f68c3965a8cadb7634febd2d610e239e71`):
+
+- supporting compile contracts → `crates/eggress-embed/tests/public_api.rs::supporting_config_runtime_paths_compile` and `::protocol_representative_paths_compile`; `crates/eggress-server/tests/public_api.rs`.
+- facade contracts → existing embed/outbound/relay/core/routing representative coverage retained.
+- re-export contracts → `eggress_embed::outbound::*` and `eggress-server` re-exports covered by the same compile tests after Phase 1/2 moves.
+- outbound `toml` slice → `.github/workflows/ci.yml` feature-boundary step now includes `--no-default-features --features toml`; `AGENTS.md` documents base/`toml`/`pproxy-compat`/`ssh`/`ssh,pproxy-compat`/`udp`.
+- slice agreement → documented outbound slices match CI commands; embed `ssh`/`pproxy-compat`/`ssh+pproxy-compat` unchanged and matching.
+- bounded optionals → QUIC/SSH/legacy checks limited to touched/meaningful slices; no combinatorial matrix, no `--all-features`.
+- no surface change → representative-only fixtures; public-surface policy in `docs/RUST_API.md` (documentation/qualification only).
+- no heavy tooling → no mandatory nightly/API-database/semver gate in ordinary CI.
+- focused evidence → `cargo test -p eggress-embed --locked --test public_api` (5 passed); `cargo test -p eggress-server --locked --test public_api` (1); `cargo test -p eggress-config/runtime/server` suites; feature slices checked; workspace fmt/clippy/locked tests green at implementation commit (remote CI `35646523487`).
 
 (End of file - total 209 lines)

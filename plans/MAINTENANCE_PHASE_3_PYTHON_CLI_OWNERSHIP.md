@@ -163,19 +163,17 @@ Do not mark the phase implemented without one of these explicit outcomes.
 
 ## Acceptance criteria
 
-- [ ] The current `run_pproxy_test()` contract is covered by focused local regression tests.
-- [ ] The existing owner surfaces are evaluated before any new implementation is written.
-- [ ] No public Rust API is added, moved, removed, or signature-changed.
-- [ ] No second chain-aware upstream tester is introduced.
-- [ ] `test_upstream_connect()` remains a distinct raw endpoint probe.
-- [ ] If the dependency is removed, Python behavior remains equivalent and `eggress-cli` is removed cleanly from binding ownership.
-- [ ] If the dependency is retained, the architectural justification and future removal condition are documented.
-- [ ] CLI and Python representative test semantics remain synchronized.
-- [ ] Python public names, stubs, exceptions, and wheel behavior are unchanged.
-- [ ] Focused and full Python tests pass.
-- [ ] Workspace fmt, clippy, and locked tests pass.
-
-## Closure record
+- [x] The current `run_pproxy_test()` contract is covered by focused local regression tests.
+- [x] The existing owner surfaces are evaluated before any new implementation is written.
+- [x] No public Rust API is added, moved, removed, or signature-changed.
+- [x] No second chain-aware upstream tester is introduced.
+- [x] `test_upstream_connect()` remains a distinct raw endpoint probe.
+- [x] If the dependency is removed, Python behavior remains equivalent and `eggress-cli` is removed cleanly from binding ownership.
+- [x] If the dependency is retained, the architectural justification and future removal condition are documented.
+- [x] CLI and Python representative test semantics remain synchronized.
+- [x] Python public names, stubs, exceptions, and wheel behavior are unchanged.
+- [x] Focused and full Python tests pass.
+- [x] Workspace fmt, clippy, and locked tests pass.
 
 ## Closure record
 
@@ -183,6 +181,15 @@ Outcome B — dependency retained.
 
 `run_pproxy_test()` consumes `eggress_cli::parse_pproxy_test_target()` + `run_upstream_test()` (chain-aware tester, same chain/timeout/exit/redaction/no-listener contract). Existing owner APIs (`OutboundConnector`/core/config) could not reproduce exact semantics without new public API or duplicated tester (both forbidden); `test_upstream_connect()` stays a distinct raw probe. No public Rust/Python/CLI change; no duplication.
 
-Evidence: new `eggress-cli` unit test `pproxy_test_target_parsing_contract` (URL/IPv4/IPv6/defaults/fail-closed, local only); `cargo test -p eggress-cli --locked --lib` (11 passed); `cargo tree -p eggress-python` still includes `eggress-cli` by design; justification in `architecture/python-bindings.md` (Outcome B).
+Evidence map (baseline `ba4102f68c3965a8cadb7634febd2d610e239e71` plus corrective test):
+
+- direct binding evidence → `python/tests/test_pproxy_compat.py::TestRunPproxyTestNativeBinding` imports `eggress._eggress.run_pproxy_test` directly (no network): no-upstream `["-l", "socks5://127.0.0.1:0"]` returns `0`; `["-s", "invalid"]` / `["--bogus-flag"]` raise `ValueError` (`pproxy argument error` / `unknown option`); ssh-upstream raises `UnsupportedFeatureError` at the shared execution gate.
+- shared-owner evidence → `eggress-cli` unit test `pproxy_test_target_parsing_contract` covers URL/IPv4/IPv6/defaults/fail-closed target parsing only; it does not alone prove the full Python helper contract.
+- process behavioral evidence → `python/tests/test_pproxy_phase6_process.py::test_python_test_mode_uses_native_bridge_without_listener_startup` proves chain-aware `--test` result with no listener startup (`pproxy-upstream-0` in stdout, no `started`/`listen:`); retained as the chain-aware/no-listener proof.
+- Outcome B justification → `architecture/python-bindings.md` (Outcome B section); retained dependency `crates/eggress-python/Cargo.toml` → `eggress-cli`; `cargo tree -p eggress-python` still includes `eggress-cli` by design.
+- Outcome A conditional → satisfied via the Outcome B branch: no removal performed, so equivalence-on-removal is vacuously satisfied with no duplication or new API.
+- distinction → `test_upstream_connect()` remains a raw endpoint TCP probe in `crates/eggress-python/src/compat.rs`, untouched.
+- sync evidence → CLI/Python agree on representative local inputs and exit/result semantics; full Python/compat suite green (implementation `2308 passed, 115 skipped`; corrective re-verified locally).
+- gates → `cargo test -p eggress-cli --locked --lib` (11 passed); `cargo test -p eggress-python --locked`; workspace fmt/clippy/locked tests green at implementation commit (remote CI `35646523487`, Python smoke `35646523343`).
 
 (End of file - total 187 lines)

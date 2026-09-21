@@ -2,7 +2,7 @@
 
 ## Status
 
-**PLANNED — 2026-09-21**
+**IN PROGRESS — 2026-09-21 (local verification green; remote CI pending)**
 
 ## Baseline
 
@@ -307,31 +307,32 @@ A newly discovered runtime defect should receive a separate corrective implement
 
 This corrective polish is complete only when:
 
-- [ ] All five maintenance phase files contain exactly one `## Closure record` heading.
-- [ ] Every checked phase acceptance criterion has explicit supporting evidence in its closure record.
-- [ ] No `IMPLEMENTED` maintenance phase contains unexplained unchecked acceptance criteria.
-- [ ] Phase 1 criteria are reconciled against the private runtime decomposition and lifecycle evidence.
-- [ ] Phase 2 criteria are reconciled against outbound private ownership, re-export, redaction, UDP, and feature-slice evidence.
-- [ ] A direct native-binding test exercises `eggress._eggress.run_pproxy_test()`.
-- [ ] The direct test covers no-upstream return, invalid/unknown argument failure, and unsupported execution-gate failure without external network access.
-- [ ] The existing process-level `--test` case remains the chain-aware/no-listener behavioral proof.
-- [ ] Phase 3 closure wording no longer implies the CLI target-parser unit test alone proves the full Python helper contract.
-- [ ] Phase 3 Outcome B remains unchanged: `eggress-python -> eggress-cli` is deliberately retained with no duplicated tester or public API addition.
-- [ ] Phase 4 criteria are reconciled against public compile contracts and actual CI feature slices, including outbound `toml`.
-- [ ] Phase 5 criteria are reconciled against corrected maintained docs and native/TOML equivalence evidence.
-- [ ] Parent roadmap records implementation commit `ba4102f68c3965a8cadb7634febd2d610e239e71` and remote workflow runs `35646523487` / `35646523343`.
-- [ ] Full Python/compat suite passes after the new direct binding test.
+- [x] All five maintenance phase files contain exactly one `## Closure record` heading.
+- [x] Every checked phase acceptance criterion has explicit supporting evidence in its closure record.
+- [x] No `IMPLEMENTED` maintenance phase contains unexplained unchecked acceptance criteria.
+- [x] Phase 1 criteria are reconciled against the private runtime decomposition and lifecycle evidence.
+- [x] Phase 2 criteria are reconciled against outbound private ownership, re-export, redaction, UDP, and feature-slice evidence.
+- [x] A direct native-binding test exercises `eggress._eggress.run_pproxy_test()`.
+- [x] The direct test covers no-upstream return, invalid/unknown argument failure, and unsupported execution-gate failure without external network access.
+- [x] The existing process-level `--test` case remains the chain-aware/no-listener behavioral proof.
+- [x] Phase 3 closure wording no longer implies the CLI target-parser unit test alone proves the full Python helper contract.
+- [x] Phase 3 Outcome B remains unchanged: `eggress-python -> eggress-cli` is deliberately retained with no duplicated tester or public API addition.
+- [x] Phase 4 criteria are reconciled against public compile contracts and actual CI feature slices, including outbound `toml`.
+- [x] Phase 5 criteria are reconciled against corrected maintained docs and native/TOML equivalence evidence.
+- [x] Parent roadmap records implementation commit `ba4102f68c3965a8cadb7634febd2d610e239e71` and remote workflow runs `35646523487` / `35646523343`.
+- [x] Full Python/compat suite passes after the new direct binding test.
 - [ ] The final corrective commit's remote `CI` and `Python smoke` workflows both succeed.
-- [ ] No Rust/Python/CLI/config/protocol/transport public surface or capability changes.
-- [ ] No new closure plan is needed after this pass.
+- [x] No Rust/Python/CLI/config/protocol/transport public surface or capability changes.
+- [x] No new closure plan is needed after this pass.
 
 ## Closure record
 
-Fill this section in place during implementation with:
+Corrective pass (tests/planning/docs only; no runtime/public-surface change):
 
-- corrective implementation commit;
-- direct `run_pproxy_test()` test name and cases;
-- phase-by-phase criterion reconciliation counts;
-- final Python suite count;
-- final remote `CI` and `Python smoke` run IDs;
-- confirmation that no runtime/public-surface behavior changed.
+- direct `run_pproxy_test()` test: `python/tests/test_pproxy_compat.py::TestRunPproxyTestNativeBinding` — `test_no_upstream_fast_path_returns_zero_without_network` (listener-only → `0`, no I/O), `test_invalid_argument_raises_value_error` (`-s invalid` → `ValueError/pproxy argument error`; `--bogus-flag` → `ValueError/unknown option`), `test_unsupported_execution_gate_raises_unsupported_feature` (ssh-upstream → `UnsupportedFeatureError`, gate blocks before side effects). Process proof retained: `test_python_test_mode_uses_native_bridge_without_listener_startup`.
+- reconciliation counts: Phase 1 (12/12), Phase 2 (9/9), Phase 3 (11/11 via Outcome B branch), Phase 4 (10/10), Phase 5 (11/11); each phase has exactly one `## Closure record` heading and explicit evidence maps.
+- docs: `architecture/python-bindings.md` agreement paragraph now distinguishes direct-binding vs shared-owner vs process evidence; README/`AGENTS.md`/skills required no pruning (already current: outbound `toml` slice, feature maps, test inventory).
+- local gates: `cargo fmt --check` pass; `cargo clippy --workspace --all-targets -- -D warnings` pass; focused Rust (`eggress-runtime` lifecycle 18, `eggress-outbound` 15, `eggress-cli --lib` 11) pass; outbound base/`toml`/pproxy/`ssh`/`ssh+pproxy`/`udp` + embed `ssh`/pproxy/`ssh+pproxy` compile slices pass; focused Python (`test_pproxy_compat` 15, `test_pproxy_phase6_process` + `test_api_boundary_closure` 32) pass; full Python/compat `2311 passed, 115 skipped` (implementation was `2308 passed`; +3 new).
+- implementation provenance (unchanged): commit `ba4102f68c3965a8cadb7634febd2d610e239e71`, remote CI `35646523487` success, Python smoke `35646523343` success (`2308 passed, 115 skipped`).
+- corrective commit remote verification: pending — record new `CI` / `Python smoke` run IDs here after push before marking `IMPLEMENTED`.
+- no Rust/Python/CLI/config/protocol/transport public-surface or capability changes; no new closure plan needed.

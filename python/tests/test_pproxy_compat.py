@@ -208,3 +208,55 @@ def test_from_pproxy_args_allow_partial():
         ["-l", "socks5://127.0.0.1:0", "-v"], allow_partial=True
     ).start() as handle:
         assert handle.status()["readiness"]
+
+
+class TestRunPproxyTestNativeBinding:
+    """Direct native-binding contract for `eggress._eggress.run_pproxy_test()`.
+
+    Maintenance corrective closure (Phase 3): this pins the Python-visible
+    parser/gate/no-upstream contract directly against the native binding,
+    without external network access.
+
+    - Shared-owner evidence remains `pproxy_test_target_parsing_contract`
+      (Rust unit test for `parse_pproxy_test_target`).
+    - Process behavioral evidence remains
+      `test_python_test_mode_uses_native_bridge_without_listener_startup`
+      (chain-aware `--test` result with no listener startup).
+    - Full-suite evidence remains `python/tests` + `tests/compat`.
+    """
+
+    def test_no_upstream_fast_path_returns_zero_without_network(self):
+        from eggress._eggress import run_pproxy_test
+
+        # Listener-only compiles to no upstreams; the binding must return 0
+        # before any network I/O or listener startup.
+        assert (
+            run_pproxy_test(
+                ["-l", "socks5://127.0.0.1:0"], "http://example.com/"
+            )
+            == 0
+        )
+
+    def test_invalid_argument_raises_value_error(self):
+        from eggress._eggress import run_pproxy_test
+
+        with pytest.raises(ValueError, match="pproxy argument error"):
+            run_pproxy_test(["-s", "invalid"], "http://example.com/")
+        with pytest.raises(ValueError, match="unknown option"):
+            run_pproxy_test(["--bogus-flag"], "http://example.com/")
+
+    def test_unsupported_execution_gate_raises_unsupported_feature(self):
+        from eggress._eggress import run_pproxy_test
+
+        # ssh-upstream is a known unsupported translation that blocks the
+        # shared execution gate before side effects or network I/O.
+        with pytest.raises(UnsupportedFeatureError):
+            run_pproxy_test(
+                [
+                    "-l",
+                    "socks5://127.0.0.1:0",
+                    "-r",
+                    "ssh://user@host:22",
+                ],
+                "http://example.com/",
+            )

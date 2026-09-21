@@ -200,19 +200,17 @@ In those cases, keep explicit code and rely on equivalence tests.
 
 ## Acceptance criteria
 
-- [ ] Maintained Python docs no longer say Unix-domain sockets are absent from the Rust runtime.
-- [ ] Maintained Python docs no longer describe `.pyi` support as future work.
-- [ ] Runtime capability, service-facade exposure, and dedicated Python convenience API are described as distinct layers.
-- [ ] `architecture/pproxy-compat.md` identifies the shared semantic intermediate model and both supported projections accurately.
-- [ ] Native/TOML equivalence tests cover the important dual-mapped field families.
-- [ ] Any private helper extraction reduces duplicated semantic rules and preserves output exactly.
-- [ ] No pproxy parser, diagnostic, tier, warning, TOML, runtime, or Python API behavior changes.
-- [ ] No compatibility capability claim changes.
-- [ ] Current-state stale-doc search has been reviewed and maintained docs are reconciled.
-- [ ] Focused compatibility/Python documentation tests pass.
-- [ ] If code changed, workspace fmt, clippy, locked tests, and full Python/compat suite pass.
-
-## Closure record
+- [x] Maintained Python docs no longer say Unix-domain sockets are absent from the Rust runtime.
+- [x] Maintained Python docs no longer describe `.pyi` support as future work.
+- [x] Runtime capability, service-facade exposure, and dedicated Python convenience API are described as distinct layers.
+- [x] `architecture/pproxy-compat.md` identifies the shared semantic intermediate model and both supported projections accurately.
+- [x] Native/TOML equivalence tests cover the important dual-mapped field families.
+- [x] Any private helper extraction reduces duplicated semantic rules and preserves output exactly.
+- [x] No pproxy parser, diagnostic, tier, warning, TOML, runtime, or Python API behavior changes.
+- [x] No compatibility capability claim changes.
+- [x] Current-state stale-doc search has been reviewed and maintained docs are reconciled.
+- [x] Focused compatibility/Python documentation tests pass.
+- [x] If code changed, workspace fmt, clippy, locked tests, and full Python/compat suite pass.
 
 ## Closure record
 
@@ -225,6 +223,16 @@ Implementation (docs + equivalence only; no compat behavior/claim change):
 - Strengthened `native_equivalence.rs`: extended `assert_runtime_equivalent` with listener auth/TLS/UDP + group scheduler; added `listener_auth_and_multi_remote_group_equivalent` (auth presence, warnings/unsupported agreement, redacted views). No private helper extraction (explicit projections retained per stop conditions).
 - Stale current-state search reviewed; historical plans/reports retain baselines by policy.
 
-Evidence: `cargo test -p eggress-pproxy-compat --locked --test native_equivalence` (6 passed), `--test uri_syntax_equivalence`; `cargo test -p eggress-pproxy-compat --locked`.
+Evidence map (baseline `ba4102f68c3965a8cadb7634febd2d610e239e71`):
+
+- Unix language → `docs/PYTHON_BINDINGS.md` distinguishes runtime capability vs facade exposure vs convenience API; no longer claims Unix absent.
+- stub language → `docs/PYTHON_BINDINGS.md` documents shipped `py.typed` + maintained `.pyi` files; `python/README.md` corrected.
+- three layers → `docs/PYTHON_BINDINGS.md` + `python/README.md` + `docs/python/EGRESS_PYTHON_API_CURRENT_STATE.md` (marked historical with current corrections).
+- native/TOML authority → `architecture/pproxy-compat.md` + `architecture/python-bindings.md` identify shared semantic intermediates, native direct projection, TOML presentation projection, and `native_equivalence` drift gate.
+- equivalence coverage → `crates/eggress-pproxy-compat/tests/native_equivalence.rs` now covers listener auth/TLS/UDP + upstream/group scheduler/nested matches/reverse/admin/empty-default distinctions.
+- helper extraction conditional → satisfied via stop-condition branch: no extraction performed because explicit projections remain more auditable; no duplicated-rule reduction was obvious.
+- no behavior/claim change → parser/diagnostics/tiers/warnings/TOML/runtime/Python API unchanged; manifest + compatibility matrix untouched.
+- stale search → maintained docs reconciled for `not supported`/`future work`/`missing stub`/`Unix domain` hits; historical plans/reports retain baselines by policy.
+- focused evidence → `cargo test -p eggress-pproxy-compat --locked --test native_equivalence` (6 passed), `--test uri_syntax_equivalence`, `cargo test -p eggress-pproxy-compat --locked`; Python docs/API agreement via `test_public_exports`/`test_wheel_import_smoke`/`test_api_boundary_closure`/`test_docs_examples`; full Python/compat suite green at implementation commit (`2308 passed, 115 skipped`).
 
 (End of file - total 229 lines)

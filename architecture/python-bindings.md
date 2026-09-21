@@ -256,11 +256,17 @@ Removal via existing owner APIs was rejected because:
 - CLI public helpers are preserved by campaign constraint and continue to own
   the tester; the binding shares behavior instead of forking it.
 
-Agreement is by construction (same code) and pinned by
-`eggress-cli` unit test `pproxy_test_target_parsing_contract` (local fixtures,
-no network) plus existing CLI upstream-tester coverage. Future removal requires
-a stable owner API that already exposes chain-aware testing with identical
-result/exit/redaction semantics and no new public surface.
+Agreement is by construction (same code) and pinned by three layers:
+direct native-binding regression `TestRunPproxyTestNativeBinding` in
+`python/tests/test_pproxy_compat.py` (no-upstream `0`, `ValueError` parser
+failures, `UnsupportedFeatureError` gate, no network), the shared-owner
+`eggress-cli` unit test `pproxy_test_target_parsing_contract` (target parsing
+only), and process-level
+`test_python_test_mode_uses_native_bridge_without_listener_startup`
+(chain-aware `--test` with no listener startup), plus existing CLI
+upstream-tester coverage. Future removal requires a stable owner API that
+already exposes chain-aware testing with identical result/exit/redaction
+semantics and no new public surface.
 
 ## See also
 

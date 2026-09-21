@@ -184,22 +184,29 @@ A somewhat large `connector.rs` is acceptable if further extraction harms locali
 
 ## Acceptance criteria
 
-- [ ] Public `eggress-outbound` import paths and signatures are byte-for-byte/source-compatible at the API level.
-- [ ] `eggress_embed::outbound::*` compatibility paths still compile.
-- [ ] TCP construction/execution and typed error handling retain one implementation authority.
-- [ ] UDP association lifecycle is privately isolated without capability or semantic changes.
-- [ ] pproxy redaction/error adaptation is privately isolated without weakening credential safety.
-- [ ] No new crate or user-facing API is introduced.
-- [ ] Base/TOML/pproxy/SSH/SSH+pproxy/UDP feature slices compile.
-- [ ] Existing outbound and embed focused tests pass.
-- [ ] Workspace fmt, clippy, and locked tests pass.
-
-## Closure record
+- [x] Public `eggress-outbound` import paths and signatures are byte-for-byte/source-compatible at the API level.
+- [x] `eggress_embed::outbound::*` compatibility paths still compile.
+- [x] TCP construction/execution and typed error handling retain one implementation authority.
+- [x] UDP association lifecycle is privately isolated without capability or semantic changes.
+- [x] pproxy redaction/error adaptation is privately isolated without weakening credential safety.
+- [x] No new crate or user-facing API is introduced.
+- [x] Base/TOML/pproxy/SSH/SSH+pproxy/UDP feature slices compile.
+- [x] Existing outbound and embed focused tests pass.
+- [x] Workspace fmt, clippy, and locked tests pass.
 
 ## Closure record
 
 Implementation: split `connector.rs` (2284→1404 lines) into private `connect_error.rs` (typed errors + classifier adaptation), `udp.rs` (`UdpAssociation` + direct/SOCKS5 lifecycle, `udp` feature), `compat.rs` (pproxy redaction/mapping, `pproxy-compat` feature). `lib.rs` remains the stable facade (`OutboundConnector`, `OutboundInfo`, typed errors, `UdpAssociation`, `OUTBOUND_MAX_DATAGRAM_SIZE`, executor/helpers); `eggress_embed::outbound::*` source-compatible. TCP execution single-sourced; UDP accounting/redaction frozen; no new crate/API. Tests retained in `connector.rs` for locality (stop-condition allowance).
 
-Evidence: `cargo test -p eggress-outbound --locked` (15 passed); `cargo check` base/`toml`/`pproxy-compat`/`ssh`/`ssh,pproxy-compat`/`udp`; `eggress-embed --test public_api` (3→5 after Phase 4), `--test outbound_detailed` (21); `architecture/outbound.md` updated.
+Evidence map (baseline `ba4102f68c3965a8cadb7634febd2d610e239e71`):
+
+- stable facade → `crates/eggress-outbound/src/lib.rs` re-exports unchanged (`OutboundConnector`, `OutboundInfo`, `OutboundConnectError/Kind/Stage`, `UdpAssociation`, `OUTBOUND_MAX_DATAGRAM_SIZE`, executor/helpers).
+- typed errors → `crates/eggress-outbound/src/connect_error.rs` (private classifier adaptation; no signature change).
+- UDP lifecycle → `crates/eggress-outbound/src/udp.rs` (`UdpAssociation`, direct/SOCKS5 send/recv, `active_udp_associations` accounting; `udp` feature gate preserved).
+- compatibility redaction → `crates/eggress-outbound/src/compat.rs` (bracket-aware `@` handling, `#` masking, over-redaction preserved; `pproxy-compat` gate).
+- TCP single-sourced → `connector.rs` retains `connect_tcp`/`connect_tcp_detailed`/inner execution authority; no second engine.
+- feature slices → `cargo check -p eggress-outbound --locked --no-default-features` base/`toml`/`pproxy-compat`/`ssh`/`ssh,pproxy-compat`/`udp` all compile (including `toml` CI slice).
+- re-export contract → `eggress_embed::outbound::OutboundConnector` source-compatible; `cargo test -p eggress-embed --locked --test public_api` (3→5 after Phase 4) and `--test outbound_detailed` (21) pass.
+- focused tests → `cargo test -p eggress-outbound --locked` (15 passed); `architecture/outbound.md` updated; workspace fmt/clippy/locked tests green at implementation commit (remote CI `35646523487`).
 
 (End of file - total 204 lines)

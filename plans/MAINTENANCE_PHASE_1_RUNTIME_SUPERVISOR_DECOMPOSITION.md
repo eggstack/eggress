@@ -183,25 +183,36 @@ A smaller extraction that preserves explicit ownership is preferable to a genera
 
 ## Acceptance criteria
 
-- [ ] `ServiceSupervisor::run()` no longer contains the full listener preparation implementation.
-- [ ] Standard, Unix, transparent, and QUIC listener preparation have explicit private ownership boundaries.
-- [ ] Reverse/admin auxiliary startup is separated from the signal wait loop.
-- [ ] Readiness publication occurs at the same semantic point as the baseline.
-- [ ] SIGHUP reload continues through `RuntimeState::apply_compiled_config()`.
-- [ ] File-backed versus in-memory reload behavior is unchanged.
-- [ ] Existing compatibility auth/system-proxy hooks behave identically.
-- [ ] Existing task/cancellation ownership is preserved; no detached cleanup work is added.
-- [ ] `shutdown_ordered` remains the single ordered shutdown authority.
-- [ ] No public Rust API, config schema, feature, protocol behavior, metric, or compatibility claim changes.
-- [ ] Focused runtime/embed lifecycle tests pass.
-- [ ] Workspace fmt, clippy, and locked tests pass.
-
-## Closure record
+- [x] `ServiceSupervisor::run()` no longer contains the full listener preparation implementation.
+- [x] Standard, Unix, transparent, and QUIC listener preparation have explicit private ownership boundaries.
+- [x] Reverse/admin auxiliary startup is separated from the signal wait loop.
+- [x] Readiness publication occurs at the same semantic point as the baseline.
+- [x] SIGHUP reload continues through `RuntimeState::apply_compiled_config()`.
+- [x] File-backed versus in-memory reload behavior is unchanged.
+- [x] Existing compatibility auth/system-proxy hooks behave identically.
+- [x] Existing task/cancellation ownership is preserved; no detached cleanup work is added.
+- [x] `shutdown_ordered` remains the single ordered shutdown authority.
+- [x] No public Rust API, config schema, feature, protocol behavior, metric, or compatibility claim changes.
+- [x] Focused runtime/embed lifecycle tests pass.
+- [x] Workspace fmt, clippy, and locked tests pass.
 
 ## Closure record
 
 Implementation: extracted private `supervisor/listeners.rs` (`PreparedListenerSet`, `PreparedUnix/TransparentListener`, `prepare_listener_set`, `publish_listener_addresses`), `supervisor/services.rs` (`apply_compatibility_proxy`, `spawn_reverse_services`, `prebind_and_spawn_admin`), `supervisor/signals.rs` (`run_signal_loop`). `run()` is now an orchestrator (health → prepare/publish → UDP/accept loops → auxiliary → signals → `shutdown_ordered` single authority). No public API/config/feature/metric/log change; readiness/SIGHUP/shutdown ordering preserved.
 
-Evidence: `cargo test -p eggress-runtime --locked` (345 passed), `lifecycle_invariants` (18 passed), `eggress-embed --test start_stop` (9), `--test reload` (6); `cargo check` base + `common`/`extended`/`operations,reverse` slices; `architecture/runtime.md` module map updated.
+Evidence map (baseline `ba4102f68c3965a8cadb7634febd2d610e239e71`):
+
+- listener ownership → `crates/eggress-runtime/src/supervisor/listeners.rs` (`prepare_listener_set`, `PreparedListenerSet`); `run()` delegates instead of inlining preparation.
+- standard/Unix/transparent/QUIC boundaries → `PreparedListenerSet` (`prepared`/`prepared_quic`/`unix`/`transparent`) + `publish_listener_addresses`; platform skip/fallback preserved.
+- reverse/admin separation → `supervisor/services.rs` (`spawn_reverse_services`, `prebind_and_spawn_admin`); signal loop owns no auxiliary spawn.
+- readiness same point → `supervisor/signals.rs::run_signal_loop` publishes readiness after signal install, before wait; startup failures still surface before readiness.
+- canonical reload → `RuntimeState::apply_compiled_config()` unchanged; `run_signal_loop` calls it for file-backed SIGHUP only.
+- file vs in-memory reload → SIGHUP remains file-backed; embed in-memory path acquires no file semantics.
+- auth/system-proxy hooks → `services::apply_compatibility_proxy` preserves `--sys` select/apply and auth reuse behavior.
+- task/cancellation ownership → `TaskTracker`/tokens passed through phase helpers; no detached tasks added.
+- ordered shutdown → `shutdown_ordered(ShutdownPlan)` remains the single closure path from `run()`.
+- no public surface change → private-only extraction; verified by green workspace gate and unchanged public exports.
+- lifecycle evidence → `cargo test -p eggress-runtime --locked` (345 passed), `lifecycle_invariants` (18), `eggress-embed --test start_stop` (9), `--test reload` (6).
+- gates/docs → `cargo check` base + `common`/`extended`/`operations,reverse` slices; `architecture/runtime.md` module map updated; workspace fmt/clippy/locked tests green at implementation commit (remote CI `35646523487`).
 
 (End of file - total 206 lines)
