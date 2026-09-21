@@ -56,7 +56,7 @@ Check with: `cargo check --manifest-path fuzz/Cargo.toml --bins`
 | File | What it measures |
 |---|---|
 | `route_match.rs` | Route decision latency across domain/IP targets, rule counts, and match strategies |
-| `tcp_relay.rs` | End-to-end TCP relay throughput at 1KB and 64KB payload sizes: benchmark client → proxy listener → `eggress-relay` engine → upstream echo server, plus an equivalent-topology `tokio::io::copy_bidirectional` baseline (diagnostic, not a CI gate) |
+| `tcp_relay.rs` | End-to-end TCP relay throughput at 1KB, 64KB, and 1MB payload sizes: benchmark client → proxy listener → `eggress-relay` engine → upstream echo server, plus steady-state cases and an equivalent-topology `tokio::io::copy_bidirectional` baseline (diagnostic, not a CI gate) |
 | `udp_relay.rs` | SOCKS5 UDP codec groups plus actual local relay flow management (`udp_runtime` via `standalone_udp_relay`) |
 | `http_connect_upstream.rs` | HTTP CONNECT upstream open/auth/407-response lifecycle |
 | `tls_setup.rs` | TLS construction cost |
@@ -146,6 +146,7 @@ Policy docs: `docs/CI_STATUS.md`, `docs/TESTING.md`.
 
 Multi-stage build: `rust:1.85-slim` builder -> `gcr.io/distroless/cc-debian12:nonroot`.
 Exposes ports 8080, 1080, 9090 (no role mapping in the Containerfile). Entry point: `/eggress`.
+The image ships the `eggress` binary only (no `pproxy` binary); `ARG VERSION` defaults to a placeholder and is overridden by the release workflow.
 
 ## Verification workflow
 

@@ -6,8 +6,8 @@
 > for the final Phase 10 classification.
 
 This historical evidence table was derived from
-the parity manifest at [`docs/parity/pproxy_capability_manifest.toml`](parity/pproxy_capability_manifest.toml).
-Keep this document in sync with the manifest.
+the parity manifest at [`docs/parity/pproxy_capability_manifest.toml`](parity/pproxy_capability_manifest.toml)
+at the time of writing; it is a frozen snapshot and is intentionally not updated.
 
 ## Evidence Tiers
 

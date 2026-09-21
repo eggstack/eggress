@@ -18,7 +18,7 @@ Current version locations — all must be moved in lockstep:
 
 Notes:
 - `crates/eggress-python/Cargo.toml` uses `version.workspace = true`; it has no independent version.
-- `python/pyproject.toml` is a local dev convenience and inherits the workspace version.
+- `python/pyproject.toml` is a local dev convenience that currently hardcodes the same version; keep it aligned on bump (it is intentionally outside the preflight gate, which checks only the workspace, `crates/eggress-python/pyproject.toml`, and `python-pproxy-compat/pyproject.toml`).
 - The publish workflow hard-fails if a pushed tag does not match the workspace version.
 
 ## Release steps

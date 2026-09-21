@@ -698,7 +698,7 @@ else:
 
 ```python
 import eggress
-print(eggress.version())  # "0.1.0"
+print(eggress.version())  # "1.0.7"
 ```
 
 ### `capabilities()`
@@ -708,7 +708,7 @@ Return a dict describing eggress capabilities and runtime metadata:
 ```python
 import eggress
 caps = eggress.capabilities()
-print(caps["version"])                      # "0.1.0"
+print(caps["version"])                      # "1.0.7"
 print(caps["python_version"])               # "3.12.4"
 print(caps["pproxy_compatibility_version"]) # "2.7.9"
 print(caps["supported_protocols"])          # ["http", "socks4", "socks4a", "socks5", ...]

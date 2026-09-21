@@ -215,5 +215,5 @@ Legend: `[x]` complete, `[ ]` not complete.
 
 - [x] Linux binaries (x86_64, aarch64), macOS binaries (x86_64, arm64), Windows binaries (x86_64)
 - [x] Python package on PyPI (wheels for Linux/macOS/Windows)
-- [ ] Crates.io packages (blocked: CLI depends on internal crates)
+- [ ] Crates.io packages (manual `cargo publish` in dependency order per `docs/release/RELEASE_PROCESS.md`; versions immutable, facades last)
 - [ ] Reproducible builds

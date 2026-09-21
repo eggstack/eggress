@@ -1,7 +1,6 @@
 FROM rust:1.85-slim AS builder
 
 ARG TARGETARCH
-ARG VERSION=0.1.0
 
 WORKDIR /build
 

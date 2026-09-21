@@ -92,6 +92,8 @@ python -m zipfile -l dist/*.whl | grep -i license
 
 ## Audit Results (v0.1.0)
 
+> Record of the v0.1.0 audit run, retained for provenance. Re-run the checks above for each release; do not read these results as current.
+
 | Check | Result | Notes |
 |-------|--------|-------|
 | `cargo deny check` | ✅ PASS | advisories ok, bans ok, licenses ok, sources ok |

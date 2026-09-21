@@ -104,7 +104,7 @@ Eggress identifies itself as a compatibility implementation through:
 
 | Symbol | Location | Value | Purpose |
 |--------|----------|-------|---------|
-| `eggress.__version__` | `eggress/__init__.py` | `"0.1.0"` (from native module) | Eggress version |
+| `eggress.__version__` | `eggress/__init__.py` | `"1.0.7"` (from native module) | Eggress version |
 | `eggress.version()` | `eggress/__init__.py` | Callable, returns version string | Programmatic access |
 | `eggress.capabilities()` | `eggress/__init__.py` | Dict with version, python_version, pproxy_compatibility_version, supported_protocols, supported_schedulers | Full capability snapshot |
 | `eggress.pproxy.compatibility_version()` | `eggress/pproxy.py` | `"2.7.9"` | Target pproxy version |

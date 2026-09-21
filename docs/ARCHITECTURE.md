@@ -1,5 +1,13 @@
 # Eggress Architecture
 
+> **Maintained elsewhere.** The per-component deep dives in
+> [`architecture/`](../architecture/overview.md) (indexed from
+> `architecture/overview.md`) are the maintained architecture reference.
+> This file retains an earlier crate-catalog snapshot and is not updated for
+> every change — prefer the top-level directory for review. For the crate
+> inventory and compat contract, see `architecture/overview.md`,
+> `docs/RUST_API.md`, and `docs/parity/pproxy_capability_manifest.toml`.
+
 ## Overview
 
 Eggress is a multi-protocol TCP proxy framework built on Tokio. It supports mixed-protocol listeners (HTTP CONNECT, SOCKS4/4a, SOCKS5) with direct or chained upstream connections.

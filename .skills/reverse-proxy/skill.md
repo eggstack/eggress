@@ -17,6 +17,7 @@ Use when implementing or modifying reverse/backward proxy functionality for NAT 
   - `src/server.rs` — `ReverseServer` acceptor: control connection pool, external client dispatch, `allow_bind` enforcement, defense-in-depth `validate()` (incl. TLS), optional `tls` (TLS before auth, `tls_accept`)
   - `src/client.rs` — `ReverseClient` control client: auto-reconnect with backoff, reused `Arc<ClientConfig>` + SNI, `TargetResolver` trait, `TargetResolution` enum
   - `src/metrics.rs` — `ReverseMetrics` (Prometheus counters/gauges) and `ReverseMetricsSnapshot`
+  - `src/compat_pproxy.rs` — pproxy wire-compat handshake mapping (plaintext; native TLS stays opt-in)
 - `eggress-runtime/src/reverse.rs` — `RouteEngineTargetResolver` adapter bridging the route engine to `TargetResolver`
 - `eggress-runtime/src/supervisor.rs` — spawns reverse servers/clients, manages lifecycle
 - `eggress-config/src/model.rs` — `ReverseServerConfig`, `ReverseClientConfig` TOML models

@@ -76,7 +76,7 @@ cargo test --manifest-path fuzz/Cargo.toml --no-run
 
 ### Benchmarks
 Criterion benchmarks live in `benches/`:
-- `tcp_relay.rs` — end-to-end TCP relay throughput through the `eggress-relay` engine (1KB/64KB) plus a `copy_bidirectional` baseline
+- `tcp_relay.rs` — end-to-end TCP relay throughput through the `eggress-relay` engine (1KB/64KB/1MB relay + steady-state + `copy_bidirectional` baseline; informational, not a CI gate)
 - `udp_relay.rs` — actual local UDP relay flows
 - `route_match.rs` — route matching latency
 - `tls_setup.rs` — TLS construction

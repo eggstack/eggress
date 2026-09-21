@@ -358,12 +358,12 @@ eggress/
 
 | Topic | Link |
 |-------|------|
-| Architecture | [docs/ARCHITECTURE.md](https://github.com/eggstack/eggress/blob/main/docs/ARCHITECTURE.md) |
-| Per-component deep dives | [architecture/overview.md](https://github.com/eggstack/eggress/blob/main/architecture/overview.md) |
+| Architecture (maintained deep dives) | [architecture/overview.md](https://github.com/eggstack/eggress/blob/main/architecture/overview.md) |
+| Architecture (earlier snapshot) | [docs/ARCHITECTURE.md](https://github.com/eggstack/eggress/blob/main/docs/ARCHITECTURE.md) |
 | Embed API | [docs/EMBED_API.md](https://github.com/eggstack/eggress/blob/main/docs/EMBED_API.md) |
 | Python bindings | [docs/PYTHON_BINDINGS.md](https://github.com/eggstack/eggress/blob/main/docs/PYTHON_BINDINGS.md) |
 | pproxy migration | [docs/PPROXY_MIGRATION.md](https://github.com/eggstack/eggress/blob/main/docs/PPROXY_MIGRATION.md) |
-| pproxy parity spec (historical) | [docs/PPROXY_PARITY_SPEC.md](https://github.com/eggstack/eggress/blob/main/docs/PPROXY_PARITY_SPEC.md) |
+| pproxy parity spec (historical provenance) | [docs/PPROXY_PARITY_SPEC.md](https://github.com/eggstack/eggress/blob/main/docs/PPROXY_PARITY_SPEC.md) |
 | Config reference | [docs/CONFIG_REFERENCE.md](https://github.com/eggstack/eggress/blob/main/docs/CONFIG_REFERENCE.md) |
 | URI grammar | [docs/URI_GRAMMAR.md](https://github.com/eggstack/eggress/blob/main/docs/URI_GRAMMAR.md) |
 | Testing | [docs/TESTING.md](https://github.com/eggstack/eggress/blob/main/docs/TESTING.md) |

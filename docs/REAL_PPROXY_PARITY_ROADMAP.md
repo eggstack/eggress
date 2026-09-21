@@ -10,7 +10,8 @@
 > release-candidate documents. The "Current non-parity areas" list below is
 > the original Phase 11 snapshot and is preserved for historical reference;
 > it has been substantially closed by the work since Phase 11. See
-> [`release/FINAL_PPROXY_PARITY_REPORT.md`](release/FINAL_PPROXY_PARITY_REPORT.md)
+> [`parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`](parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
+> and [`parity/pproxy_capability_manifest.toml`](parity/pproxy_capability_manifest.toml)
 > for the current parity status.
 
 This roadmap defines the long-term incremental path from the current Eggress release-candidate boundary to real pproxy parity. It intentionally uses a stricter definition of parity than the existing release-candidate documents.

@@ -34,7 +34,7 @@ verifies the installed pproxy version matches and fails loudly on mismatch
 unless an override is provided.
 
 Target configuration: `tests/compat/pproxy_target.toml`
-Compatibility manifest: `tests/compat/pproxy_manifest.toml`
+Compatibility manifest: `docs/parity/pproxy_capability_manifest.toml` (historical path `tests/compat/pproxy_manifest.toml` no longer exists)
 
 ## 2. Local/Listener Protocols
 
