@@ -21,7 +21,7 @@ health probes, reverse routing gate, and ordered shutdown.
 | `src/supervisor/accounting.rs` | `ListenerConnectionSlot` (per-listener limits), `ActiveConnectionGuard` (exactly-once global accounting), accept-error backoff |
 | `src/supervisor/shutdown.rs` | `ShutdownPlan` + `shutdown_ordered()` (single ordered shutdown authority: readiness false, listener stop, drain, admin last) |
 | `src/snapshot.rs` | `CompiledRuntimeSnapshot { generation, upstreams, router, timeouts, listeners, admin, reverse_servers, reverse_clients }`; `compile_runtime_snapshot(config, previous)` reuses unchanged upstream `Arc`s via ptr-identity when chain+health are identical; increments generation monotonically |
-| `src/reverse.rs` | `RouteEngineTargetResolver` gates reverse-client targets through `SharedRoutingService::decide()` with `transport=ReverseTcp`; routing is an authorization gate, not a redirect |
+| `src/reverse.rs` | `RouteEngineTargetResolver` gates reverse-client targets through `SharedRoutingService::policy_decision()` with `transport=ReverseTcp`; routing is an authorization gate, not a redirect |
 | `src/platform.rs` | `PlatformCapability`, `CapabilityStatus`, `check_capability[_with_overrides]()`, `platform_info()` |
 | `src/error.rs` | `RuntimeError` — `Config`, `ListenerBind`, `AdminBind`, `RuntimeInit`, `Other` |
 
@@ -121,9 +121,9 @@ Ordering implemented by `shutdown_ordered()` (`src/supervisor/shutdown.rs`):
 | 6 | `tasks.close(); tasks.wait().await` | Wait for listener accept loops to exit |
 | 7 | Poll `active_connections` every 100ms until 0 or deadline; `connection_cancel.cancel()` on timeout | Grace drain, then force-cancel |
 | 8 | `connection_tasks.close(); connection_tasks.wait().await` | Wait for connection tasks |
-| 9 | `ssh_sessions.shutdown().await` (feature `ssh`) | Flush SSH state |
-| 10 | `admin_cancel.cancel(); admin_tasks.close(); admin_tasks.wait().await` | Admin stops **last** — queryable through drain |
-| 11 | `compatibility_system_proxy.restore()` | Revert OS proxy if `--sys` used |
+| — | `ssh_sessions.shutdown().await` (cfg-gated on feature `ssh`, unnumbered) | Flush SSH state |
+| 9 | `admin_cancel.cancel(); admin_tasks.close(); admin_tasks.wait().await` | Admin stops **last** — queryable through drain |
+| — | `compatibility_system_proxy.restore()` (folded into step 9) | Revert OS proxy if `--sys` used |
 
 Each concern uses its own `CancellationToken` or `TaskTracker`.
 
@@ -244,7 +244,7 @@ follows current routing.
 - Snapshot published **before** router swap (`supervisor/state.rs`, `apply_compiled_config`).
 - `health_cancel` cancelled at step 3, not step 2, to avoid false
   unhealthy marking during drain.
-- Admin stops **last** (step 10) so `/metrics` is queryable during drain.
+- Admin stops **last** (step 9) so `/metrics` is queryable during drain.
 - `RuntimeAdminListenerInfos` reads `ArcSwap` per request — no stale data.
 
 ## See also

@@ -87,27 +87,27 @@ fn route(&self, request: &RouteRequest) -> Result<SelectedRoute, RouteError> {
 
 ### Health state machine
 
-Six states in `HealthState` (`src/health.rs:10-18`):
+Six states in `HealthState` (`src/health.rs:12-19`):
 
 | Current state | On success | On failure |
 |---|---|---|
 | `Unknown` | Stay `Unknown` until `consecutive_successes >= successes_to_healthy`, then `Healthy` | `Suspect` (1 failure); `Unhealthy` at threshold |
 | `Healthy` | Stay `Healthy` | `Suspect` (below threshold); `Unhealthy` at threshold |
-| `Suspect` | `Healthy` | Stay `Suspect` (below threshold); `Unhealthy` at threshold |
+| `Suspect` | `Healthy` only once `consecutive_successes >= successes_to_healthy` (default 2), else stays `Suspect` | Stay `Suspect` (below threshold); `Unhealthy` at threshold |
 | `Unhealthy` | `Recovering` | Stay `Unhealthy` |
 | `Recovering` | Stay `Recovering` until `consecutive_successes >= successes_to_healthy`, then `Healthy` | `Unhealthy` (any failure) |
 | `Disabled` | `Disabled` | `Disabled` |
 
-Defaults (`HealthConfig::default()` at `src/health.rs:41-51`):
+Defaults (`HealthConfig::default()` at `src/health.rs:42-52`):
 - `interval`: 30 s, `timeout`: 5 s.
 - `failures_to_unhealthy`: 3, `successes_to_healthy`: 2.
 - `initial_state`: `Unknown`.
 
-Jitter: each probe delay is `interval +/- 20%` via `fastrand::f64()` (`jittered_delay` at `src/health.rs:219`, sampled at `src/health.rs:263`). Probe concurrency bounded by a 10-permit semaphore (`src/health.rs:242`).
+Jitter: each probe delay is `interval +/- 20%` via `fastrand::f64()` (`jittered_delay` at `src/health.rs:257`, sampled at `src/health.rs:301`). Probe concurrency bounded by a 10-permit semaphore (`src/health.rs:280`).
 
 ### Eligibility
 
-`is_eligible()` at `src/health.rs:201-212` returns `true` when `upstream.is_enabled()` AND state is `Unknown | Healthy | Suspect | Recovering`. `Unhealthy` and `Disabled` are excluded.
+`is_eligible()` at `src/health.rs:239-250` returns `true` when `upstream.is_enabled()` AND state is `Unknown | Healthy | Suspect | Recovering`. `Unhealthy` and `Disabled` are excluded.
 
 ### Lease RAII lifecycle
 
@@ -126,7 +126,7 @@ This two-phase design means `in_flight` tracks route-selection-to-upstream-open 
 | `FirstAvailable` | First candidate where `is_eligible()` | List-order dependent |
 | `RoundRobin` | Atomic cursor, `compare_exchange` loop, skips ineligible | Concurrent-safe, skips disabled/unhealthy |
 | `Random` | Uniform random pick over the eligible set (`rng.index(eligible_count)` + linear scan) | Seeded via `RandomIndex` trait (production: `FastrandRandom`; tests: `DeterministicRandom`) |
-| `LeastConnections` | `min_by_key(current_load())` | Tie-broken by iterator order |
+| `LeastConnections` | `min_by_key(current_load())` | Tie-broken by rotating cursor over the tied min-load set |
 
 ### CompatRegexRule matching
 

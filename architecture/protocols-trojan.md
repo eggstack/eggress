@@ -79,7 +79,7 @@ A correct hash followed by a malformed CRLF produces `AuthFailed` -- identical t
 
 ## Feature gates
 
-No optional features. The crate has a fixed dependency set: `sha2`, `subtle`, `rustls`, `tokio-rustls`, `eggress-transport-tls`.
+No optional features. Dependencies: `sha2`, `subtle`, `rustls`, `tokio-rustls`, `eggress-transport-tls`, plus `thiserror`, `tokio`, `bytes`, `eggress-core`, `eggress-uri`.
 
 ## Security notes
 

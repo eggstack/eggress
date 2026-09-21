@@ -57,8 +57,9 @@ Check with: `cargo check --manifest-path fuzz/Cargo.toml --bins`
 |---|---|
 | `route_match.rs` | Route decision latency across domain/IP targets, rule counts, and match strategies |
 | `tcp_relay.rs` | End-to-end TCP relay throughput at 1KB and 64KB payload sizes: benchmark client → proxy listener → `eggress-relay` engine → upstream echo server, plus an equivalent-topology `tokio::io::copy_bidirectional` baseline (diagnostic, not a CI gate) |
-| `udp_relay.rs` | SOCKS5 UDP codec encode/decode performance (IPv4/IPv6/domain, small/large payloads) |
+| `udp_relay.rs` | SOCKS5 UDP codec groups plus actual local relay flow management (`udp_runtime` via `standalone_udp_relay`) |
 | `http_connect_upstream.rs` | HTTP CONNECT upstream open/auth/407-response lifecycle |
+| `tls_setup.rs` | TLS construction cost |
 
 Run: `cargo bench`
 
@@ -114,7 +115,7 @@ Treat as immutable reference data. Prebuilt oracle venvs exist at repo root
 | `fixtures/pproxy_*_behavior.md` | Behavioral documentation (Shadowsocks, SSR, UDP) |
 | `fixtures/pproxy_version_snapshot.toml` | Version snapshot |
 
-Regression injection modules prove the differential harness catches mutations.
+Regression injection modules (`tests/regression_injections/`, `inject_*` + `__init__.py`) prove the differential harness catches mutations.
 
 #### `python/tests/` (six-tier taxonomy)
 

@@ -98,9 +98,9 @@ local_bind  = <ip-addr>                   -- e.g. @127.0.0.1
 ```
 
 Key parsing rules:
-- `__` separates hops; `___` (triple) is rejected as `DuplicateHopSeparator`
+- `__` separates hops; any `_` run of length >= 3 outside `[]` is rejected as `DuplicateHopSeparator`
 - `+` stacks protocols within one hop; `tls` in the scheme sets `hop.tls = true`
-- Credentials are percent-decoded strictly: invalid UTF-8 or NUL in decoded credentials returns `InvalidFormat` (no lossy fallback)
+- Credentials are percent-decoded: invalid `%ZZ`/trailing `%` sequences are kept verbatim; invalid UTF-8 or NUL in decoded credentials returns `InvalidFormat` (no lossy fallback)
 - The userinfo separator is the **last** unbracketed `@` after `://` (`syntax::find_userinfo_separator`) -- a password containing `@` is preserved correctly
 - SSH defaults to port 22 when no port is given
 - Port 0 is rejected except single-protocol `unix` (port always 0)
@@ -143,7 +143,8 @@ runtime-only names like `echo`/`websocket`.
 
 - `Debug` impl: username visible, password replaced with `"****"`
 - `Display` is not implemented (use `RedactedUri` for safe output)
-- `Clone`, `Serialize`, `Deserialize`, `PartialEq`, `Eq`
+- `Clone`, `Deserialize`, `PartialEq`, `Eq` derived; `Serialize` is a manual
+  redacting impl (not derived)
 
 ### UriParseError
 
@@ -154,13 +155,13 @@ runtime-only names like `echo`/`websocket`.
 | `MissingHost` | Empty host after `://` |
 | `InvalidPort(String)` | Non-numeric or out-of-range port |
 | `EmptyHost` | Empty host string |
-| `DuplicateHopSeparator` | `___` or adjacent separators |
+| `DuplicateHopSeparator` | any `_` run >= 3 or adjacent separators |
 
 Error messages include hop context (e.g. `"hop 1: missing scheme"`).
 
 ## How it works (control flow)
 
-1. `parse_proxy_chain(uri)` calls `split_hops()` — triple-`_` check plus shared
+1. `parse_proxy_chain(uri)` calls `split_hops()` — any `_` run >= 3 check plus shared
    `syntax::split_chain_hops` (bracket/brace-aware, unmatched fails closed)
 2. Each hop string is passed to `parse_hop()` which:
    - Detects trailing local-bind modifier (`find_last_at_outside_scheme` over shared `@` scan)
@@ -191,7 +192,7 @@ Error messages include hop context (e.g. `"hop 1: missing scheme"`).
 
 - `CredentialSpec::Debug` redacts passwords (verified by `test_credential_debug_is_redacted`)
 - `RedactedUri::Display` replaces creds with `****:****@` (verified by multiple roundtrip and redaction tests)
-- Percent-decoding is strict: invalid UTF-8 or NUL in decoded credentials returns `InvalidFormat`
+- Percent-decoding keeps malformed `%` sequences verbatim: only invalid UTF-8 or NUL in decoded credentials returns `InvalidFormat`
 
 ## Concurrency & lifecycle
 
@@ -222,13 +223,13 @@ Error messages include hop context (e.g. `"hop 1: missing scheme"`).
 
 ## Reviewer gotchas
 
-- The `CredentialSpec` derives `Serialize`/`Deserialize` but `Debug` is manually overridden to redact -- do not rely on derived `Debug` for credential safety.
+- The `CredentialSpec` derives `Deserialize` (plus `Clone`/`PartialEq`/`Eq`) but `Serialize` is a manual redacting impl and `Debug` is manually overridden to redact -- do not rely on derived `Debug` for credential safety.
 - `parse_proxy_chain` rejects empty hosts for proxy hops; listener bind
   addresses are configured separately.
 - The `+` separator is for protocol stacking within a scheme; `__` is for hop chaining. Do not confuse with URI path separators.
 - `syntax::find_userinfo_separator` finds the **last** unbracketed `@` after `://`. This is critical for passwords containing `@`. (Hop splitting itself is `syntax::split_chain_hops`.)
 - Port 0 is rejected for all protocols except single-protocol Unix (where port is always 0).
-- `split_chain_hops` rejects `___` (triple underscore) as `DuplicateHopSeparator` but does not check for longer runs -- `____` would be caught as two consecutive separators.
+- `split_chain_hops` rejects any `_` run >= 3 as `DuplicateHopSeparator`.
 - The `plugins` path segment is parsed from the URI path after the endpoint (e.g. `socks5://host:1080/plugin1,plugin2`). Leading commas are trimmed.
 
 ## See also

@@ -97,7 +97,7 @@ Composite matchers enforce depth limit (10) and node count limit (100).
 
 ### RuntimeConfig (`compile/model.rs`)
 
-Compiled output with all defaults resolved: process config (log defaults: text/info/30s), timeout config (10s/30s), compiled listeners, upstreams (parsed chains + health + h2), groups (scheduler + members + fallback), compiled rules, default action (Direct), admin config (127.0.0.1:9090 default), reverse server/client configs. Public types stay reachable at `eggress_config::compile::…` via `compile/mod.rs` re-exports.
+Compiled output with all defaults resolved: process config (log defaults: text/info/30s), timeout config (10s/30s), compiled listeners, upstreams (parsed chains + health + h2), groups (scheduler + members + fallback), compiled rules, default action (Direct), admin config (`None` when `[admin]` is absent; `127.0.0.1:9090` only when `[admin]` is present without `bind`), reverse server/client configs. Public types stay reachable at `eggress_config::compile::…` via `compile/mod.rs` re-exports.
 
 ## How it works (control flow)
 
@@ -119,8 +119,7 @@ Secrets are resolved at compile time from three sources:
 3. **File**: TLS cert/key read via `std::fs::read()` at compile time
 
 Resolution rules:
-- If `password_env` is set, the environment variable is read; missing var = error
-- If both `password` and `password_env` are set for admin auth, it is an error
+- If `password_env` is set, the environment variable is read; missing var = error (env takes precedence when both are set — no both-set error)
 - Resolved value replaces the source in the compiled output; no references remain
 
 ### Legacy `udp_enabled` synthesis (`compile/listeners.rs`)
@@ -135,7 +134,7 @@ Resolution rules:
 | false | Present + enabled=true | **Rejected** (conflict) |
 | false | Present + enabled=false | Uses disabled udp config |
 
-### UDP transport validation (`validate.rs`)
+### UDP transport validation (`validate/upstreams.rs:validate_upstream_transport`)
 
 When any listener has UDP enabled:
 - Upstream chains are checked via `classify_upstream_chain()`
@@ -146,7 +145,8 @@ When any listener has UDP enabled:
 
 ### Composition matrix validation
 
-`validate_config_composition()` loads `docs/parity/composition_matrix.toml` and
+`validate_config_composition()` uses an embedded composition matrix
+(`include_str!("../../composition_matrix.toml")` with multi-path fallback) and
 warns (not errors) when listener protocols have no composition cell for the
 upstream's TCP/UDP capability. Opt-in and path-relative.
 

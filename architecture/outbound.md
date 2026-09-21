@@ -108,7 +108,7 @@ never silent direct fallback.
 |---|---|
 | `toml` | TOML construction (`eggress-config` boundary) |
 | `pproxy-compat` | pproxy URI construction (`from_pproxy_uri`) |
-| `udp` | Listener-free UDP (`eggress-udp` + Shadowsocks UDP capability) |
+| `udp` | Listener-free UDP (`dep:eggress-udp` only; SS/composed fail `UnsupportedFeature` in this surface) |
 | `extended` | Shadowsocks, Trojan, WebSocket hops |
 | `pproxy-legacy` | ShadowsocksR (`extended` + SSR framing) |
 | `legacy-crypto` | Legacy Shadowsocks ciphers |

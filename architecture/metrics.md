@@ -53,8 +53,8 @@ The `MetricsRegistry` implements `eggress_server::SessionMetrics` (`src/session.
 
 | Method | Source | Bridged fields |
 |---|---|---|
-| `set_udp_metrics(Arc<UdpMetrics>)` | `eggress_udp::metrics::UdpMetrics` | Associations, packets, bytes, drops, target flows, decode errors, upstream metrics, standalone flow metrics (25 counter/gauge fields) |
-| `set_shadowsocks_metrics(Arc<ShadowsocksMetrics>)` | `eggress_protocol_shadowsocks::ShadowsocksMetrics` (feature = `extended`) | TCP sessions/upstream/decrypt/frame-parse/unsupported, UDP packets/bytes/decrypt/unsupported, active flows (12 fields) |
+| `set_udp_metrics(Arc<UdpMetrics>)` | `eggress_udp::metrics::UdpMetrics` | Associations, packets, bytes, drops, target flows, decode errors, upstream metrics, standalone flow metrics (`UdpMetrics`: 32 fields; `BridgedUdpSnapshot`: 27 counters) |
+| `set_shadowsocks_metrics(Arc<ShadowsocksMetrics>)` | `eggress_protocol_shadowsocks::ShadowsocksMetrics` (feature = `extended`) | TCP sessions/upstream/decrypt/frame-parse/unsupported, UDP packets/bytes/decrypt/unsupported, active flows (14 `ss_*` registry fields) |
 | `set_transparent_counters(Arc<AtomicU64>, Arc<AtomicU64>)` | Supervisor state atomics | `transparent_connections_accepted`, `transparent_original_dst_failed` |
 
 ### Direct recording methods

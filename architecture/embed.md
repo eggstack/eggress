@@ -223,7 +223,8 @@ private `connect_tcp_inner()` with the legacy methods and return
   display state) stays in memory only.
 - `to_redacted_toml()` walks the TOML tree generically (:788-827):
   - Keys matching `REDACTED_SECRET_KEYS` (`password`, `password_env`,
-    `secret`, `secret_ref`, `token`, `api_key`, `apikey`, `credentials`)
+    `secret`, `secret_ref`, `token`, `api_key`, `apikey`, `credentials`,
+    `bearer`, `bearer_token`, `bearer_token_env`)
     have their string values replaced with `****`.
   - Strings containing `://` are passed through the canonical tolerant
     redactor `eggress_uri::redact_proxy_uri()`, which strips `user:pass@`
@@ -256,6 +257,7 @@ private `connect_tcp_inner()` with the legacy methods and return
 | `tests/proxy_traffic.rs` | End-to-end proxy traffic through embed handle |
 | `tests/error_redaction.rs` | Credential redaction in errors, `to_redacted_toml`, category labels |
 | `tests/outbound_detailed.rs` | Typed `connect_tcp_detailed` matrix via the re-export facade (direct/HTTP/SOCKS/TLS, hop provenance, deadline, legacy compat, redaction, reuse/cancel) |
+| `tests/public_api.rs` | Public API surface guard |
 
 Inline tests (`src/lib.rs`):
 - `listener_addr_*` helpers

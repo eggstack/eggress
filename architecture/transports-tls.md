@@ -8,7 +8,7 @@ The only TLS implementation in the workspace (no OpenSSL anywhere). Wraps
 | File | Role |
 |---|---|
 | `src/client.rs` | `TlsClientConfigBuilder`: system/custom CA PEM, ALPN, insecure mode, server-name override, `InsecureVerifier` (test/feature-gated), process-shared default verified/H2 accessors |
-| `src/server.rs` | `TlsServerConfigBuilder`: cert chain + key PEM (PKCS#8), ALPN (`load_cert_chain_pem` exported; `load_private_key_pem` is a private helper, not exported) |
+| `src/server.rs` | `TlsServerConfigBuilder`: cert chain + key PEM (PKCS#8), ALPN (PEM loaders are private helpers, not exported) |
 | `src/roots.rs` | `load_system_roots` (webpki-roots), `load_pem_roots` (PEM -> RootCertStore), `load_pem_certs` (PEM -> Vec<CertificateDer>). Empty PEM is an error in `load_pem_roots` |
 | `src/transport.rs` | `tls_connect(stream, config, server_name)` / `tls_accept(stream, config)`: BoxStream in, TLS-wrapped BoxStream out |
 | `src/lib.rs` | Re-exports, `install_default_crypto_provider()` (ring, once), test helper `self_signed_cert()` |
@@ -78,7 +78,7 @@ The only TLS implementation in the workspace (no OpenSSL anywhere). Wraps
 
 ### Crypto provider installation
 
-`install_default_crypto_provider()` (`lib.rs:15-22`) calls `rustls::crypto::ring::default_provider().install_default()`. The first call succeeds; subsequent calls log a warning and return `Err` (ring provider is already active). This is safe to call multiple times.
+`install_default_crypto_provider()` (`lib.rs:17-24`) calls `rustls::crypto::ring::default_provider().install_default()`. The first call succeeds; subsequent calls log a warning via `tracing::warn!` and return `()` (unit — safe to call multiple times).
 
 ### Client config construction
 
@@ -113,7 +113,7 @@ Both `tls_connect` and `tls_accept` use `tokio-rustls`:
 
 | Consumer | Usage |
 |---|---|
-| `eggress-server` (`execute.rs`) | Upstream `+tls` hops: builds `TlsClientConfigBuilder` with system roots or custom CA, calls `tls_connect` on the box stream |
+| `eggress-outbound` (`executor.rs`) | Upstream `+tls` hops: builds `TlsClientConfigBuilder` with system roots or custom CA, calls `tls_connect` on the box stream |
 | `eggress-runtime` (`supervisor/connection.rs`) | Listener TLS: prepares one `Arc<ServerConfig>` per listener generation, then `wrap_tls_server()` only calls `tls_accept` on inbound streams (shared by standard/transparent/Unix paths) |
 | `eggress-protocol-trojan` (`tcp.rs`) | Trojan client: builds `TlsClientConfigBuilder` with system roots, calls `tls_connect` for the Trojan-over-TLS channel |
 | `eggress-protocol-reverse` (`tls.rs`, `server.rs`, `client.rs`) | Native reverse control TLS/mTLS: server builds once via `TlsServerConfigBuilder` (+ optional client CA/require), client builds once via `TlsClientConfigBuilder` (+ optional client cert/key) and reuses `Arc` across reconnects; `tls_accept`/`tls_connect` wrap control TCP before reverse framing |
@@ -180,7 +180,7 @@ Both `tls_connect` and `tls_accept` use `tokio-rustls`:
 - **`load_pem_certs` vs `load_pem_roots`.** `load_pem_certs` returns raw `CertificateDer` values and does NOT fail on empty input. `load_pem_roots` builds a `RootCertStore` and DOES fail on empty input. These have different error semantics for the same "empty PEM" case.
 - **`with_custom_ca_pem` replaces, not extends.** It sets `builder.root_store = roots`, discarding any previously loaded roots (including system roots). Call `with_system_roots()` first if you need both.
 - **No `with_client_auth`.** Both sides default to `with_no_client_auth()`; use `with_client_ca_pem`/`with_require_client_cert` (server) and `with_client_cert_pem` (client) for mutual TLS.
-- **`install_default_crypto_provider` warning is not an error.** A warning is logged (not returned) when the provider is already installed. The `Err` is silently dropped in the `if let Err` pattern at `lib.rs:16`.
+- **`install_default_crypto_provider` returns unit, not `Result`.** A warning is logged (not returned) when the provider is already installed.
 - **PEM parsing uses `CertificateDer::pem_slice_iter`.** This iterates all PEM objects in the slice. If the PEM contains non-cert objects (e.g., private keys), they are included in the iterator and may cause `RootCertStore::add` to fail with a type error.
 
 ## See also

@@ -110,18 +110,19 @@ Server(listen=[...], remote=[...])
 
 ## How it works
 
-1. **maturin build**: `pyproject.toml` (`src/lib.rs:pyproject.toml:40-44`)
+1. **maturin build**: `crates/eggress-python/pyproject.toml:40-44`
    declares `module-name = "eggress._eggress"`, `python-source = "../../python"`,
    `abi3-py39`. The `python/eggress/` tree is bundled into the wheel alongside
    the compiled `_eggress.so`.
 
 2. **GIL release**: Every blocking Rust call runs under `py.detach(|| ...)` —
    the GIL is released during network I/O, config parsing, and service startup.
-   The single pattern appears at `src/lib.rs:38`, `src/lib.rs:75`,
-   `src/lib.rs:123`, `src/lib.rs:178`, `src/lib.rs:207`, etc.
+   The pattern lives in `service.rs`, `connection.rs`, `compat.rs`,
+   `outbound.rs`, and `system_proxy.rs` (not `lib.rs`, which is module
+   registration only).
 
 3. **Outbound runtime**: A process-wide `OnceLock<Result<Arc<Runtime>>>`
-   (`src/lib.rs:7-22`) provides a shared Tokio runtime for outbound
+   (`runtime.rs:8-9`, `PY_OUTBOUND_RUNTIME` + `outbound_runtime()`) provides a shared Tokio runtime for outbound
    connections. `PyOutboundStream` owns an `Arc<Runtime>` clone so it remains
    usable after the connector is dropped.
 
@@ -129,8 +130,8 @@ Server(listen=[...], remote=[...])
    with `begin_close` CAS loop. `PyConnection::new` uses combined native
    translation (`translate_pproxy_args_to_native` → `EggressConfig::from_compiled`,
    no TOML re-parse for startup; TOML retained only for `config` display).
-   `__del__` spawns async shutdown on the outbound runtime; on runtime failure
-   the handle is leaked via `std::mem::forget`.
+   `__del__` tries `Handle::try_current().spawn(shutdown)` and falls back to
+   `drop(handle)` + `eprintln` (no `std::mem::forget` in `eggress-python`).
 
 5. **Async bridge** (single maintained pattern): `AsyncBridge`
    (`python/eggress/_asyncio.py`) binds on first use, enforces loop affinity,
@@ -202,9 +203,9 @@ python3 -m venv .venv
 - `pproxy.Connection` and `pproxy.Server` are URI factory aliases
   (`proxies_by_uri`), NOT lifecycle managers. Use `eggress.pproxy.Server`
   for managed service lifecycle.
-- `PyConnection.__del__` uses `std::mem::forget` on the handle when the
-  outbound runtime is unavailable — this is an intentional leak to avoid
-  blocking Python's finalizer thread.
+- `PyConnection.__del__` tries the current Tokio handle and drops with a
+  diagnostic on failure — it never blocks the finalizer thread and never uses
+  `std::mem::forget`.
 - Cipher `encrypt`/`decrypt` raise `UnsupportedFeatureError` at the Python
   level; actual encryption is delegated to Rust AEAD at the protocol layer.
 - `pytest.ini` forces `--import-mode=importlib` so `python/eggress` cannot

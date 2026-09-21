@@ -167,7 +167,7 @@ ServiceSupervisor internal state
 2. **Semantic translation**: shared `build_intermediates()` produces typed
    `TranslationIntermediates` (listeners/upstreams/groups/rules/reverse/
    pac). TOML rendering (`translate_pproxy_args()` / `translate_from_uris()`
-   → `TranslationOutput { toml, warnings, unsupported }`) and native
+   → `TranslationOutput { toml, issues }` with `warnings()`/`unsupported()`/`diagnostics()` views) and native
    compilation (`translate_to_runtime_config()` /
    `translate_pproxy_args_to_native()` → `NativeTranslation` /
    `CombinedTranslation { runtime, warnings, unsupported }`) are both

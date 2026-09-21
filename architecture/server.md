@@ -58,10 +58,10 @@ pub trait UdpService: Send + Sync { /* create_association, is_enabled, active_co
 
 1. **Metrics start** — `record_session_start()` if metrics configured (`lib.rs:132-134`).
 2. **Handshake with timeout** — `tokio::time::timeout(handshake_timeout, accept_with_fixed_target_for_peer(...))` wraps the entire accept phase (`lib.rs:136-149`). Timeout → `HandshakeTimedOut`.
-3. **Protocol detection** (`accept.rs`) — first byte: `0x05` → SOCKS5, `0x04` → SOCKS4, otherwise → HTTP method detection via `detect_http_method()` (16-byte method/prefix cap). Single-protocol listeners (Shadowsocks, Trojan, Raw, Echo) skip detection.
+3. **Protocol detection** (`accept/`) — first byte: `0x05` → SOCKS5, `0x04` → SOCKS4, otherwise → HTTP method detection via `detect_http_method()` (16-byte method/prefix cap). Single-protocol listeners (Shadowsocks, Trojan, Raw, Echo) skip detection.
 4. **Authentication** — per-connection or `AuthReuseCache` lookup. SOCKS5/4/HTTP use `subtle::ConstantTimeEq`.
 5. **Dispatch** — `execute()` on `AcceptedSession`: Tunnel → `execute_tunnel`, HttpForward → `execute_http_forward`, UdpAssociate → `execute_udp_associate`, Echo → `execute_echo`.
-6. **Route open** — `open_route()` calls `routing.route()` then `DirectConnector.connect_with_options()` (direct) or `ChainExecutor.execute()` (upstream). Wrapped in `tokio::time::timeout(connect_timeout, ...)` (`execute.rs:349`). Does NOT cover HTTP body upload (`execute.rs:640-643`).
+6. **Route open** — `open_route()` calls `routing.route()` then `DirectConnector.connect_with_options()` (direct) or `ChainExecutor.execute()` (upstream). Wrapped in `tokio::time::timeout(connect_timeout, ...)` (`execute/mod.rs:332`). Does NOT cover HTTP body upload (`execute/mod.rs`).
 7. **Deferred success reply** — sent only after route opens: HTTP 200, SOCKS4 granted, SOCKS5 REP=0x00, Shadowsocks/Trojan/Raw: no reply.
 8. **Relay** — `eggress_core::relay::relay()` (compatibility facade over
    `eggress-relay`: 64 KiB buffers, one-second bounded post-half-close drain;
@@ -170,24 +170,24 @@ Trojan, WebSocket] (extended), [ShadowsocksR] (pproxy-legacy), Raw, Unix,
 
 ## Security notes
 
-- **Constant-time auth**: SOCKS5 username (`accept.rs:758`), HTTP Basic (`accept.rs:983`, `advanced.rs:96`) use `subtle::ConstantTimeEq`.
-- **AuthReuseCache**: IP-keyed, max 4096, lazy expiry, LRU eviction (`accept.rs:31-75`). pproxy-compat only; native listeners authenticate every connection.
+- **Constant-time auth**: SOCKS5 username (`accept/handlers.rs`), HTTP Basic (`accept/forward.rs`, `advanced.rs`) use `subtle::ConstantTimeEq`.
+- **AuthReuseCache**: IP-keyed, max 4096, lazy expiry, LRU eviction (`accept/mod.rs:41,57`). pproxy-compat only; native listeners authenticate every connection.
 - **Header limits**: 32 KiB head (`MAX_HEAD_SIZE`), 128 lines (`MAX_HEADER_LINES`) (`accept/forward.rs:240-243`).
 - **Transparent unsafe**: workspace's single `unsafe` block — `getsockopt(SO_ORIGINAL_DST)` FFI. Three `#[allow(unsafe_code)]` annotations in `listener/transparent.rs`: `query_original_dst` (sockaddr init + getsockopt), `parse_sockaddr` (sockaddr_in/in6 reinterpretation with length validation), plus tests.
 - **Unix socket safety**: `UnixListener::bind()` refuses to unlink non-socket files or symlinks (`listener/unix.rs:96-122`); only `FileType::is_socket()` passes.
-- **Trojan fallback**: on password mismatch, if `fallback` is set, relay to fallback target instead of rejecting (`accept.rs:632-646`).
+- **Trojan fallback**: on password mismatch, if `fallback` is set, relay to fallback target instead of rejecting (`accept/`).
 - **H2/WS listener auth**: `serve_h2_connection()` and `serve_websocket_connection()` perform per-stream/per-connection auth with the same CT comparison.
 
 ## Concurrency & lifecycle
 
 - **Exactly-once metrics**: `record_session_start()` at entry, exactly one `record_session(&report)` before every return. Enforced structurally and by `metrics_lifecycle_tests` (`lib.rs:1232+`).
 - **Handshake timeout**: wraps `accept_with_fixed_target_for_peer()` — detection, auth, handshake all bounded.
-- **Connect timeout**: wraps `open_route()` but NOT HTTP body upload (`execute.rs:640-643`).
-- **Deferred success replies**: sent only after `open_route()` succeeds (`execute.rs:466`).
+- **Connect timeout**: wraps `open_route()` but NOT HTTP body upload (`execute/mod.rs`).
+- **Deferred success replies**: sent only after `open_route()` succeeds (`execute/mod.rs`).
 - **HTTP forward keep-alive**: loops over requests; breaks on `Connection: close`, upstream close, client EOF, or malformed request.
 - **H2 listener** (`advanced.rs:56`): per-stream `TaskTracker` spawn with child-token cancellation.
 - **WebSocket listener** (`advanced.rs:163`): single WS upgrade with fixed target.
-- **UDP ASSOCIATE** (`execute.rs:937-961`): TCP control held alive; ends on client close or cancel. `connect_timeout` also bounds `create_association()`.
+- **UDP ASSOCIATE** (`execute/mod.rs`): TCP control held alive; ends on client close or cancel. `connect_timeout` also bounds `create_association()`.
 - **Shadowsocks metrics**: `record_tcp_session_closed()` + `record_tcp_flow_close()` after standard finalization (`lib.rs:196-202`).
 
 ## Test coverage map
@@ -215,7 +215,7 @@ Run: `cargo test -p eggress-server`
 4. Non-extended build: `shadowsocks_metrics` field becomes `Option<()>`.
 5. `HttpOnlyHopHandler` (in `eggress-outbound`) rewrites origin-form to absolute-form for pproxy `httponly` compat — not a general rewriter.
 6. `PrefixedStream` (`accept/prefixed.rs`) replays bytes consumed during detection — every accept path wraps the stream.
-7. `open_route()` maps `RouteError::NoEligibleUpstream` and `RouteError::UnknownGroup` to `PolicyDenied` (`execute.rs:324-328`).
+7. `open_route()` maps `RouteError::NoEligibleUpstream` and `RouteError::UnknownGroup` to `PolicyDenied` (`execute/mod.rs`).
 8. Concrete hop handlers live in `eggress-outbound`; do not reintroduce a
    server-local registry. Shared helpers (`target_to_socks_addr`,
    classifier) are consumed from `eggress-outbound`, never duplicated.

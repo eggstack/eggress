@@ -31,7 +31,7 @@ Two thin tunnel wrappers used as chain hops and listener protocols:
 
 | Symbol | Kind | Notes |
 |---|---|---|
-| `RawTunnelListener` | struct | Holds `TcpListener`, `TargetAddr`, `Arc<Semaphore>` |
+| `RawTunnelListener` | struct | Holds `TcpListener`, `TargetAddr`, `Arc<Semaphore>`, `enforce_dns_rebinding_check: bool` |
 | `RawTunnelListener::bind(bind_addr, target)` | async fn | Binds TCP socket; semaphore defaults to 1024 permits |
 | `RawTunnelListener::local_addr()` | method | Returns `Result<SocketAddr, io::Error>` |
 | `RawTunnelListener::run()` | async fn | Accept loop; spawns `handle_raw_connection` per peer |
@@ -47,7 +47,8 @@ The adapter maps between WebSocket message types and byte-stream semantics:
 |---|---|---|
 | `Binary(data)` | Yields `data` bytes to the reader; oversized frames trigger `InvalidData` | Partial reads buffered in `read_buf` |
 | `Text(_)` | Skipped with `tracing::warn` | Text frames are not valid for binary tunnel traffic |
-| `Ping(_)` / `Pong(_)` | Skipped silently | Transparent keepalive handling |
+| `Ping(_)` | Answered with explicit `Pong` via `start_send` | Keepalive is answered, not dropped |
+| `Pong(_)` | Skipped silently | Transparent keepalive handling |
 | `Close(_)` | Returns `Ok(())` (EOF) | No error; clean stream termination |
 | `Frame(_)` | Skipped silently | Raw frame type (tungstenite internal) |
 | Stream ends (`None`) | Returns `Ok(())` (EOF) | Upstream closed without Close frame |
@@ -91,7 +92,7 @@ The free function `accept_upgrade_with_auth` wraps `tokio_tungstenite::accept_hd
 
 1. `RawTunnelListener::bind` opens a TCP socket on `bind_addr` and stores the fixed `TargetAddr`.
 2. `run()` enters an accept loop. For each peer, it acquires a semaphore permit (dropping the connection if at capacity) and spawns `handle_raw_connection`.
-3. For IP targets, the upstream connection is opened directly. For domain targets, DNS resolution happens first, then `is_dns_rebinding_risk` is checked against the resolved IP.
+3. For IP targets, the upstream connection is opened directly. For domain targets, DNS resolution happens first, then DNS-rebinding/literal-IP checks run (reserved targets rejected).
 4. `tokio::io::copy_bidirectional` relays bytes until one side closes.
 
 ## Error and failure model
@@ -121,7 +122,7 @@ Semaphore exhaustion in `RawTunnelListener` is not an error variant -- the conne
 
 - **Origin header not validated.** `accept_upgrade_with_auth` does not check the `Origin` header. This is intentional for non-browser tunnel usage; exposing these endpoints to browsers permits cross-site WebSocket hijacking.
 - **Constant-time auth.** Both `accept_upgrade_with_auth` (WebSocket) and `server_auth_handshake` (reverse) use `subtle::ConstantTimeEq` for credential comparison.
-- **DNS rebinding.** `RawTunnelListener` calls `is_dns_rebinding_risk` on resolved domain IPs before connecting. IP targets bypass this check (they are already resolved).
+- **DNS rebinding.** `RawTunnelListener` resolves domain targets then enforces both DNS-rebinding and literal-IP checks via `DirectConnector` (`enforce_dns_rebinding_check=true`, `enforce_literal_ip_check=true`); private/reserved hits surface as `DnsRebinding`.
 - **Max message size.** The 8 MiB default prevents unbounded memory growth from malicious peers. Oversized frames produce a structured `MessageTooLarge` error.
 - **No TLS built in.** WebSocket and raw tunnels do not perform TLS; wrap in `eggress-transport-tls` when needed (e.g., `wss://` via TLS listener).
 
