@@ -19,7 +19,8 @@ from eggress._eggress import (
     ConnectionCancelledError as _ConnectionCancelledError,
     UseAfterCloseError as _UseAfterCloseError,
     UdpAssociationError as _UdpAssociationError,
-    UnsupportedCompositionError as _UnsupportedCompositionError,
+    UnsupportedCompositionError as _NativeUnsupportedCompositionError,
+    LoopMismatchError as _NativeLoopMismatchError,
 )
 
 
@@ -40,8 +41,7 @@ AuthError = _NativeAuthError
 TlsError = _NativeTlsError
 
 
-class LoopMismatchError(EggressError):
-    pass
+LoopMismatchError = _NativeLoopMismatchError
 
 
 ConnectionCancelledError = _ConnectionCancelledError
@@ -49,8 +49,7 @@ UseAfterCloseError = _UseAfterCloseError
 UdpAssociationError = _UdpAssociationError
 
 
-class UnsupportedCompositionError(EggressError):
-    pass
+UnsupportedCompositionError = _NativeUnsupportedCompositionError
 
 
 class Connection:

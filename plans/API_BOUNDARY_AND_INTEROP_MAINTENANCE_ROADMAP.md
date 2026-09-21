@@ -2,7 +2,7 @@
 
 ## Status
 
-**IMPLEMENTED; CORRECTIVE CLOSURE OPEN — 2026-09-21**
+**IMPLEMENTED — 2026-09-21**
 
 ## Baseline
 
@@ -84,12 +84,12 @@ Notable cross-crate coupling such as `EggressConfig::from_compiled(RuntimeConfig
 
 | Order | Plan | Status | Purpose |
 |---|---|---|---|
-| 1 | [`API_BOUNDARY_PHASE_1_CONFIG_AUTHORITY_CONVERGENCE.md`](API_BOUNDARY_PHASE_1_CONFIG_AUTHORITY_CONVERGENCE.md) | Implemented; corrective closure open | Make `eggress-config` the single TOML compile authority while preserving facade error behavior and feature topology. |
-| 2 | [`API_BOUNDARY_PHASE_2_PYTHON_LIFECYCLE_AND_ERROR_CONVERGENCE.md`](API_BOUNDARY_PHASE_2_PYTHON_LIFECYCLE_AND_ERROR_CONVERGENCE.md) | Implemented; corrective closure open | Align sync/async compatibility startup and preserve meaningful Python exception identity across native and async paths. |
-| 3 | [`API_BOUNDARY_PHASE_3_ASYNC_OUTBOUND_IO.md`](API_BOUNDARY_PHASE_3_ASYNC_OUTBOUND_IO.md) | Implemented; corrective closure open | Remove event-loop-blocking outbound writes without changing `AsyncOutboundStream` public method shapes. |
-| 4 | [`API_BOUNDARY_PHASE_4_PYTHON_BINDING_OWNERSHIP_AND_STUBS.md`](API_BOUNDARY_PHASE_4_PYTHON_BINDING_OWNERSHIP_AND_STUBS.md) | Implemented; corrective closure open | Reduce unnecessary PyO3 dependency reach-through and make runtime/stub/capability metadata agree. |
-| 5 | [`API_BOUNDARY_PHASE_5_RUST_PUBLIC_API_QUALIFICATION.md`](API_BOUNDARY_PHASE_5_RUST_PUBLIC_API_QUALIFICATION.md) | Implemented; corrective closure open | Freeze and document the existing Rust library exposure so future cleanup does not accidentally regress published consumers. |
-| 6 | [`API_BOUNDARY_CORRECTIVE_CLOSURE.md`](API_BOUNDARY_CORRECTIVE_CLOSURE.md) | Ready | Restore the native outbound write contract, finish exception identity convergence, correct hop-count metadata, and close missing evidence/planning state. |
+| 1 | [`API_BOUNDARY_PHASE_1_CONFIG_AUTHORITY_CONVERGENCE.md`](API_BOUNDARY_PHASE_1_CONFIG_AUTHORITY_CONVERGENCE.md) | Implemented | Make `eggress-config` the single TOML compile authority while preserving facade error behavior and feature topology. |
+| 2 | [`API_BOUNDARY_PHASE_2_PYTHON_LIFECYCLE_AND_ERROR_CONVERGENCE.md`](API_BOUNDARY_PHASE_2_PYTHON_LIFECYCLE_AND_ERROR_CONVERGENCE.md) | Implemented | Align sync/async compatibility startup and preserve meaningful Python exception identity across native and async paths. |
+| 3 | [`API_BOUNDARY_PHASE_3_ASYNC_OUTBOUND_IO.md`](API_BOUNDARY_PHASE_3_ASYNC_OUTBOUND_IO.md) | Implemented | Remove event-loop-blocking outbound writes without changing `AsyncOutboundStream` public method shapes. |
+| 4 | [`API_BOUNDARY_PHASE_4_PYTHON_BINDING_OWNERSHIP_AND_STUBS.md`](API_BOUNDARY_PHASE_4_PYTHON_BINDING_OWNERSHIP_AND_STUBS.md) | Implemented | Reduce unnecessary PyO3 dependency reach-through and make runtime/stub/capability metadata agree. |
+| 5 | [`API_BOUNDARY_PHASE_5_RUST_PUBLIC_API_QUALIFICATION.md`](API_BOUNDARY_PHASE_5_RUST_PUBLIC_API_QUALIFICATION.md) | Implemented | Freeze and document the existing Rust library exposure so future cleanup does not accidentally regress published consumers. |
+| 6 | [`API_BOUNDARY_CORRECTIVE_CLOSURE.md`](API_BOUNDARY_CORRECTIVE_CLOSURE.md) | Implemented | Restore the native outbound write contract, finish exception identity convergence, correct hop-count metadata, and close missing evidence/planning state. |
 
 ## Sequencing
 

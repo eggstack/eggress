@@ -179,13 +179,15 @@ Post-milestone work covers advanced transport hardening, Python async API
 refinements, and release automation. These are ongoing improvements rather than
 blocking milestones.
 
-The API-boundary/interoperability implementation phases have landed. A narrow
-post-implementation corrective closure remains registered in
-[`plans/API_BOUNDARY_CORRECTIVE_CLOSURE.md`](../plans/API_BOUNDARY_CORRECTIVE_CLOSURE.md),
+The API-boundary/interoperability implementation phases have landed and the
+narrow post-implementation corrective closure is complete (native write
+contract restored behind a private async submit path, connection exception
+identity converged, preview hop count corrected, startup-forwarding and Rust
+API evidence added). Details remain in
+[`plans/API_BOUNDARY_CORRECTIVE_CLOSURE.md`](../plans/API_BOUNDARY_CORRECTIVE_CLOSURE.md)
 under the parent
 [`plans/API_BOUNDARY_AND_INTEROP_MAINTENANCE_ROADMAP.md`](../plans/API_BOUNDARY_AND_INTEROP_MAINTENANCE_ROADMAP.md).
-The closure is explicitly non-expansive: existing API surface and capability
-remain fixed constraints.
+Existing API surface and capability remain fixed constraints.
 
 ## Next Phase
 

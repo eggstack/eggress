@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION — 2026-09-21**
+**IMPLEMENTED — 2026-09-21**
 
 ## Baseline
 
@@ -399,12 +399,12 @@ This corrective plan may be marked **IMPLEMENTED** only when all are true:
 
 Fill this section in place during implementation. Do not create another closure plan if the criteria above pass.
 
-- Implementation commit:
-- Native write contract evidence:
-- Async write-pump/private-submit evidence:
-- Exception identity evidence:
-- Hop-count regression evidence:
-- Compatibility startup forwarding evidence:
-- Rust API qualification evidence:
-- Broad verification:
-- Retained limitations:
+- Implementation commit: `ae22153`
+- Native write contract evidence: `python/tests/test_api_boundary_closure.py::TestNativeWriteContract::test_native_write_completes_without_drain` (peer receipt without drain) + `test_sync_wrapper_write_echoes_without_explicit_drain`; native `PyOutboundStream.write()` restored to submit+barrier completion in `crates/eggress-python/src/outbound.rs`, `write_blocking_for_sync` removed from runtime and `_eggress.pyi`.
+- Async write-pump/private-submit evidence: `test_async_write_uses_private_submit_and_drain_completes`, `test_async_ordered_writes_plus_drain`, `test_async_write_keeps_loop_schedulable`, `test_write_eof_ordered_after_async_submissions`, `test_async_drain_surfaces_terminal_failure`, `test_close_wait_closed_leaves_no_pump_running`; async path uses private native `_submit_write` (absent from `eggress.__all__` and `_eggress.pyi` per `test_private_submit_exists_but_not_public`).
+- Exception identity evidence: `TestExceptionIdentityMatrix` (11-name identity across native/`connection`/`exceptions`/top-level, hierarchy, stub agreement, managed/sync/async catch, `AsyncBridge` identity preservation, closed-stream family); `LoopMismatchError`/`UnsupportedCompositionError` are native aliases in `python/eggress/connection.py`.
+- Hop-count regression evidence: `TestPreviewHopCount` (direct 0, single-hop 1, pproxy `__` two-hop 2, TOML `__` two-hop 2 with `upstream_count == 1`, shape unchanged); `preview_connect` uses `hop_count()` in `crates/eggress-python/src/outbound.rs`.
+- Compatibility startup forwarding evidence: `TestCompatibilityStartupForwarding` (parametrized default/`--auth 5`/`--sys` identical selection under sync/async paths via shared `_select_start_operation`, source-sharing assertion, non-compat `None`, representative forwarded values); seam `EggressService._compatibility_start_args()` in `python/eggress/service.py` observes without binding listeners or touching host proxy.
+- Rust API qualification evidence: `crates/eggress-embed/tests/public_api.rs` (`embed_config_handoff_and_outbound_facade_paths_compile` with explicit `RuntimeConfig` path, `outbound_authority_and_compat_reexport_paths_compile` for `eggress-outbound` authority + embed re-export, `relay_routing_core_representative_paths_compile` for `relay`/`RelayOptions`/`RelayReport`, `Router`/`RouteActionSpec`, `UpstreamId`/`TargetAddr`).
+- Broad verification: `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo test --workspace --locked` (2945 passed, 151 ignored); `.venv/bin/python -m pytest python/tests tests/compat -q` (2308 passed, 115 skipped); outbound/ssh/pproxy/udp + embed ssh/pproxy feature slices; `cargo check --manifest-path fuzz/Cargo.toml --bins`; `cargo check -p eggress-cli --locked --no-default-features --features full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon --bins`. No external oracle/differential run (no compatibility behavior changed beyond proving intended option forwarding).
+- Retained limitations: none new; write-pump `submit_lock` is held across the drain/EOF barrier wait (serializes concurrent writers per stream, preserving ordering); async write-after-bridge-close surfaces bridge `RuntimeError` rather than the native family (native terminal failure covered via still-open-bridge paths).

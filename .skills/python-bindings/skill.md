@@ -127,9 +127,12 @@ close/wait) + `wrap_blocking_call` (one-shot blocking calls).
 
 - `AsyncConnection`, `AsyncEggressHandle`, and `AsyncOutboundStream` use
   `AsyncBridge`; `AsyncOutboundStream` also uses `CloseWaiter` and a private
-  Tokio write pump. Its synchronous `write()` only queues ordered data,
-  `drain()` reports completion/failure, `close()` is non-blocking, and async
-  `wait_closed()` waits for pump cleanup through the blocking-call bridge.
+  Tokio write pump. Native `PyOutboundStream.write()` / `OutboundStream.write()`
+  are synchronous completion; only the async adapter's synchronous `write()`
+  uses the private native `_submit_write` queue-only path (never list it as
+  supported API), `drain()` reports completion/failure, `close()` is
+  non-blocking, and async `wait_closed()` waits for pump cleanup through the
+  blocking-call bridge.
 - `OutboundConnector.aconnect_tcp`, `Connection.aclose`/`await_closed`,
   `CompatibleStreamWriter.drain` use `wrap_blocking_call`.
 - Direct `loop.run_in_executor` outside `python/eggress/_asyncio.py` is banned

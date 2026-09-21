@@ -34,9 +34,9 @@ fn _eggress()`, unchanged exported names/hierarchy/abi3 metadata).
 | Module | Role |
 |---|---|
 | `service.py` | `EggressService` (pre-start builder), `EggressHandle` (sync), `AsyncEggressHandle` (async via `AsyncBridge`); `PPProxyHandle` type alias |
-| `connection.py` | `Connection` — managed proxy service (listener + relay); wraps `PyConnection` with state machine and `ConnectionState` enum |
+| `connection.py` | `Connection` — managed proxy service (listener + relay); wraps `PyConnection` with state machine and `ConnectionState` enum; connection exception names are direct aliases of the native `_eggress` classes (single runtime identity) |
 | `async_connection.py` | `AsyncConnection` — async wrapper with loop-affinity enforcement via `AsyncBridge`/`CloseWaiter` |
-| `outbound.py` | `OutboundConnector`, `OutboundStream`, `AsyncOutboundStream` (bridge-backed: `AsyncBridge` loop-affinity + `CloseWaiter`; reads, `drain`, and `write_eof` use `AsyncBridge.run`, while async `write()` only submits to the native ordered pump) — native outbound TCP without listener; `from_pproxy_uri` (direct native, no TOML) / `from_toml` factories |
+| `outbound.py` | `OutboundConnector`, `OutboundStream`, `AsyncOutboundStream` (bridge-backed: `AsyncBridge` loop-affinity + `CloseWaiter`; reads, `drain`, and `write_eof` use `AsyncBridge.run`; native `PyOutboundStream.write()` is synchronous completion, `OutboundStream.write()` preserves it, while async `write()` only submits via the private native `_submit_write` to the ordered pump) — native outbound TCP without listener; `from_pproxy_uri` (direct native, no TOML) / `from_toml` factories; `preview_connect()["hop_count"]` reports chain hops (`hop_count()`, 0 for direct) |
 | `pproxy.py` | `Server`, `PPProxyService`, `TranslationResult`, `CompatibilityReport`, `Diagnostic`, `UriInfo`, `check_pproxy_uri`, `translate_pproxy_args`, route/test helpers; pproxy-flavored facade |
 | `pproxy_connection.py` | `ProxyConnection` — pproxy-named outbound facade; thin wrapper over `OutboundConnector` (no listener), `tcp_connect()` returns `OutboundStream` with `sendall`/`recv` aliases |
 | `_pproxy_proxy.py` | `ProxyDirect`, `ProxySimple`, `ProxyBackward`, `ProxyH2`, `ProxySSH`, `ProxyQUIC`, `ProxyH3`, `AuthTable` — pproxy 2.7.9 server object model (structural) |
@@ -66,8 +66,10 @@ Shipped by `eggress-pproxy-compat`, not by the `eggress` wheel:
 
 ### Stubs
 
-`python/eggress/_eggress.pyi` (192 lines) covers all classes, functions,
-exceptions, and `__version__` with full type annotations.
+`python/eggress/_eggress.pyi` (206 lines) covers all classes, functions,
+exceptions, and `__version__` with full type annotations. The private native
+`_submit_write` submission helper is intentionally untyped: it is not part of
+the supported stub surface.
 
 ## API surface
 
@@ -138,7 +140,9 @@ Server(listen=[...], remote=[...])
    close/wait. `AsyncConnection`, `AsyncEggressHandle`, and
    `AsyncOutboundStream` all use it; `AsyncOutboundStream` additionally owns
    a private Tokio write-pump task so synchronous `write()` submission never
-   waits on transport I/O. `OutboundConnector.aconnect_tcp`,
+   waits on transport I/O (native `PyOutboundStream.write()` keeps synchronous
+   completion semantics for the sync `OutboundStream`; only the async adapter
+   uses the private `_submit_write` queue-only path). `OutboundConnector.aconnect_tcp`,
    `Connection.aclose`/`await_closed`, and `CompatibleStreamWriter.drain` use
    `wrap_blocking_call`. Direct `run_in_executor` outside `_asyncio.py` is
    limited to the documented `plugin.py` user-callback timeout exception.

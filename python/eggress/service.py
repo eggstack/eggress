@@ -77,6 +77,19 @@ class EggressService:
         handle = self._select_start_operation()()
         return EggressHandle(handle)
 
+    def _compatibility_start_args(self) -> tuple[int, bool] | None:
+        """Return the forwarded compatibility startup options without starting.
+
+        Test seam for closure evidence: proves sync `start()` and async
+        `astart()` select identical `auth_timeout_seconds` / `system_proxy`
+        values without applying host system-proxy policy or binding listeners.
+        Returns `None` for non-compatibility services.
+        """
+        options = self._compatibility_options
+        if options is None:
+            return None
+        return (int(options["auth_timeout_seconds"]), bool(options["system_proxy"]))
+
     def _select_start_operation(self):
         """Consume the builder and select its one native startup operation."""
         options = self._compatibility_options

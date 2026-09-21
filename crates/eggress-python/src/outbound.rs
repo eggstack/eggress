@@ -445,13 +445,13 @@ impl PyOutboundStream {
         .map_err(|e: std::io::Error| ConnectionError::new_err(format!("readexactly failed: {e}")))
     }
 
-    fn write(&self, data: &[u8]) -> PyResult<usize> {
-        self.write_pump.submit(data)
+    fn write(&self, py: Python<'_>, data: &[u8]) -> PyResult<usize> {
+        self.write_blocking(py, data)
     }
 
-    #[doc(hidden)]
-    fn write_blocking_for_sync(&self, py: Python<'_>, data: &[u8]) -> PyResult<usize> {
-        self.write_blocking(py, data)
+    #[pyo3(name = "_submit_write")]
+    fn submit_write(&self, data: &[u8]) -> PyResult<usize> {
+        self.write_pump.submit(data)
     }
 
     fn sendall(&self, py: Python<'_>, data: &[u8]) -> PyResult<()> {
@@ -594,7 +594,7 @@ impl PyOutboundConnector {
         let dict = PyDict::new(py);
         dict.set_item("target_host", host)?;
         dict.set_item("target_port", port)?;
-        dict.set_item("hop_count", self.inner.upstream_count())?;
+        dict.set_item("hop_count", self.inner.hop_count())?;
         Ok(dict.into())
     }
 }

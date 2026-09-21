@@ -2,9 +2,9 @@
 
 ## Status
 
-**IMPLEMENTED; CORRECTIVE CLOSURE OPEN — 2026-09-21**
+**IMPLEMENTED — 2026-09-21**
 
-Implementation landed in `c15c60b189d0588d254011e877b78b2ca8a6b3a9`. Residual post-implementation findings are tracked only in [`API_BOUNDARY_CORRECTIVE_CLOSURE.md`](API_BOUNDARY_CORRECTIVE_CLOSURE.md).
+Implementation landed in `c15c60b189d0588d254011e877b78b2ca8a6b3a9`. Residual post-implementation findings were closed by [`API_BOUNDARY_CORRECTIVE_CLOSURE.md`](API_BOUNDARY_CORRECTIVE_CLOSURE.md).
 
 ## Parent
 

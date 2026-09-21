@@ -237,18 +237,28 @@ async with Connection('socks5://:1080') as conn:
 
 ### Async outbound I/O and resource management
 
+Native `PyOutboundStream.write(data)` and high-level `OutboundStream.write(data)`
+are synchronous completion operations: they submit to the ordered native write
+pump and wait on the completion barrier before returning success. Queued bytes
+are never reported as durably written.
+
 `AsyncOutboundStream.write(data)` remains synchronous and returns the number of
-bytes accepted, but only submits to an ordered native write pump. Transport I/O
-runs on the shared Tokio runtime; `await stream.drain()` is the completion and
-failure point for writes submitted before it. `close()` is non-blocking, while
-`await stream.wait_closed()` waits for pump cleanup. Boxed transports remain
-supported; no file descriptor is required.
+bytes accepted, but only submits via the private native `_submit_write` to the
+same ordered pump. Transport I/O runs on the shared Tokio runtime;
+`await stream.drain()` is the completion and failure point for writes submitted
+before it. `close()` is non-blocking, while `await stream.wait_closed()` waits
+for pump cleanup. Boxed transports remain supported; no file descriptor is
+required. `OutboundConnector.preview_connect()["hop_count"]` reports chain hops
+(`hop_count()`, 0 for direct), not the upstream count.
 
 If a `Connection` object is garbage collected without being closed, a `ResourceWarning` is issued and best-effort cleanup is performed. Always prefer explicit `close()` or context manager usage.
 
 ### Exception hierarchy
 
-All connection-specific exceptions inherit from `EggressError`:
+All connection-specific exceptions inherit from `EggressError`. The
+`eggress.connection`, `eggress.exceptions`, top-level `eggress`, and native
+`eggress._eggress` names for the same exception are a single runtime class
+identity (not parallel hierarchies):
 
 - `ConnectionError` — base for all connection errors
 - `ConnectionClosedError` — operation on a closed connection

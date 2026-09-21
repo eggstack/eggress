@@ -96,9 +96,9 @@ class OutboundStream:
         return bytes(self._inner.readexactly(n))
 
     def write(self, data: bytes) -> int:
-        # The native stream queues writes for the async adapter. Preserve the
-        # blocking sync-stream contract through its private blocking helper.
-        return self._inner.write_blocking_for_sync(data)
+        # Synchronous completion: the native write submits to the ordered
+        # pump and waits on the completion barrier before returning.
+        return self._inner.write(data)
 
     def sendall(self, data: bytes) -> None:
         self._inner.sendall(data)
@@ -185,7 +185,7 @@ class AsyncOutboundStream:
         # all potentially blocking transport I/O.
         if get_running_loop() is not None:
             self._bridge._bind_loop()
-        return self._inner.write(data)
+        return self._inner._submit_write(data)  # type: ignore[attr-defined]
 
     async def drain(self) -> None:
         await self._bridge.run(self._inner.drain)

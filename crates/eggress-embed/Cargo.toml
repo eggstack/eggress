@@ -49,6 +49,9 @@ thiserror = { workspace = true }
 tempfile = { workspace = true }
 eggress-protocol-http = { workspace = true }
 eggress-config = { workspace = true }
+eggress-core = { workspace = true }
+eggress-relay = { workspace = true }
+eggress-routing = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
 tokio-test = { workspace = true }
 
