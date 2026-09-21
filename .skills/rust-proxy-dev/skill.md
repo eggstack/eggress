@@ -160,7 +160,11 @@ See `.skills/cli-ops/skill.md` for the ten stable exit codes
 For embedding eggress in another Rust process, use the `eggress-embed` crate:
 
 - `EggressConfig::from_toml_str()` / `from_toml_file()` — parse and validate config
-- `EggressConfig::from_toml_str` validates once via shared `parse_validate_compile` and stores compiled `RuntimeConfig` (canonical) + source TOML (ancillary)
+- `eggress-config::validate_and_compile_toml` is the canonical TOML
+  parse/version/validate/compile authority. `EggressConfig::from_toml_str`
+  adapts its errors and stores compiled `RuntimeConfig` (canonical) + source
+  TOML (ancillary); outbound performs only outbound-specific post-compilation
+  checks.
 - `EggressService::new(config).start_blocking()` — in-memory blocking start (no temp file, `_config_path=None`), returns `EggressHandle`
 - `EggressService::new(config).start().await` — async start within a Tokio runtime
 - `handle.bound_addresses()` — discover listener ports (supports port-0)

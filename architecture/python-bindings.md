@@ -36,7 +36,7 @@ fn _eggress()`, unchanged exported names/hierarchy/abi3 metadata).
 | `service.py` | `EggressService` (pre-start builder), `EggressHandle` (sync), `AsyncEggressHandle` (async via `AsyncBridge`); `PPProxyHandle` type alias |
 | `connection.py` | `Connection` — managed proxy service (listener + relay); wraps `PyConnection` with state machine and `ConnectionState` enum |
 | `async_connection.py` | `AsyncConnection` — async wrapper with loop-affinity enforcement via `AsyncBridge`/`CloseWaiter` |
-| `outbound.py` | `OutboundConnector`, `OutboundStream`, `AsyncOutboundStream` (bridge-backed: `AsyncBridge` loop-affinity + `CloseWaiter` idempotent close/wait; `read`/`readexactly`/`drain`/`write_eof` via `AsyncBridge.run`, `aconnect_tcp` via `wrap_blocking_call`) — native outbound TCP without listener; `from_pproxy_uri` (direct native, no TOML) / `from_toml` factories |
+| `outbound.py` | `OutboundConnector`, `OutboundStream`, `AsyncOutboundStream` (bridge-backed: `AsyncBridge` loop-affinity + `CloseWaiter`; reads, `drain`, and `write_eof` use `AsyncBridge.run`, while async `write()` only submits to the native ordered pump) — native outbound TCP without listener; `from_pproxy_uri` (direct native, no TOML) / `from_toml` factories |
 | `pproxy.py` | `Server`, `PPProxyService`, `TranslationResult`, `CompatibilityReport`, `Diagnostic`, `UriInfo`, `check_pproxy_uri`, `translate_pproxy_args`, route/test helpers; pproxy-flavored facade |
 | `pproxy_connection.py` | `ProxyConnection` — pproxy-named outbound facade; thin wrapper over `OutboundConnector` (no listener), `tcp_connect()` returns `OutboundStream` with `sendall`/`recv` aliases |
 | `_pproxy_proxy.py` | `ProxyDirect`, `ProxySimple`, `ProxyBackward`, `ProxyH2`, `ProxySSH`, `ProxyQUIC`, `ProxyH3`, `AuthTable` — pproxy 2.7.9 server object model (structural) |
@@ -133,9 +133,12 @@ Server(listen=[...], remote=[...])
 5. **Async bridge** (single maintained pattern): `AsyncBridge`
    (`python/eggress/_asyncio.py`) binds on first use, enforces loop affinity,
    runs blocking calls via `run_in_executor` *inside the bridge only*, preserves
-   contextvars, and propagates cancellation. `CloseWaiter` provides idempotent,
-   race-safe, multi-waiter close/wait. `AsyncConnection`, `AsyncEggressHandle`,
-   and `AsyncOutboundStream` all use it; `OutboundConnector.aconnect_tcp`,
+   contextvars, and propagates cancellation without rewriting operation
+   exceptions. `CloseWaiter` provides idempotent, race-safe, multi-waiter
+   close/wait. `AsyncConnection`, `AsyncEggressHandle`, and
+   `AsyncOutboundStream` all use it; `AsyncOutboundStream` additionally owns
+   a private Tokio write-pump task so synchronous `write()` submission never
+   waits on transport I/O. `OutboundConnector.aconnect_tcp`,
    `Connection.aclose`/`await_closed`, and `CompatibleStreamWriter.drain` use
    `wrap_blocking_call`. Direct `run_in_executor` outside `_asyncio.py` is
    limited to the documented `plugin.py` user-callback timeout exception.
@@ -200,6 +203,25 @@ python3 -m venv .venv
   level; actual encryption is delegated to Rust AEAD at the protocol layer.
 - `pytest.ini` forces `--import-mode=importlib` so `python/eggress` cannot
   shadow the installed wheel's compiled `_eggress` extension.
+
+## Binding ownership
+
+The PyO3 crate keeps direct dependencies only where its native surface
+intentionally exposes the concept:
+
+| Dependency | Binding owner/use |
+|---|---|
+| `eggress-embed` | service lifecycle, config facade, outbound compatibility facade, error mapping |
+| `eggress-pproxy-compat` | pproxy parsing, translation, diagnostics, and native compilation |
+| `eggress-config` / `eggress-routing` / `eggress-core` | lower-level config explanation and route-explain helpers intentionally exposed by the compatibility surface |
+| `eggress-uri` | credential-safe URI redaction |
+| `eggress-system-proxy` | explicit `apply_system_proxy` binding |
+| `eggress-cli` | existing upstream-test helper, not CLI presentation |
+| `eggress-runtime` | typed compatibility startup hooks and SSH policy capability |
+
+These are live architectural edges. Removing one would require a new owner API
+or would change an existing Python return/error contract, so this phase retains
+them and records the justification here.
 
 ## See also
 

@@ -164,7 +164,7 @@ Pre-start service builder. Consumed by `start()`.
 | `EggressService.from_file(path: str \| PathLike)` | Load file and create a service |
 | `EggressService.from_pproxy_args(args, allow_partial=False)` | Create from pproxy-style CLI arguments |
 | `service.start() -> EggressHandle` | Start the service (blocking) |
-| `service.astart() -> AsyncEggressHandle` | Start the service asynchronously |
+| `service.astart() -> AsyncEggressHandle` | Start asynchronously through the same compatibility-aware native selector as `start()` |
 
 ### `EggressHandle`
 
@@ -194,7 +194,7 @@ Async handle to a running service. All methods return awaitables.
 
 ## Connection object
 
-`eggress.Connection` provides a pproxy-compatible low-level connection object backed by Rust-owned networking.
+`eggress.Connection` provides a pproxy-compatible low-level connection object backed by Rust-owned networking. Connection exception names from `eggress.connection`, `eggress.exceptions`, and `eggress._eggress` remain importable; the maintained facade uses the native connection hierarchy so broad native and facade catches agree.
 
 ### Constructor
 
@@ -235,7 +235,14 @@ async with Connection('socks5://:1080') as conn:
     print(conn.state)
 ```
 
-### Resource management
+### Async outbound I/O and resource management
+
+`AsyncOutboundStream.write(data)` remains synchronous and returns the number of
+bytes accepted, but only submits to an ordered native write pump. Transport I/O
+runs on the shared Tokio runtime; `await stream.drain()` is the completion and
+failure point for writes submitted before it. `close()` is non-blocking, while
+`await stream.wait_closed()` waits for pump cleanup. Boxed transports remain
+supported; no file descriptor is required.
 
 If a `Connection` object is garbage collected without being closed, a `ResourceWarning` is issued and best-effort cleanup is performed. Always prefer explicit `close()` or context manager usage.
 
@@ -298,8 +305,8 @@ The `eggress._asyncio` module provides the core async primitives used by
 `AsyncConnection`, `AsyncEggressHandle`, and `Server`:
 
 - **`AsyncBridge`**: Enforces loop affinity (first-use binding), propagates
-  cancellation to executor futures, converts internal failures to stable
-  exceptions, preserves `contextvars` across the bridge. Idempotent `close()`.
+  cancellation to executor futures, preserves operation exception identity,
+  and preserves `contextvars` across the bridge. Idempotent `close()`.
 - **`CloseWaiter`**: Coordinates concurrent `close()` and `wait_closed()`
   callers. `close()` runs an optional cleanup callback, then signals all
   waiters. Idempotent, race-safe, handles cleanup exceptions.
@@ -754,8 +761,8 @@ Server(
 | `stop()` | `None` | Stop the server (alias for `close()`) |
 | `close()` | `None` | Stop the server; idempotent |
 | `run()` | `None` | Start and block until SIGINT/SIGTERM (main thread only) |
-| `astart()` | `self` | Async start via `asyncio.to_thread` |
-| `aclose()` | `None` | Async stop via `asyncio.to_thread` |
+| `astart()` | `self` | Async start through the shared `AsyncBridge` and the same compatibility-aware selector as `start()` |
+| `aclose()` | `None` | Async stop through the handle's shared `AsyncBridge` |
 | `wait_closed()` | `None` | Async wait until server is closed |
 | `reload(toml)` | `dict` | Hot-reload routing/upstreams/health from TOML |
 
@@ -891,8 +898,8 @@ and comprehensive API inventory documents under `docs/python/`.
 
 ## Limitations
 
-- **Blocking only**: `start()` is synchronous. Async Python usage requires
-  running `start()` in a thread executor (`asyncio.to_thread`).
+- **Blocking native start**: `start()` is synchronous; `astart()` provides the
+  maintained async facade through `AsyncBridge`.
 - **Single-threaded startup**: The service runs one Tokio runtime internally.
   Concurrent `start()` calls on the same `EggressService` will fail.
 - **No listener hot-reload**: Adding or removing listeners requires a full
@@ -900,8 +907,6 @@ and comprehensive API inventory documents under `docs/python/`.
 - **No Unix-domain sockets**: Not yet supported by the underlying Rust runtime.
 - **Platform-specific wheels**: Each platform/architecture requires its own
   built wheel.
-- **No embedded async API**: The Python bindings use the blocking `start_blocking`
-  path only. An async Python API is not yet available.
 - **pproxy compat**: Shadowsocks TCP uses standard SIP003 AEAD framing
   (wire-compatible with `shadowsocks-rust`/`ssserver`/`sslocal`). Inbound
   Shadowsocks listeners are available via the Rust binary; the embed API

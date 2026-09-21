@@ -8,6 +8,17 @@ from eggress._eggress import (
     ShutdownError,
     UnsupportedFeatureError,
     InternalError,
+    ConnectionError as ConnectionBaseError,
+    ConnectionClosedError,
+    TimeoutError as ConnectionTimeoutError,
+    DnsError as ConnectionDnsError,
+    AuthError as ConnectionAuthError,
+    TlsError as ConnectionTlsError,
+    LoopMismatchError,
+    ConnectionCancelledError,
+    UseAfterCloseError,
+    UdpAssociationError,
+    UnsupportedCompositionError,
 )
 from eggress.pproxy import AlreadyStartedError
 
@@ -20,4 +31,15 @@ __all__ = [
     "ShutdownError",
     "UnsupportedFeatureError",
     "InternalError",
+    "ConnectionBaseError",
+    "ConnectionClosedError",
+    "ConnectionTimeoutError",
+    "ConnectionDnsError",
+    "ConnectionAuthError",
+    "ConnectionTlsError",
+    "LoopMismatchError",
+    "ConnectionCancelledError",
+    "UseAfterCloseError",
+    "UdpAssociationError",
+    "UnsupportedCompositionError",
 ]

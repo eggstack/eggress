@@ -8,6 +8,12 @@ from typing import Any, Optional, Sequence
 
 from eggress._eggress import (
     EggressError,
+    ConnectionError as _NativeConnectionError,
+    ConnectionClosedError as _NativeConnectionClosedError,
+    TimeoutError as _NativeTimeoutError,
+    DnsError as _NativeDnsError,
+    AuthError as _NativeAuthError,
+    TlsError as _NativeTlsError,
     UnsupportedFeatureError,
     PyConnection as _PyConnection,
     ConnectionCancelledError as _ConnectionCancelledError,
@@ -26,44 +32,21 @@ class ConnectionState(str, Enum):
     FAILED = "failed"
 
 
-class ConnectionError(EggressError):
-    pass
-
-
-class ConnectionClosedError(ConnectionError):
-    pass
-
-
-class TimeoutError(ConnectionError):
-    pass
-
-
-class DnsError(ConnectionError):
-    pass
-
-
-class AuthError(ConnectionError):
-    pass
-
-
-class TlsError(ConnectionError):
-    pass
+ConnectionError = _NativeConnectionError
+ConnectionClosedError = _NativeConnectionClosedError
+TimeoutError = _NativeTimeoutError
+DnsError = _NativeDnsError
+AuthError = _NativeAuthError
+TlsError = _NativeTlsError
 
 
 class LoopMismatchError(EggressError):
     pass
 
 
-class ConnectionCancelledError(ConnectionError):
-    pass
-
-
-class UseAfterCloseError(ConnectionError):
-    pass
-
-
-class UdpAssociationError(ConnectionError):
-    pass
+ConnectionCancelledError = _ConnectionCancelledError
+UseAfterCloseError = _UseAfterCloseError
+UdpAssociationError = _UdpAssociationError
 
 
 class UnsupportedCompositionError(EggressError):

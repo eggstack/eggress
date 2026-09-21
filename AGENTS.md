@@ -14,6 +14,9 @@ Rust-native, embeddable multi-protocol proxy framework + CLI targeting practical
   execution state, including the SSH session cache when `ssh` is enabled:
   native/TOML uses verified known-hosts policy, while `from_pproxy_uri()` uses
   compatibility host-key behavior only with both `ssh` and `pproxy-compat`.
+- Rust public-surface classification and representative compatibility contracts
+  are maintained in `docs/RUST_API.md`; this is documentation/qualification
+  only and does not authorize hiding or moving already-published items.
 
 ## Verify
 

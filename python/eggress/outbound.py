@@ -40,6 +40,7 @@ import warnings
 from typing import Any
 
 from eggress._asyncio import AsyncBridge, CloseWaiter, wrap_blocking_call
+from eggress._compat import get_running_loop
 
 try:
     from eggress._eggress import (
@@ -95,7 +96,9 @@ class OutboundStream:
         return bytes(self._inner.readexactly(n))
 
     def write(self, data: bytes) -> int:
-        return self._inner.write(data)
+        # The native stream queues writes for the async adapter. Preserve the
+        # blocking sync-stream contract through its private blocking helper.
+        return self._inner.write_blocking_for_sync(data)
 
     def sendall(self, data: bytes) -> None:
         self._inner.sendall(data)
@@ -138,13 +141,12 @@ class OutboundStream:
 class AsyncOutboundStream:
     """Asyncio adapter for a native outbound stream.
 
-    Network operations run through the maintained :class:`AsyncBridge`
-    (worker thread, contextvars preservation, cancellation propagation) so
-    the event-loop thread is never blocked. Loop affinity is enforced
-    first-use (cross-loop misuse raises ``LoopAffinityError`` before native
-    work). Close/wait are idempotent and multi-waiter safe via
-    :class:`CloseWaiter`. The underlying Rust stream remains the owner of the
-    transport and can be closed deterministically.
+    Reads and drain/EOF barriers run through the maintained
+    :class:`AsyncBridge` (worker thread, contextvars preservation,
+    cancellation propagation). Synchronous ``write()`` only submits to the
+    native ordered pump, so transport I/O does not block the event-loop
+    thread. Loop affinity is enforced first-use; close/wait are idempotent and
+    multi-waiter safe via :class:`CloseWaiter`.
     """
 
     __slots__ = ("_inner", "_bridge", "_waiter")
@@ -179,12 +181,10 @@ class AsyncOutboundStream:
         return bytes(await self._bridge.run(self._inner.readexactly, n))
 
     def write(self, data: bytes) -> int:
-        # Sync lightweight accessor: underlying Rust `write` does a single
-        # blocking send via the shared outbound runtime. Callers in async
-        # contexts should prefer `await drain()` after buffering (see
-        # CompatibleStreamWriter) to avoid blocking the loop thread on large
-        # sends. Kept sync for pproxy source-compat; not routed via bridge
-        # to avoid an extra thread-pool hop per trivial call.
+        # Submission is synchronous and ordered; the private native pump owns
+        # all potentially blocking transport I/O.
+        if get_running_loop() is not None:
+            self._bridge._bind_loop()
         return self._inner.write(data)
 
     async def drain(self) -> None:
@@ -195,22 +195,22 @@ class AsyncOutboundStream:
 
     def close(self) -> None:
         # Non-blocking (drops the Rust stream); safe from any thread.
-        # Mark waiter so async waiters unblock without extra executor work.
+        # Cleanup completion is reported by wait_closed after the pump task
+        # has terminated.
         try:
             self._inner.close()
         finally:
-            self._waiter.mark_closed()
             self._bridge.close()
 
     async def wait_closed(self) -> None:
-        # Idempotent, multi-waiter safe; no executor submission for this
-        # trivial close (avoids one thread-pool hop per wait).
+        # Native wait_closed joins the pump task after non-blocking close;
+        # keep that wait off the event-loop thread.
         if not self._waiter.is_closed:
-            # Ensure underlying is closed (idempotent) before waiting.
             try:
-                self._inner.close()
-            except Exception:
-                pass
+                await wrap_blocking_call(self._inner.wait_closed)
+            except Exception as exc:
+                self._waiter.mark_failed(exc)
+                raise
             self._waiter.mark_closed()
         await self._waiter.wait_closed()
 

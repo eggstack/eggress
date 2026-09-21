@@ -240,8 +240,8 @@ class TestNativeAwaitableBridge:
 
         asyncio.run(_run())
 
-    def test_run_exception_converts_to_runtime_error(self):
-        """Internal exceptions are wrapped in RuntimeError."""
+    def test_run_exception_preserves_operation_exception(self):
+        """Operation exceptions retain their original class and message."""
         from eggress._asyncio import AsyncBridge
 
         def _fail():
@@ -250,7 +250,7 @@ class TestNativeAwaitableBridge:
         async def _run():
             bridge = AsyncBridge(label="test")
             try:
-                with pytest.raises(RuntimeError, match="test error"):
+                with pytest.raises(ValueError, match="test error"):
                     await bridge.run(_fail)
             finally:
                 bridge.close()
@@ -776,7 +776,7 @@ class TestExceptionReporting:
         asyncio.run(_run())
 
     def test_bridge_preserves_exception_chaining(self):
-        """Exceptions from bridge.run() preserve the cause chain."""
+        """Exceptions from bridge.run() preserve operation identity."""
         from eggress._asyncio import AsyncBridge
 
         def _fail():
@@ -785,10 +785,10 @@ class TestExceptionReporting:
         async def _run():
             bridge = AsyncBridge(label="test")
             try:
-                with pytest.raises(RuntimeError) as exc_info:
+                with pytest.raises(ValueError) as exc_info:
                     await bridge.run(_fail)
-                assert exc_info.value.__cause__ is not None
-                assert isinstance(exc_info.value.__cause__, ValueError)
+                assert str(exc_info.value) == "original"
+                assert exc_info.value.__cause__ is None
             finally:
                 bridge.close()
 

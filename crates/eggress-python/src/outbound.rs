@@ -4,13 +4,14 @@
 //! `PyOutboundStream` bridges async I/O onto the shared runtime with
 //! loop-affinity and idempotent close semantics.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{split, AsyncReadExt, AsyncWriteExt, ReadHalf};
+use tokio::sync::{mpsc, oneshot};
 
 use super::errors::{ConnectionClosedError, ConnectionError};
 use super::runtime::outbound_runtime;
@@ -29,8 +30,245 @@ pub(crate) struct PyOutboundConnector {
     inner: eggress_embed::outbound::OutboundConnector,
 }
 
-pub(crate) struct OutboundStreamState {
-    stream: Option<eggress_core::BoxStream>,
+enum WriteCommand {
+    Data(Vec<u8>),
+    Barrier(oneshot::Sender<Result<(), String>>),
+    Eof(oneshot::Sender<Result<(), String>>),
+}
+
+struct WritePumpStatus {
+    terminal_error: Option<String>,
+    closed: bool,
+    eof: bool,
+}
+
+struct WritePump {
+    sender: Mutex<Option<mpsc::UnboundedSender<WriteCommand>>>,
+    task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    status: Arc<Mutex<WritePumpStatus>>,
+    submit_lock: Mutex<()>,
+}
+
+impl WritePump {
+    fn new(
+        runtime: &tokio::runtime::Runtime,
+        stream: eggress_core::BoxStream,
+    ) -> (ReadHalf<eggress_core::BoxStream>, Self) {
+        let (read_half, mut write_half) = split(stream);
+        let (sender, mut receiver) = mpsc::unbounded_channel();
+        let status = Arc::new(Mutex::new(WritePumpStatus {
+            terminal_error: None,
+            closed: false,
+            eof: false,
+        }));
+        let task_status = Arc::clone(&status);
+        let task = runtime.spawn(async move {
+            while let Some(command) = receiver.recv().await {
+                match command {
+                    WriteCommand::Data(data) => {
+                        if let Err(error) = write_half.write_all(&data).await {
+                            let message = bounded_error(error.to_string());
+                            if let Ok(mut state) = task_status.lock() {
+                                state.terminal_error = Some(message.clone());
+                                state.closed = true;
+                            }
+                            while let Ok(command) = receiver.try_recv() {
+                                match command {
+                                    WriteCommand::Barrier(waiter) | WriteCommand::Eof(waiter) => {
+                                        let _ = waiter.send(Err(message.clone()));
+                                    }
+                                    WriteCommand::Data(_) => {}
+                                }
+                            }
+                            break;
+                        }
+                    }
+                    WriteCommand::Barrier(waiter) => {
+                        let result = task_status
+                            .lock()
+                            .ok()
+                            .and_then(|state| state.terminal_error.clone())
+                            .map_or(Ok(()), Err);
+                        let _ = waiter.send(result);
+                    }
+                    WriteCommand::Eof(waiter) => {
+                        let prior_error = task_status
+                            .lock()
+                            .ok()
+                            .and_then(|state| state.terminal_error.clone());
+                        let result = if let Some(error) = prior_error {
+                            Err(error)
+                        } else {
+                            match write_half.shutdown().await {
+                                Ok(()) => {
+                                    if let Ok(mut state) = task_status.lock() {
+                                        state.eof = true;
+                                    }
+                                    Ok(())
+                                }
+                                Err(error) => {
+                                    let message = bounded_error(error.to_string());
+                                    if let Ok(mut state) = task_status.lock() {
+                                        state.terminal_error = Some(message.clone());
+                                        state.closed = true;
+                                    }
+                                    Err(message)
+                                }
+                            }
+                        };
+                        let _ = waiter.send(result);
+                    }
+                }
+            }
+        });
+        (
+            read_half,
+            Self {
+                sender: Mutex::new(Some(sender)),
+                task: Mutex::new(Some(task)),
+                status,
+                submit_lock: Mutex::new(()),
+            },
+        )
+    }
+
+    fn submit(&self, data: &[u8]) -> PyResult<usize> {
+        let _submit_guard = self
+            .submit_lock
+            .lock()
+            .map_err(|_| ConnectionError::new_err("outbound write lock poisoned"))?;
+        let sender = {
+            let state = self
+                .status
+                .lock()
+                .map_err(|_| ConnectionError::new_err("outbound write state poisoned"))?;
+            if let Some(error) = &state.terminal_error {
+                return Err(ConnectionError::new_err(format!("write failed: {error}")));
+            }
+            if state.closed || state.eof {
+                return Err(ConnectionClosedError::new_err("outbound stream is closed"));
+            }
+            self.sender
+                .lock()
+                .map_err(|_| ConnectionError::new_err("outbound write lock poisoned"))?
+                .clone()
+                .ok_or_else(|| ConnectionClosedError::new_err("outbound stream is closed"))?
+        };
+        let len = data.len();
+        if sender.send(WriteCommand::Data(data.to_vec())).is_err() {
+            if let Ok(mut state) = self.status.lock() {
+                state.terminal_error = Some("write pump stopped".to_string());
+                state.closed = true;
+            }
+            return Err(ConnectionError::new_err("write failed: write pump stopped"));
+        }
+        Ok(len)
+    }
+
+    fn barrier(&self, runtime: &tokio::runtime::Runtime, eof: bool) -> PyResult<()> {
+        let _submit_guard = self
+            .submit_lock
+            .lock()
+            .map_err(|_| ConnectionError::new_err("outbound write lock poisoned"))?;
+        let (waiter, receiver) = oneshot::channel();
+        {
+            let state = self
+                .status
+                .lock()
+                .map_err(|_| ConnectionError::new_err("outbound write state poisoned"))?;
+            if let Some(error) = &state.terminal_error {
+                return Err(ConnectionError::new_err(format!(
+                    "{} failed: {error}",
+                    if eof { "write_eof" } else { "drain" }
+                )));
+            }
+            if state.closed {
+                return Err(ConnectionClosedError::new_err("outbound stream is closed"));
+            }
+            if eof && state.eof {
+                return Ok(());
+            }
+            let sender = self
+                .sender
+                .lock()
+                .map_err(|_| ConnectionError::new_err("outbound write lock poisoned"))?
+                .clone()
+                .ok_or_else(|| ConnectionClosedError::new_err("outbound stream is closed"))?;
+            let command = if eof {
+                WriteCommand::Eof(waiter)
+            } else {
+                WriteCommand::Barrier(waiter)
+            };
+            if sender.send(command).is_err() {
+                return Err(ConnectionError::new_err("drain failed: write pump stopped"));
+            }
+        }
+        let result = runtime.block_on(receiver);
+        match result {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => Err(ConnectionError::new_err(format!(
+                "{} failed: {error}",
+                if eof { "write_eof" } else { "drain" }
+            ))),
+            Err(_) => Err(ConnectionError::new_err("drain failed: write pump stopped")),
+        }
+    }
+
+    fn close(&self) -> PyResult<()> {
+        if let Ok(mut state) = self.status.lock() {
+            state.closed = true;
+        } else {
+            return Err(ConnectionError::new_err("outbound write state poisoned"));
+        }
+        if let Ok(mut sender) = self.sender.lock() {
+            sender.take();
+        }
+        if let Ok(task) = self.task.lock() {
+            if let Some(task) = task.as_ref() {
+                task.abort();
+            }
+        }
+        Ok(())
+    }
+
+    fn wait_closed(&self, runtime: &tokio::runtime::Runtime) -> PyResult<()> {
+        let task = self
+            .task
+            .lock()
+            .map_err(|_| ConnectionError::new_err("outbound write lock poisoned"))?
+            .take();
+        if let Some(task) = task {
+            let _ = runtime.block_on(task);
+        }
+        Ok(())
+    }
+}
+
+impl Drop for WritePump {
+    fn drop(&mut self) {
+        if let Ok(mut state) = self.status.lock() {
+            state.closed = true;
+        }
+        if let Ok(mut sender) = self.sender.lock() {
+            sender.take();
+        }
+        if let Ok(mut task) = self.task.lock() {
+            if let Some(task) = task.take() {
+                task.abort();
+            }
+        }
+    }
+}
+
+fn bounded_error(message: String) -> String {
+    const MAX_ERROR_LEN: usize = 512;
+    if message.len() <= MAX_ERROR_LEN {
+        message
+    } else {
+        let mut bounded: String = message.chars().take(MAX_ERROR_LEN - 1).collect();
+        bounded.push('…');
+        bounded
+    }
 }
 
 /// A connected native outbound stream.
@@ -43,44 +281,59 @@ pub(crate) struct OutboundStreamState {
 #[pyclass]
 pub(crate) struct PyOutboundStream {
     runtime: Arc<tokio::runtime::Runtime>,
-    state: std::sync::Mutex<OutboundStreamState>,
+    read_state: Mutex<Option<ReadHalf<eggress_core::BoxStream>>>,
+    write_pump: WritePump,
     peer_addr: Option<String>,
     local_addr: Option<String>,
     hop_count: usize,
 }
 
 impl PyOutboundStream {
-    fn with_stream<T>(
+    fn with_read_stream<T>(
         &self,
-        operation: impl FnOnce(&mut eggress_core::BoxStream) -> T,
+        operation: impl FnOnce(&mut ReadHalf<eggress_core::BoxStream>) -> T,
     ) -> PyResult<T> {
         let mut state = self
-            .state
+            .read_state
             .lock()
-            .map_err(|_| ConnectionError::new_err("outbound stream lock poisoned"))?;
+            .map_err(|_| ConnectionError::new_err("outbound read lock poisoned"))?;
         let stream = state
-            .stream
             .as_mut()
             .ok_or_else(|| ConnectionClosedError::new_err("outbound stream is closed"))?;
         Ok(operation(stream))
     }
 
+    fn write_blocking(&self, py: Python<'_>, data: &[u8]) -> PyResult<usize> {
+        let len = self.write_pump.submit(data)?;
+        let runtime = self.runtime.clone();
+        py.detach(|| self.write_pump.barrier(&runtime, false))?;
+        Ok(len)
+    }
+
     fn closed_inner(&self) -> bool {
-        self.state
+        self.write_pump
+            .status
             .lock()
-            .map(|state| state.stream.is_none())
+            .map(|state| state.closed || state.terminal_error.is_some())
             .unwrap_or(true)
+    }
+
+    fn close_inner(&self) -> PyResult<()> {
+        if let Ok(mut state) = self.read_state.lock() {
+            state.take();
+        } else {
+            return Err(ConnectionError::new_err("outbound read lock poisoned"));
+        }
+        self.write_pump.close()
     }
 }
 
 impl Drop for PyOutboundStream {
     fn drop(&mut self) {
-        // Dropping the BoxStream closes the transport. Do not block from a
-        // destructor: Python may be shutting down and the runtime can be
-        // unavailable at that point. Use try_lock to avoid blocking the
-        // Python GC while another thread holds the state mutex.
-        if let Ok(mut state) = self.state.try_lock() {
-            state.stream.take();
+        // The write pump aborts its Tokio task without waiting. Dropping the
+        // read half likewise never blocks interpreter finalization.
+        if let Ok(mut state) = self.read_state.try_lock() {
+            state.take();
         }
     }
 }
@@ -154,7 +407,7 @@ impl PyOutboundStream {
             Some(len)
         };
         let runtime = self.runtime.clone();
-        self.with_stream(|stream| {
+        self.with_read_stream(|stream| {
             py.detach(|| {
                 runtime.block_on(async {
                     if let Some(len) = len {
@@ -181,7 +434,7 @@ impl PyOutboundStream {
             )));
         }
         let runtime = self.runtime.clone();
-        self.with_stream(|stream| {
+        self.with_read_stream(|stream| {
             py.detach(|| {
                 runtime.block_on(async {
                     let mut data = vec![0_u8; n];
@@ -192,47 +445,37 @@ impl PyOutboundStream {
         .map_err(|e: std::io::Error| ConnectionError::new_err(format!("readexactly failed: {e}")))
     }
 
-    fn write(&self, py: Python<'_>, data: &[u8]) -> PyResult<usize> {
-        let runtime = self.runtime.clone();
-        self.with_stream(|stream| {
-            py.detach(|| runtime.block_on(async { stream.write(data).await }))
-        })?
-        .map_err(|e: std::io::Error| ConnectionError::new_err(format!("write failed: {e}")))
+    fn write(&self, data: &[u8]) -> PyResult<usize> {
+        self.write_pump.submit(data)
+    }
+
+    #[doc(hidden)]
+    fn write_blocking_for_sync(&self, py: Python<'_>, data: &[u8]) -> PyResult<usize> {
+        self.write_blocking(py, data)
     }
 
     fn sendall(&self, py: Python<'_>, data: &[u8]) -> PyResult<()> {
-        let runtime = self.runtime.clone();
-        self.with_stream(|stream| {
-            py.detach(|| runtime.block_on(async { stream.write_all(data).await }))
-        })?
-        .map_err(|e: std::io::Error| ConnectionError::new_err(format!("sendall failed: {e}")))
+        self.write_blocking(py, data).map(|_| ())
     }
 
     fn drain(&self, py: Python<'_>) -> PyResult<()> {
         let runtime = self.runtime.clone();
-        self.with_stream(|stream| py.detach(|| runtime.block_on(async { stream.flush().await })))?
-            .map_err(|e: std::io::Error| ConnectionError::new_err(format!("drain failed: {e}")))
+        py.detach(|| self.write_pump.barrier(&runtime, false))
     }
 
     fn write_eof(&self, py: Python<'_>) -> PyResult<()> {
         let runtime = self.runtime.clone();
-        self.with_stream(|stream| {
-            py.detach(|| runtime.block_on(async { stream.shutdown().await }))
-        })?
-        .map_err(|e: std::io::Error| ConnectionError::new_err(format!("write_eof failed: {e}")))
+        py.detach(|| self.write_pump.barrier(&runtime, true))
     }
 
     fn close(&self) -> PyResult<()> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| ConnectionError::new_err("outbound stream lock poisoned"))?;
-        state.stream.take();
-        Ok(())
+        self.close_inner()
     }
 
-    fn wait_closed(&self) -> PyResult<()> {
-        self.close()
+    fn wait_closed(&self, py: Python<'_>) -> PyResult<()> {
+        self.close_inner()?;
+        let runtime = self.runtime.clone();
+        py.detach(|| self.write_pump.wait_closed(&runtime))
     }
 
     fn __enter__(slf: Py<Self>) -> Py<Self> {
@@ -332,11 +575,11 @@ impl PyOutboundConnector {
         });
         let (stream, info) = result
             .map_err(|e| ConnectionError::new_err(format!("outbound connect failed: {e}")))?;
+        let (read_state, write_pump) = WritePump::new(&runtime, stream);
         Ok(PyOutboundStream {
             runtime,
-            state: std::sync::Mutex::new(OutboundStreamState {
-                stream: Some(stream),
-            }),
+            read_state: Mutex::new(Some(read_state)),
+            write_pump,
             peer_addr: info.peer_addr.map(|addr| addr.to_string()),
             local_addr: info.local_addr.map(|addr| addr.to_string()),
             hop_count: info.hop_count,

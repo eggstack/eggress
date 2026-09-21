@@ -130,8 +130,9 @@ handle = await service.astart()
 ```
 
 - `start()` blocks until readiness (up to 30 seconds) or startup failure
-- `astart()` runs the blocking start in `asyncio.to_thread()` to avoid
-  blocking the caller's event loop
+- `astart()` selects the same compatibility-aware native startup operation as
+  `start()` and executes it through the shared `AsyncBridge`, avoiding event-loop
+  blocking while preserving pproxy runtime hooks
 - Internally spawns a dedicated OS thread (`eggress-embed-rt`) that owns
   the Tokio runtime and `ServiceSupervisor::run()`
 - Pre-binds all listeners before reporting readiness to avoid race conditions
@@ -218,15 +219,15 @@ with EggressHandle(...) as h:
 | Connection handling | One coroutine per connection | Native Rust tasks (no Python overhead) |
 | UDP handling | `DatagramProtocol` per association | Native Rust UDP relay |
 | Blocking operations | Must use `await asyncio.sleep()` etc. | Dedicated OS thread (`eggress-embed-rt`) + inner run thread |
-| Thread ownership | Single thread | Two dedicated threads (blocking path) or blocking-pool + OS thread (async path) |
+| Thread ownership | Single thread | Tokio runtime thread plus the bridge's bounded blocking executor |
 
 Key implications for embedded usage:
 
 - **pproxy** inside an asyncio application shares the caller's event loop. Long-running
   pproxy operations can starve other coroutines.
 - **Eggress** runs its own Tokio runtime on dedicated threads. The Python caller interacts
-  via `asyncio.to_thread()` wrappers, keeping the GIL released and the caller's event loop
-  responsive.
+  through `AsyncBridge`, which keeps blocking native calls off the event loop and preserves
+  the original operation exceptions.
 
 ## 5. Recommendations for Migrating from pproxy Embedded Usage
 

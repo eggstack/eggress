@@ -13,7 +13,7 @@ readme = "README.md"
 [features]
 default = []
 
-toml = ["dep:eggress-config", "dep:toml"]
+toml = ["dep:eggress-config"]
 pproxy-compat = ["dep:eggress-pproxy-compat"]
 udp = ["dep:eggress-udp"]
 
@@ -55,7 +55,6 @@ eggress-protocol-websocket = { workspace = true, optional = true }
 eggress-transport-ssh = { workspace = true, optional = true }
 eggress-transport-quic = { workspace = true, optional = true }
 eggress-protocol-h3 = { workspace = true, optional = true }
-toml = { workspace = true, optional = true }
 bytes.workspace = true
 h2.workspace = true
 http.workspace = true

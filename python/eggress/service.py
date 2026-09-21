@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 from os import PathLike
 from typing import Any, Optional, Sequence, Union
 
@@ -73,18 +74,24 @@ class EggressService:
 
     def start(self) -> EggressHandle:
         """Start the service and return a handle."""
-        if self._compatibility_options is None:
-            handle = self._inner.start()
-        else:
-            # Only runtime hooks reach the supervisor; -d/-v log policy is
-            # resolved via default_log_level()/init_pproxy_logging before
-            # startup and never enters generic supervisor state.
-            options = self._compatibility_options
-            handle = self._inner.start_with_compatibility_options(
-                int(options["auth_timeout_seconds"]),
-                bool(options["system_proxy"]),
-            )
+        handle = self._select_start_operation()()
         return EggressHandle(handle)
+
+    def _select_start_operation(self):
+        """Consume the builder and select its one native startup operation."""
+        options = self._compatibility_options
+        self._compatibility_options = None
+        if options is None:
+            return self._inner.start
+
+        # Only runtime hooks reach the supervisor; -d/-v log policy is
+        # resolved via default_log_level()/init_pproxy_logging before
+        # startup and never enters generic supervisor state.
+        return functools.partial(
+            self._inner.start_with_compatibility_options,
+            int(options["auth_timeout_seconds"]),
+            bool(options["system_proxy"]),
+        )
 
     async def astart(self) -> AsyncEggressHandle:
         """Start the service asynchronously and return an async handle.
@@ -93,7 +100,8 @@ class EggressService:
         the asyncio event loop.
         """
         bridge = AsyncBridge(label="EggressService")
-        handle = await bridge.run(self._inner.start)
+        operation = self._select_start_operation()
+        handle = await bridge.run(operation)
         return AsyncEggressHandle(handle)
 
 

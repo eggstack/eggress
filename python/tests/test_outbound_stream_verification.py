@@ -409,6 +409,94 @@ class TestAsyncOutboundStream:
         finally:
             echo_server.close()
 
+    def test_async_writes_are_ordered(self):
+        echo_addr, echo_server, echo_thread = _start_echo_server()
+
+        async def _exercise():
+            conn = OutboundConnector.from_pproxy_uri(_DIRECT_URI)
+            stream = await conn.aconnect_tcp(echo_addr[0], echo_addr[1], timeout=5.0)
+            try:
+                payloads = [f"chunk-{i};".encode() for i in range(64)]
+                for payload in payloads:
+                    assert stream.write(payload) == len(payload)
+                await stream.drain()
+                assert await stream.readexactly(sum(map(len, payloads))) == b"".join(payloads)
+            finally:
+                stream.close()
+                await stream.wait_closed()
+
+        try:
+            asyncio.run(_exercise())
+        finally:
+            echo_server.close()
+
+    def test_async_write_keeps_event_loop_schedulable_under_backpressure(self):
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        host, port = server.getsockname()
+        accepted = threading.Event()
+
+        def _blackhole():
+            try:
+                client, _ = server.accept()
+                accepted.set()
+                time.sleep(5)
+                client.close()
+            except OSError:
+                pass
+
+        threading.Thread(target=_blackhole, daemon=True).start()
+
+        async def _exercise():
+            conn = OutboundConnector.from_pproxy_uri(_DIRECT_URI)
+            stream = await conn.aconnect_tcp(host, port, timeout=5.0)
+            try:
+                await asyncio.get_running_loop().run_in_executor(None, accepted.wait, 1)
+                heartbeat = asyncio.Event()
+
+                async def _heartbeat():
+                    await asyncio.sleep(0)
+                    heartbeat.set()
+
+                task = asyncio.create_task(_heartbeat())
+                # The pump owns this potentially backpressured write. The
+                # synchronous submission must return while the loop remains
+                # schedulable; drain is the explicit completion point.
+                stream.write(os.urandom(8 * 1024 * 1024))
+                await asyncio.wait_for(heartbeat.wait(), timeout=1.0)
+                await task
+            finally:
+                stream.close()
+                await stream.wait_closed()
+
+        try:
+            asyncio.run(_exercise())
+        finally:
+            server.close()
+
+    def test_async_write_eof_follows_prior_writes(self):
+        echo_addr, echo_server, echo_thread = _start_echo_server()
+
+        async def _exercise():
+            conn = OutboundConnector.from_pproxy_uri(_DIRECT_URI)
+            stream = await conn.aconnect_tcp(echo_addr[0], echo_addr[1], timeout=5.0)
+            try:
+                stream.write(b"before-eof")
+                await stream.write_eof()
+                assert await stream.readexactly(len(b"before-eof")) == b"before-eof"
+                with pytest.raises(Exception, match="closed"):
+                    stream.write(b"after-eof")
+            finally:
+                stream.close()
+                await stream.wait_closed()
+
+        try:
+            asyncio.run(_exercise())
+        finally:
+            echo_server.close()
+
 
 # ---------------------------------------------------------------------------
 # Context manager protocol

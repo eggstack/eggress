@@ -251,6 +251,12 @@ explicit half-close policy (`HalfClosePolicy::Drain` default) and
 directional errors. `eggress-embed` above remains the recommended way to
 embed a full proxy service.
 
+The published Rust surface is classified in
+[docs/RUST_API.md](https://github.com/eggstack/eggress/blob/main/docs/RUST_API.md).
+Use `eggress-embed` for lifecycle ownership, `eggress-outbound` for
+listener-free chains, and `eggress-relay` for protocol-neutral byte relay;
+`eggress_embed::outbound::*` remains a source-compatible re-export.
+
 See the [Embed API reference](https://github.com/eggstack/eggress/blob/main/docs/EMBED_API.md) for full API docs, lifecycle details, feature groups, and limitations.
 
 ## Python library

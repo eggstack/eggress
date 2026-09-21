@@ -743,37 +743,33 @@ fn build_outbound_executor(mode: ExecutorMode) -> eggress_core::chain::ChainExec
     }
 }
 
-/// Parse, version-check, validate, and compile TOML for outbound use.
-///
-/// Canonical outbound TOML boundary: `toml::from_str` → version check (must
-/// be 1 or absent) → `validate_config()` → `compile_config()`. Mirrors the
-/// embed service boundary so both entry points agree on version/validation
-/// semantics; only outbound-specific post-compilation checks live in the
+/// Adapt the canonical config error into the outbound facade's established
+/// message family. Outbound-specific post-compilation checks remain in the
 /// constructors below.
 #[cfg(feature = "toml")]
-fn parse_validate_compile(input: &str) -> Result<eggress_config::compile::RuntimeConfig, String> {
-    let config: eggress_config::model::ConfigFile =
-        toml::from_str(input).map_err(|e| e.to_string())?;
-
-    if let Some(version) = config.version {
-        if version != 1 {
-            return Err(format!("unsupported config version: {version}"));
+fn config_error_message(error: eggress_config::ConfigError) -> String {
+    match error {
+        eggress_config::ConfigError::Parse(error) => error.to_string(),
+        eggress_config::ConfigError::UnsupportedVersion(version) => {
+            format!("unsupported config version: {version}")
         }
+        eggress_config::ConfigError::Validation { message, .. } => message,
+        eggress_config::ConfigError::Io(message) => message,
     }
+}
 
-    eggress_config::validate::validate_config(&config).map_err(|errors| {
-        let messages: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
-        messages.join("; ")
-    })?;
-
-    eggress_config::compile::compile_config(&config).map_err(|e| e.to_string())
+/// Delegate TOML parsing, version checking, validation, and compilation to
+/// the canonical `eggress-config` boundary.
+#[cfg(feature = "toml")]
+fn parse_validate_compile(input: &str) -> Result<eggress_config::compile::RuntimeConfig, String> {
+    eggress_config::validate_and_compile_toml(input).map_err(config_error_message)
 }
 
 impl OutboundConnector {
     /// Create a connector from a TOML config string.
     ///
     /// TOML parsing, version checking, validation, and compilation go
-    /// through the canonical outbound boundary; only outbound-specific
+    /// through the canonical `eggress-config` boundary; only outbound-specific
     /// post-compilation checks live here. The first upstream's chain is
     /// extracted into the outbound-owned route and the full compiled service
     /// configuration is dropped.
@@ -1243,8 +1239,8 @@ impl OutboundConnector {
     ///
     /// Returns the number of hops in the first upstream's chain.
     ///
-    /// Parsing/validation/compilation goes through the canonical outbound
-    /// TOML boundary exactly once.
+    /// Parsing/validation/compilation goes through the canonical
+    /// `eggress-config` TOML boundary exactly once.
     #[cfg(feature = "toml")]
     pub fn validate_outbound_config(config_toml: &str) -> Result<usize, OutboundError> {
         let runtime_config = parse_validate_compile(config_toml).map_err(OutboundError::Config)?;

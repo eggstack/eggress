@@ -82,9 +82,14 @@ drop-in implementation of pproxy's `Server` contract:
 | `Socks4` | `connect(target)` | SOCKS4 CONNECT handshake |
 | `Socks5` | `connect(target)` | SOCKS5 CONNECT handshake |
 
-## GIL Release
+## Async boundary and GIL release
 
-All blocking Rust calls release the GIL via `py.detach()`.
+All blocking Rust calls release the GIL via `py.detach()`. `astart()` uses the
+same private compatibility-aware startup selector as `start()` and executes it
+through `AsyncBridge`; bridge operation exceptions retain their original class
+and message. `AsyncOutboundStream.write()` keeps its synchronous return shape
+but only queues data to a serialized Tokio write-pump task; `drain()` is the
+ordered completion/failure barrier and `wait_closed()` waits for pump cleanup.
 
 ## Package
 

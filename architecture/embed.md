@@ -18,14 +18,17 @@ listeners entirely. Designed as the binding target for PyO3.
 
 | Method | Line | Description |
 |---|---|---|
-| `from_toml_str(input)` | `src/lib.rs` | Parse, version-check, validate, compile once via shared `parse_validate_compile`; stores compiled `RuntimeConfig` + ancillary source TOML |
+| `from_toml_str(input)` | `src/lib.rs` | Delegate parse/version/validate/compile to canonical `eggress-config`; store compiled `RuntimeConfig` + ancillary source TOML |
 | `from_compiled(compiled, source)` | `src/lib.rs` | Construct from native `RuntimeConfig` (pproxy direct path); startup uses only `compiled` |
 | `compiled()` / `into_compiled()` | `src/lib.rs` | Borrow/consume the canonical compiled handoff |
 | `from_toml_file(path)` | :143 | Read file then delegate to `from_toml_str` |
 | `source_toml()` | :154 | Return raw TOML text |
 | `to_redacted_toml()` | :163 | TOML with secrets replaced by `****` and URI userinfo by `****@` |
 
-Validation chain (single shared boundary `parse_validate_compile`): `toml::from_str` → version check (must be 1 or absent) → `validate_config()` → `compile_config()`. `OutboundConnector::from_toml` / `validate_outbound_config` and `reload_toml_str` reuse the same boundary; reload maps failures to `Reload` + metrics.
+`eggress-config::validate_and_compile_toml()` is the single parse/version/
+validation/compilation authority. The embed facade's private adapter preserves
+its established error messages; `OutboundConnector` owns only outbound-specific
+post-compilation checks, and reload maps failures to `Reload` + metrics.
 
 ### EggressService (`src/lib.rs:177`)
 
@@ -63,7 +66,7 @@ classifier live in [outbound.md](outbound.md).
 |---|---|
 | `from_chain(chain)` | Native constructor from a compiled `ProxyChainSpec` (no TOML/pproxy); rejects empty chains |
 | `direct()` | Explicit direct connector |
-| `from_toml(config_toml)` | Parse/validate/compile via the canonical outbound boundary, then require at least one upstream + non-empty chain |
+| `from_toml(config_toml)` | Parse/validate/compile via canonical `eggress-config`, then require at least one upstream + non-empty chain |
 | `from_pproxy_uri(uri)` | Full pproxy `__` chain → `compile_chain_to_native` (no TOML string) → stored chain (fail-closed, redacted errors) |
 | `connect_tcp(host, port)` | Compatibility surface: failures stay `OutboundError::Runtime` |
 | `connect_tcp_detailed(host, port)` | Opt-in typed surface returning `OutboundConnectError` |

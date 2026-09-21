@@ -125,9 +125,11 @@ One maintained pattern: `AsyncBridge` (loop-affinity first-use binding,
 contextvars, cancellation) + `CloseWaiter` (idempotent, multi-waiter
 close/wait) + `wrap_blocking_call` (one-shot blocking calls).
 
-- `AsyncConnection`, `AsyncEggressHandle`, `AsyncOutboundStream` use
-  `AsyncBridge`; `AsyncOutboundStream` also uses `CloseWaiter` (sync `close`
-  is non-blocking + marks waiter; async `wait_closed` needs no executor).
+- `AsyncConnection`, `AsyncEggressHandle`, and `AsyncOutboundStream` use
+  `AsyncBridge`; `AsyncOutboundStream` also uses `CloseWaiter` and a private
+  Tokio write pump. Its synchronous `write()` only queues ordered data,
+  `drain()` reports completion/failure, `close()` is non-blocking, and async
+  `wait_closed()` waits for pump cleanup through the blocking-call bridge.
 - `OutboundConnector.aconnect_tcp`, `Connection.aclose`/`await_closed`,
   `CompatibleStreamWriter.drain` use `wrap_blocking_call`.
 - Direct `loop.run_in_executor` outside `python/eggress/_asyncio.py` is banned

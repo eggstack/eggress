@@ -505,7 +505,12 @@ class Server:
                 )
             eggress_config = result.config()
 
-        self._service = EggressService(eggress_config)
+        self._service = EggressService(
+            eggress_config,
+            compatibility_options=(
+                _pproxy_runtime_options(args) if config is None else None
+            ),
+        )
         self._config = eggress_config
         self._handle = None
         self._last_error: Optional[Exception] = None

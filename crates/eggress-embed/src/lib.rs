@@ -71,40 +71,36 @@ pub struct EggressConfig {
     source_toml: String,
 }
 
-/// Parse, version-check, validate, and compile TOML exactly once.
-///
-/// Single shared boundary for all TOML-string entry points
-/// (`EggressConfig::from_toml_str`, `OutboundConnector::from_toml` /
-/// `validate_outbound_config`, `EggressHandle::reload_toml_str`). Callers map
-/// the message-only error to their own `EggressError` variant
-/// (`Config` vs `Reload`) so reload failures still record metrics.
+/// Adapt the canonical config error into the embed facade's established
+/// message family.
+fn config_error_message(error: eggress_config::ConfigError) -> String {
+    match error {
+        eggress_config::ConfigError::Parse(error) => error.to_string(),
+        eggress_config::ConfigError::UnsupportedVersion(version) => {
+            format!("unsupported config version: {version}")
+        }
+        eggress_config::ConfigError::Validation { message, .. } => message,
+        eggress_config::ConfigError::Io(message) => message,
+    }
+}
+
+/// Delegate TOML parsing, version checking, validation, and compilation to
+/// the canonical `eggress-config` boundary. Callers map the message-only
+/// error to their own `EggressError` variant (`Config` vs `Reload`) so reload
+/// failures still record metrics.
 pub(crate) fn parse_validate_compile(
     input: &str,
 ) -> Result<eggress_config::compile::RuntimeConfig, String> {
-    let config: eggress_config::model::ConfigFile =
-        toml::from_str(input).map_err(|e| e.to_string())?;
-
-    if let Some(version) = config.version {
-        if version != 1 {
-            return Err(format!("unsupported config version: {version}"));
-        }
-    }
-
-    eggress_config::validate::validate_config(&config).map_err(|errors| {
-        let messages: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
-        messages.join("; ")
-    })?;
-
-    eggress_config::compile::compile_config(&config).map_err(|e| e.to_string())
+    eggress_config::validate_and_compile_toml(input).map_err(config_error_message)
 }
 
 impl EggressConfig {
     /// Parse a TOML configuration string.
     ///
-    /// Validation and compilation happen exactly once via the shared
-    /// [`parse_validate_compile`] boundary; the resulting compiled runtime
-    /// configuration is stored for in-memory supervisor startup with no
-    /// filesystem round trip.
+    /// Validation and compilation happen exactly once via the canonical
+    /// `eggress_config::validate_and_compile_toml` boundary; the resulting
+    /// compiled runtime configuration is stored for in-memory supervisor
+    /// startup with no filesystem round trip.
     pub fn from_toml_str(input: &str) -> Result<Self, EggressError> {
         let compiled = parse_validate_compile(input).map_err(EggressError::Config)?;
 

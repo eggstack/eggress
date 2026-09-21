@@ -140,7 +140,7 @@ Pre-start service builder.
 | `from_file` (classmethod) | `path: str \| PathLike[str]` | `EggressService` | Load file + create service |
 | `from_pproxy_args` (classmethod) | `args: Sequence[str], allow_partial: bool = False` | `EggressService` | Translate pproxy args; raises `UnsupportedFeatureError` if `allow_partial=False` and features unsupported |
 | `start` | — | `EggressHandle` | Blocking start |
-| `astart` | — | `AsyncEggressHandle` | Async start (delegates to `asyncio.to_thread`) |
+| `astart` | — | `AsyncEggressHandle` | Async start through `AsyncBridge` and the same compatibility-aware selector as `start` |
 
 ### `EggressHandle` — `eggress/service.py`
 
@@ -157,7 +157,8 @@ Blocking handle to a running service.
 
 ### `AsyncEggressHandle` — `eggress/service.py`
 
-Async handle. All methods are `async` and delegate to `asyncio.to_thread`.
+Async handle. Blocking native methods run through `AsyncBridge`, which binds the
+handle to its first event loop and preserves operation exception identity.
 
 | Member | Signature | Description |
 |--------|-----------|-------------|
@@ -211,7 +212,9 @@ All errors are re-exported from `eggress._eggress` via `eggress.exceptions` and 
 
 - **GIL release**: All blocking Rust calls use `py.detach()`, which releases the Python GIL during execution. This allows other Python threads to run concurrently while eggress I/O operations are in progress.
 - **Concurrent access**: `EggressHandle` methods are safe to call from multiple threads (the underlying Rust handle is `Send + Sync`). However, `shutdown()` consumes the handle (sets inner to `None`); subsequent calls on the same handle are no-ops.
-- **Async path**: `AsyncEggressHandle` delegates all operations to `asyncio.to_thread`, keeping the event loop unblocked. The `astart()` method similarly runs `start_blocking()` in a thread executor.
+- **Async path**: `AsyncEggressHandle` delegates blocking native operations to
+  `AsyncBridge`, keeping the event loop unblocked. `astart()` uses the same
+  compatibility-aware native startup selector as `start()`.
 
 ## Example Inventory
 

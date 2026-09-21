@@ -14,15 +14,15 @@ pyo3::create_exception!(_eggress, ShutdownError, EggressError);
 pyo3::create_exception!(_eggress, UnsupportedFeatureError, EggressError);
 pyo3::create_exception!(_eggress, InternalError, EggressError);
 pyo3::create_exception!(_eggress, ConnectionError, EggressError);
-pyo3::create_exception!(_eggress, ConnectionClosedError, EggressError);
-pyo3::create_exception!(_eggress, TimeoutError, EggressError);
-pyo3::create_exception!(_eggress, DnsError, EggressError);
-pyo3::create_exception!(_eggress, AuthError, EggressError);
-pyo3::create_exception!(_eggress, TlsError, EggressError);
+pyo3::create_exception!(_eggress, ConnectionClosedError, ConnectionError);
+pyo3::create_exception!(_eggress, TimeoutError, ConnectionError);
+pyo3::create_exception!(_eggress, DnsError, ConnectionError);
+pyo3::create_exception!(_eggress, AuthError, ConnectionError);
+pyo3::create_exception!(_eggress, TlsError, ConnectionError);
 pyo3::create_exception!(_eggress, LoopMismatchError, EggressError);
-pyo3::create_exception!(_eggress, ConnectionCancelledError, EggressError);
-pyo3::create_exception!(_eggress, UseAfterCloseError, EggressError);
-pyo3::create_exception!(_eggress, UdpAssociationError, EggressError);
+pyo3::create_exception!(_eggress, ConnectionCancelledError, ConnectionError);
+pyo3::create_exception!(_eggress, UseAfterCloseError, ConnectionError);
+pyo3::create_exception!(_eggress, UdpAssociationError, ConnectionError);
 pyo3::create_exception!(_eggress, UnsupportedCompositionError, EggressError);
 
 pub(crate) fn map_error(_py: Python<'_>, err: eggress_embed::EggressError) -> PyErr {

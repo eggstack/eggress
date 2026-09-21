@@ -74,8 +74,8 @@ Server(
 | `stop()` | Stop the server. Alias for `close()`. |
 | `close()` | Stop the server. Idempotent — safe to call multiple times. |
 | `run()` | Start and block until interrupted (SIGINT/SIGTERM). |
-| `astart()` | Async start via `asyncio.to_thread`. |
-| `aclose()` | Async close via `asyncio.to_thread`. |
+| `astart()` | Async start through `AsyncBridge` using the same compatibility-aware native selector as `start()`. |
+| `aclose()` | Async close through the server's shared `AsyncBridge`. |
 | `wait_closed()` | Wait for the server to finish shutting down. |
 
 ## Properties

@@ -54,7 +54,7 @@ ALPN-specific cached configs and per-hop insecure behavior under the
 |---|---|
 | `from_chain(chain)` | General native constructor from a compiled `ProxyChainSpec`; no TOML, no pproxy, no server/runtime types; rejects empty chains |
 | `direct()` | Explicit direct connector with no proxy hops |
-| `from_toml(config_toml)` (feature `toml`) | Parse/validate/compile via the canonical outbound boundary, extract the first upstream's chain, record the upstream count, drop the service config |
+| `from_toml(config_toml)` (feature `toml`) | Delegate parse/version/validate/compile to `eggress-config`, then extract the first upstream's chain, record the upstream count, and drop the service config |
 | `from_pproxy_uri(uri)` (feature `pproxy-compat`) | Full pproxy `__` chain → `compile_chain_to_native` (no TOML) → stored chain (fail-closed, redacted errors) |
 | `connect_tcp(host, port)` | Compatibility surface: failures stay `OutboundError::Runtime` |
 | `connect_tcp_detailed(host, port)` | Opt-in typed surface returning `OutboundConnectError` (`kind`/`stage`/`hop_index`/`protocol`) |

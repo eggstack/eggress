@@ -10,6 +10,16 @@ from typing import Any, Sequence
 
 _NATIVE_IMPORT_ERROR = None
 
+# Stable Eggress API subsets. The compatibility manifest and native feature
+# registry describe broader capability; these values remain the long-standing
+# `capabilities()` contract.
+_CAPABILITY_PROTOCOLS = (
+    "http", "socks4", "socks4a", "socks5", "shadowsocks", "trojan"
+)
+_CAPABILITY_SCHEDULERS = (
+    "round_robin", "least_connections", "first_available", "random"
+)
+
 try:
     from eggress._eggress import (
         EggressError,
@@ -363,20 +373,8 @@ def capabilities() -> dict[str, Any]:
         "version": __version__,
         "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
         "pproxy_compatibility_version": compatibility_version(),
-        "supported_protocols": [
-            "http",
-            "socks4",
-            "socks4a",
-            "socks5",
-            "shadowsocks",
-            "trojan",
-        ],
-        "supported_schedulers": [
-            "round_robin",
-            "least_connections",
-            "first_available",
-            "random",
-        ],
+        "supported_protocols": list(_CAPABILITY_PROTOCOLS),
+        "supported_schedulers": list(_CAPABILITY_SCHEDULERS),
     }
 
 

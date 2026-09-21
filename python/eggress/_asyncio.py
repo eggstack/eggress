@@ -3,7 +3,7 @@
 Provides a single maintained pattern that:
 
 - Binds native cancellation to Python future cancellation.
-- Converts internal failures into safe exceptions.
+- Keeps operation failures intact while separating bridge failures.
 - Handles loop closure gracefully.
 - Does not retain the event loop or object indefinitely.
 - Schedules completion thread-safely.
@@ -15,7 +15,7 @@ Core invariants (Phase C5):
 1. No nested Tokio runtime is created from an active runtime path.
 2. No Python-visible awaitable resolves or raises more than once.
 3. Python cancellation propagates to native operations promptly.
-4. Native task failure resolves the Python future with a stable exception.
+4. Native task failure resolves the Python future with its original exception.
 5. No blocking network or shutdown wait holds the GIL.
 6. Close and wait semantics are idempotent and race-safe.
 """
@@ -140,8 +140,8 @@ async def wrap_blocking_call(
     Differences from plain ``run_in_executor``:
 
     - On cancellation the executor future is cancelled (best-effort).
-    - Internal panics or unexpected errors are converted to a stable
-      exception type rather than propagating as opaque ``RuntimeError``.
+    - Operation exceptions propagate with their original class and message;
+      only bridge infrastructure failures are reported as ``RuntimeError``.
     - The function is always executed with the current contextvars snapshot
       so that caller-side context is preserved.
     """
@@ -157,11 +157,8 @@ async def wrap_blocking_call(
     except asyncio.CancelledError:
         future.cancel()
         raise
-    except Exception as exc:
-        # Convert opaque wrapper errors into something stable.
-        raise RuntimeError(
-            f"blocking call failed: {type(exc).__name__}: {exc}"
-        ) from exc
+    # Do not catch operation exceptions here. The executor future carries the
+    # callable's original exception, which is part of the public API contract.
 
 
 # ---------------------------------------------------------------------------
@@ -337,7 +334,7 @@ class AsyncBridge:
 
     - Loop-affinity enforcement (first-use binding).
     - Cancellation propagation to the executor future.
-    - Exception conversion to stable types.
+    - Operation exception identity preservation.
     - ``__del__`` safety (never blocks).
     - Idempotent close.
 
@@ -416,10 +413,9 @@ class AsyncBridge:
         except asyncio.CancelledError:
             future.cancel()
             raise
-        except Exception as exc:
-            raise RuntimeError(
-                f"{self._label} call failed: {type(exc).__name__}: {exc}"
-            ) from exc
+        # Exceptions raised by ``func`` deliberately propagate unchanged.
+        # Wrapping them would destroy native Eggress categories and user
+        # callback exception identity.
 
     def close(self) -> None:
         """Mark the bridge as closed. Idempotent, thread-safe."""
