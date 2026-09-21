@@ -106,8 +106,9 @@ and redacted display so secrets never reach logs.
 #### Configuration — `eggress-config` → [config.md](config.md)
 
 The single place the configuration surface is defined. Turns user TOML into
-a validated `RuntimeConfig` (versioned schema, recursive matchers, secret
-sources, health/PAC/static sections, CLI-compat compilation). Everything
+a validated `RuntimeConfig` (versioned schema, recursive matchers, env-var
+password sources, health/PAC/static sections, in-memory TOML handoff for
+CLI/compat-generated config). Everything
 invalid fails before any socket binds; the compiled config is the handoff to
 startup and to the atomic reload transaction.
 
@@ -116,8 +117,9 @@ startup and to the atomic reload transaction.
 #### Routing engine — `eggress-routing` → [routing.md](routing.md)
 
 Policy engine deciding Direct / UpstreamGroup / Reject per request.
-First-match-wins rules over host/CIDR/port/source/listener/protocol/identity
-matchers, upstream groups with persistent schedulers
+First-match-wins rules over host/CIDR/port (including destination-port regex
+and source ports)/source/listener/protocol/identity/transport/reverse-listener
+matchers plus composite `all`/`any_of`/`not`, upstream groups with persistent schedulers
 (first-available, round-robin, random, least-connections), health state
 machine with hysteresis plus active TCP probes, `PendingLease`/`ActiveLease`
 concurrency accounting, and route-explain tooling. Hot-reload safe via
@@ -169,7 +171,7 @@ shutdown (admin stops last).
 Hyper-based local operational server: `/-/health`, `/-/ready`, `/-/status`,
 `/-/routes`, `/-/upstreams`, `/-/config`, `/metrics`, PAC generation/serving,
 static content, `/-/route-explain` dry-run routing, `/-/udp` association
-status, and reverse state. Reads the live snapshot per request via
+status, and `/-/reverse` state. Reads the live snapshot per request via
 `AdminSnapshotProvider`, so reloads take effect without restarting admin.
 
 #### UDP subsystem — `eggress-udp` → [udp.md](udp.md)
@@ -183,13 +185,14 @@ chains drop with metrics, never silent fallback.
 
 #### System proxy — `eggress-system-proxy` → [system-proxy.md](system-proxy.md)
 
-Leaf crate reading/mutating OS proxy configuration. Powers
+Leaf crate reading/mutating OS proxy configuration (depends only on
+`eggress-uri` for parsing/redaction, otherwise dependency-free). Powers
 `eggress system-proxy inspect` and the pproxy-compatible `--sys` flag
 (apply bound listener after bind, rollback on shutdown). Structured
 `Command { program, args }` execution only, per-platform capability
 classification, credential redaction.
 
-### Protocol crates (each depends only on core + uri)
+### Protocol crates (each built on `eggress-core`, with `eggress-uri` and/or transport deps only where needed)
 
 #### HTTP/1.1 CONNECT + forward + H2 pool — `eggress-protocol-http` → [protocols-http.md](protocols-http.md)
 
@@ -271,24 +274,33 @@ feature-gated transport story.
 
 One crate installing two binaries that converge on the same
 `ServiceSupervisor` and differ only in how arguments reach config. Native
-`eggress`: `-l`/`-r`/global `--config`/`--rules-file`, `version`, `update`
+`eggress`: `-l`/`-r`/global `--config` + top-level `--rules-file`, `version`, `update`
 (verified GitHub Release self-update), `route`, `upstream test`,
-`pproxy translate|check|run` (run shares one facade with the standalone
-binary), `system-proxy inspect`, one shared exit-code owner (0–7, 130,
-143), lean `--no-default-features --features common` builds. Prebuilt
+`pproxy translate|check|run` (requires `pproxy-compat`; run shares one facade with the standalone
+binary), `system-proxy inspect` (requires `operations`), one shared exit-code owner
+(`eggress-pproxy-compat::exit_codes`, mirrored in the CLI when `pproxy-compat`
+is off; 0–7, 130,
+143), lean `--no-default-features --features common` builds (builds the `eggress`
+binary only — the compat `pproxy` binary requires `pproxy-compat`). Prebuilt
 release archives contain both binaries at one version (default features;
 `docs/INSTALLATION.md`). Compat `pproxy`: frozen 2.7.9 flag parser with
-fail-closed gate and Linux `--daemon` re-exec behind `pproxy-daemon`.
+fail-closed gate and Linux `--daemon` re-exec behind `pproxy-daemon`
+(which implies `pproxy-compat`).
 
 #### Embed API — `eggress-embed` → [embed.md](embed.md)
 
 Stable in-process Rust API and the binding target for PyO3: parse/validate
 config from TOML string or file, `start()`/`start_blocking()`, discover
 bound addresses (port-0 friendly), `status()`/`metrics_text()`, hot-reload
-routing/upstreams via `reload_toml_str`, idempotent shutdown. Plus an
+routing/upstreams via `reload_toml_str` (plus `reload_toml_file` /
+`reload_compiled`, all sharing the canonical `apply_compiled_config`
+transaction), shutdown via consuming `shutdown()`/`shutdown_blocking()`
+(with idempotent `cancel()`/`cancel_and_cleanup()` plus best-effort `Drop` join). Plus an
 `outbound` compatibility facade re-exporting `eggress-outbound`
 (`OutboundConnector` for listener-free TCP chains with `__` multi-hop
-`from_pproxy_uri`, fail-closed) and idempotent UDP association.
+`from_pproxy_uri` under `pproxy-compat` — pproxy-style SSH needs
+`ssh` + `pproxy-compat` — fail-closed) and UDP association
+(`eggress-outbound::associate_udp`: direct + single-hop SOCKS5 only, re-exported).
 
 #### Python bindings + package — `eggress-python`, `python/` → [python-bindings.md](python-bindings.md)
 
@@ -298,7 +310,8 @@ outbound, compat/translate/explain/test helpers, system-proxy, 18 functions
 pure-Python `python/eggress` package (service/handles, `Connection`,
 `OutboundConnector`/`OutboundStream`, pproxy facade, protocol/cipher/plugin/
 wrapper object model, `AsyncBridge`/`CloseWaiter` asyncio pattern, `.pyi`
-stubs). maturin builds the `eggress` wheel (abi3-py39); it never owns the
+stubs). maturin builds the `eggress` wheel (abi3-py39), which excludes
+`python/pproxy` — it never owns the
 top-level `pproxy` namespace.
 
 #### pproxy compat — `eggress-pproxy-compat`, `python-pproxy-compat/` → [pproxy-compat.md](pproxy-compat.md)
@@ -308,8 +321,10 @@ argument/URI parsing over shared `syntax` primitives, dual renderers (TOML
 presentation + native compilation from shared intermediates), five-tier
 classification (`drop_in` … `unsupported`), 26 stable diagnostic codes,
 fail-closed execution gate, 10 stable exit codes, regex/rule-file compat.
-The opt-in `eggress-pproxy-compat` distribution owns the top-level `pproxy`
-shim namespace and must never be installed beside upstream `pproxy`.
+The opt-in Python distribution `eggress-pproxy-compat`
+(`python-pproxy-compat/`, `packages=[pproxy]`) owns the top-level `pproxy`
+shim namespace and must never be installed beside upstream `pproxy`; the
+Rust crate `eggress-pproxy-compat` is the parser/gate library behind it.
 Contract truth lives in `docs/parity/pproxy_capability_manifest.toml` + the
 practical compatibility matrix.
 
@@ -322,7 +337,7 @@ summary of the discrete pieces:
   dev-dependency: echo/half-close servers, free-port allocation, oracle
   interpreter resolution (`$EGRESS_ORACLE_PYTHON` → `$EGRESS_PYTHON_BIN` →
   discovery), pproxy 2.7.9 oracle process management, differential harness,
-  manifest/corpus/fixture/report helpers.
+  manifest/corpus/fixture/report helpers, plus a `strict-report` binary.
 - **Fuzz — `fuzz/` (standalone workspace, 11 libfuzzer targets).** One target
   per bounded parser (SOCKS5 handshake + UDP datagram, HTTP CONNECT
   response, Trojan request/accept, route match, URI parse, Shadowsocks
@@ -330,11 +345,11 @@ summary of the discrete pieces:
   workspace commands; check with
   `cargo check --manifest-path fuzz/Cargo.toml --bins`.
 - **Benchmarks — `benches/` (root package `eggress-bench`, Criterion).**
-  Five suites: `route_match` (decision latency), `tcp_relay` (1 KiB/64 KiB
-  end-to-end throughput through the relay engine plus a
-  `copy_bidirectional` baseline), `udp_relay` (actual local UDP relay
+  Five suites: `route_match` (decision latency), `tcp_relay` (1 KiB/64 KiB/1 MiB
+  end-to-end throughput through the relay engine plus steady-state,
+  buffer-matrix, and `copy_bidirectional` baseline cases), `udp_relay` (actual local UDP relay
   flows), `tls_setup` (TLS construction), `http_connect_upstream` (CONNECT lifecycle).
-- **Scripts — `scripts/`.** Grouped helpers: strict pproxy probes
+- **Scripts — `scripts/`.** Grouped helpers including strict pproxy probes
   (`strict_*_probe.py`), interop runners (`compat_shadowsocks.sh`,
   `compat_udp_pproxy.sh`), certification (`run_pproxy_certification.sh`,
   `run_strict_pproxy_*`), evidence/validation
@@ -346,21 +361,27 @@ summary of the discrete pieces:
 - **Installers — `packaging/`.** `install.sh` (Unix) + `install.ps1`
   (Windows) bootstrap the prebuilt `eggress`+`pproxy` pair from a GitHub
   Release with SHA-256 and staged-version verification; behavior is pinned by
-  `packaging/tests/test-install.sh` plus the `release_contract` CLI test.
+  `packaging/tests/test-install.sh` plus the `release_contract` archive/checksum
+  unit (`crates/eggress-cli/src/update/target.rs`).
 - **Frozen oracle — `compat/pproxy-2.7.9/`.** Immutable reference data:
   provenance/hashes, known defects, CLI + namespace baselines, fixture
   manifest, recorded observations, oracle tests/examples. Prebuilt venvs
   (`.venv-oracle`, `.venv-pproxy-279`) already exist at root.
 - **Cross-implementation tests — `tests/compat/`.** API-contract validation
   against the extracted 2.7.9 contract plus URI/CLI/Python-API fixtures and
-  behavioral docs; regression-injection modules prove the harness catches
+  behavioral docs; regression-injection modules (`tests/regression_injections/`) prove the harness catches
   mutations. Python tiers 0–5 live under `python/tests/`
   (`TEST_TAXONOMY.md`); `pytest.ini` forces `--import-mode=importlib` so the
   source tree can't shadow the built extension.
 - **CI — exactly 4 workflows.** `ci.yml` (Ubuntu Rust smoke: fmt, clippy,
-  workspace tests, bounded optional-compat compile gate, fuzz-target
+  workspace tests, bounded optional-compat compile gates for CLI
+  (`full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon`), embed
+  (`ssh` / `pproxy-compat` / `ssh,pproxy-compat`), and outbound
+  (base/`toml`/`pproxy-compat`/`ssh`/`ssh,pproxy-compat`/`udp`), OpenSSH-backed
+  embed SSH regression, fuzz-target
   compilation), `python-test.yml` (path-scoped 3.12 wheel smoke),
-  `publish-python.yml` (fires on every `v*` tag push — tags publish to PyPI),
+  `publish-python.yml` (fires on every `v*` tag push — tags publish to PyPI;
+  manual dispatch targets TestPyPI by default with a PyPI option),
   `release-binaries.yml` (fires on every `v*` tag push or manual dispatch
   against an existing tag — preflight gate, five target archives with native
   smoke, then a `contents: write` assemble job attaching archives, SHA-256
@@ -433,8 +454,10 @@ Full checklists: `docs/CAPABILITIES.md`, `docs/OPERATIONS.md`,
 `eggress-cli` default `full` = `common`+`extended`+`operations`+`reverse`+
 `pproxy-compat` — it leaves off `ssh`, `quic`, `pproxy-legacy`,
 `legacy-crypto`, `pproxy-daemon`. `eggress-embed` default `full` adds
-`pproxy-legacy` to the same set. SSH and QUIC remain opt-in in both.
-Optional: `ssh`, `quic`, `pproxy-legacy`, `legacy-crypto`, `pproxy-daemon`.
+`pproxy-legacy` to the same set (embed has no `pproxy-daemon`; `ssh` and `quic`
+remain opt-in in both, and `insecure-quic` is test-only in the CLI).
+Optional product surface: `ssh`, `quic`, `pproxy-legacy`, `legacy-crypto`,
+`pproxy-daemon` (CLI-only).
 Lean build:
 `cargo build -p eggress-cli --release --no-default-features --features common`.
 MSRV 1.85; release profiles use thin-LTO/symbol-stripping. Never substitute
@@ -452,7 +475,7 @@ eggress/
 ├── architecture/           # THIS directory: overview + per-component reviews
 ├── docs/                   # canonical reference docs (ARCHITECTURE, INSTALLATION, parity manifests, specs)
 ├── packaging/              # install.sh / install.ps1 + fixture-based installer tests
-├── tests/                  # cross-implementation Python tests (tests/compat)
+├── tests/                  # cross-implementation Python tests (tests/compat) + regression injections + scripts
 ├── fuzz/                   # standalone libfuzzer workspace (11 targets)
 ├── benches/                # Criterion benchmarks (root pkg eggress-bench)
 ├── scripts/                # interop/certification/probe/evidence/release-preflight tooling
