@@ -2,7 +2,7 @@
 
 ## Status
 
-**IMPLEMENTED — 2026-09-21**
+**IMPLEMENTED; CORRECTIVE POLISH OPEN — 2026-09-21**
 
 ## Baseline
 
@@ -88,6 +88,7 @@ This is documentation-state debt, not missing runtime capability.
 | 3 | [`MAINTENANCE_PHASE_3_PYTHON_CLI_OWNERSHIP.md`](MAINTENANCE_PHASE_3_PYTHON_CLI_OWNERSHIP.md) | Implemented | Reassess and, only if behaviorally exact, remove the binding-to-CLI operational dependency using existing owner APIs. |
 | 4 | [`MAINTENANCE_PHASE_4_PUBLIC_API_AND_FEATURE_QUALIFICATION.md`](MAINTENANCE_PHASE_4_PUBLIC_API_AND_FEATURE_QUALIFICATION.md) | Implemented | Expand lightweight public-path compile contracts and align CI feature slices with the maintained contract. |
 | 5 | [`MAINTENANCE_PHASE_5_DOCUMENTATION_AND_COMPAT_PROJECTION_CONVERGENCE.md`](MAINTENANCE_PHASE_5_DOCUMENTATION_AND_COMPAT_PROJECTION_CONVERGENCE.md) | Implemented | Reconcile stale maintained docs and strengthen native/TOML compatibility projection drift protection without redesign. |
+| 6 | [`MAINTENANCE_CORRECTIVE_CLOSURE_POLISH.md`](MAINTENANCE_CORRECTIVE_CLOSURE_POLISH.md) | Planned | Reconcile phase evidence/checklists, add direct `run_pproxy_test()` binding proof, and record exact remote closure provenance without reopening runtime scope. |
 
 ## Sequencing
 
@@ -172,4 +173,12 @@ All five phases landed in one maintenance convergence commit (see `git log --one
 - Phase 5 (docs/compat): stale Python docs corrected; `native_equivalence` strengthened (auth/group); no behavior/claim change.
 
 Verification: workspace fmt/clippy/locked tests + outbound/embed feature slices + compat translator suites (see phase closures for focused evidence). No public Rust/Python/CLI/config/protocol/transport/feature/compat surface changes.
+
+Remote implementation verification for `ba4102f68c3965a8cadb7634febd2d610e239e71` is green:
+
+- GitHub Actions `CI` run `35646523487`: success;
+- GitHub Actions `Python smoke` run `35646523343`: success;
+- Python smoke result: `2308 passed, 115 skipped`.
+
+Post-implementation review found closure-state defects only: the five phase plans retain unchecked acceptance criteria and duplicate closure headings, and Phase 3 needs one direct native-binding regression so its evidence wording exactly matches the planned Python-visible contract. Those items are registered in [`MAINTENANCE_CORRECTIVE_CLOSURE_POLISH.md`](MAINTENANCE_CORRECTIVE_CLOSURE_POLISH.md). Runtime/API/capability scope remains closed while that polish is open.
 
