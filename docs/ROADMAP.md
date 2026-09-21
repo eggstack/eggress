@@ -179,12 +179,13 @@ Post-milestone work covers advanced transport hardening, Python async API
 refinements, and release automation. These are ongoing improvements rather than
 blocking milestones.
 
-The current bounded maintenance campaign for implementation-authority
-convergence, Python interop, and Rust library contract qualification is
-registered in
+The API-boundary/interoperability implementation phases have landed. A narrow
+post-implementation corrective closure remains registered in
+[`plans/API_BOUNDARY_CORRECTIVE_CLOSURE.md`](../plans/API_BOUNDARY_CORRECTIVE_CLOSURE.md),
+under the parent
 [`plans/API_BOUNDARY_AND_INTEROP_MAINTENANCE_ROADMAP.md`](../plans/API_BOUNDARY_AND_INTEROP_MAINTENANCE_ROADMAP.md).
-It is explicitly non-expansive: existing API surface and capability are fixed
-constraints.
+The closure is explicitly non-expansive: existing API surface and capability
+remain fixed constraints.
 
 ## Next Phase
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION — 2026-09-21**
+**IMPLEMENTED; CORRECTIVE CLOSURE OPEN — 2026-09-21**
 
 ## Baseline
 
@@ -84,11 +84,12 @@ Notable cross-crate coupling such as `EggressConfig::from_compiled(RuntimeConfig
 
 | Order | Plan | Status | Purpose |
 |---|---|---|---|
-| 1 | [`API_BOUNDARY_PHASE_1_CONFIG_AUTHORITY_CONVERGENCE.md`](API_BOUNDARY_PHASE_1_CONFIG_AUTHORITY_CONVERGENCE.md) | Ready | Make `eggress-config` the single TOML compile authority while preserving facade error behavior and feature topology. |
-| 2 | [`API_BOUNDARY_PHASE_2_PYTHON_LIFECYCLE_AND_ERROR_CONVERGENCE.md`](API_BOUNDARY_PHASE_2_PYTHON_LIFECYCLE_AND_ERROR_CONVERGENCE.md) | Ready | Align sync/async compatibility startup and preserve meaningful Python exception identity across native and async paths. |
-| 3 | [`API_BOUNDARY_PHASE_3_ASYNC_OUTBOUND_IO.md`](API_BOUNDARY_PHASE_3_ASYNC_OUTBOUND_IO.md) | Ready | Remove event-loop-blocking outbound writes without changing `AsyncOutboundStream` public method shapes. |
-| 4 | [`API_BOUNDARY_PHASE_4_PYTHON_BINDING_OWNERSHIP_AND_STUBS.md`](API_BOUNDARY_PHASE_4_PYTHON_BINDING_OWNERSHIP_AND_STUBS.md) | Ready | Reduce unnecessary PyO3 dependency reach-through and make runtime/stub/capability metadata agree. |
-| 5 | [`API_BOUNDARY_PHASE_5_RUST_PUBLIC_API_QUALIFICATION.md`](API_BOUNDARY_PHASE_5_RUST_PUBLIC_API_QUALIFICATION.md) | Ready | Freeze and document the existing Rust library exposure so future cleanup does not accidentally regress published consumers. |
+| 1 | [`API_BOUNDARY_PHASE_1_CONFIG_AUTHORITY_CONVERGENCE.md`](API_BOUNDARY_PHASE_1_CONFIG_AUTHORITY_CONVERGENCE.md) | Implemented; corrective closure open | Make `eggress-config` the single TOML compile authority while preserving facade error behavior and feature topology. |
+| 2 | [`API_BOUNDARY_PHASE_2_PYTHON_LIFECYCLE_AND_ERROR_CONVERGENCE.md`](API_BOUNDARY_PHASE_2_PYTHON_LIFECYCLE_AND_ERROR_CONVERGENCE.md) | Implemented; corrective closure open | Align sync/async compatibility startup and preserve meaningful Python exception identity across native and async paths. |
+| 3 | [`API_BOUNDARY_PHASE_3_ASYNC_OUTBOUND_IO.md`](API_BOUNDARY_PHASE_3_ASYNC_OUTBOUND_IO.md) | Implemented; corrective closure open | Remove event-loop-blocking outbound writes without changing `AsyncOutboundStream` public method shapes. |
+| 4 | [`API_BOUNDARY_PHASE_4_PYTHON_BINDING_OWNERSHIP_AND_STUBS.md`](API_BOUNDARY_PHASE_4_PYTHON_BINDING_OWNERSHIP_AND_STUBS.md) | Implemented; corrective closure open | Reduce unnecessary PyO3 dependency reach-through and make runtime/stub/capability metadata agree. |
+| 5 | [`API_BOUNDARY_PHASE_5_RUST_PUBLIC_API_QUALIFICATION.md`](API_BOUNDARY_PHASE_5_RUST_PUBLIC_API_QUALIFICATION.md) | Implemented; corrective closure open | Freeze and document the existing Rust library exposure so future cleanup does not accidentally regress published consumers. |
+| 6 | [`API_BOUNDARY_CORRECTIVE_CLOSURE.md`](API_BOUNDARY_CORRECTIVE_CLOSURE.md) | Ready | Restore the native outbound write contract, finish exception identity convergence, correct hop-count metadata, and close missing evidence/planning state. |
 
 ## Sequencing
 
@@ -159,3 +160,8 @@ This campaign is complete only when:
 8. `capabilities()` retains its current public shape/values unless a pre-existing correctness defect is separately approved, and consistency is mechanically tested against authoritative metadata where practical.
 9. Existing Rust public exports and feature slices continue to compile through explicit contract tests/qualification.
 10. No protocol capability, CLI behavior, configuration surface, compatibility tier, or published API is removed or renamed.
+
+
+## Post-implementation corrective closure
+
+The five implementation phases landed in commit `c15c60b189d0588d254011e877b78b2ca8a6b3a9` and passed CI/Python smoke. Post-implementation review found a small number of residual API-contract and evidence defects. They are bounded by [`API_BOUNDARY_CORRECTIVE_CLOSURE.md`](API_BOUNDARY_CORRECTIVE_CLOSURE.md). Do not reopen the five phases beyond work required by that corrective plan.
