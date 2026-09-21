@@ -14,21 +14,21 @@
 
 ## Objective
 
-Reduce unnecessary architectural reach-through from `egress-python`, repair runtime/type-stub/documentation drift, and make capability metadata mechanically consistent while preserving the existing Python API and wheel behavior.
+Reduce unnecessary architectural reach-through from `eggress-python`, repair runtime/type-stub/documentation drift, and make capability metadata mechanically consistent while preserving the existing Python API and wheel behavior.
 
 ## Current dependency boundary
 
-`egress-python` directly depends on:
+`eggress-python` directly depends on:
 
-- `egress-embed`;
-- `egress-pproxy-compat`;
-- `egress-config`;
-- `egress-routing`;
-- `egress-core`;
-- `egress-uri`;
-- `egress-system-proxy`;
-- `egress-cli`;
-- `egress-runtime`.
+- `eggress-embed`;
+- `eggress-pproxy-compat`;
+- `eggress-config`;
+- `eggress-routing`;
+- `eggress-core`;
+- `eggress-uri`;
+- `eggress-system-proxy`;
+- `eggress-cli`;
+- `eggress-runtime`.
 
 Not every edge is necessarily wrong. This phase must prove liveness and ownership before deleting or moving anything.
 
@@ -47,30 +47,30 @@ Use compiler/import evidence, not assumptions from crate names.
 
 The intended high-level boundary is:
 
-- service lifecycle/outbound service facade → `egress-embed`;
-- pproxy parsing/translation/diagnostics → `egress-pproxy-compat`;
-- system proxy application → `egress-system-proxy`;
+- service lifecycle/outbound service facade → `eggress-embed`;
+- pproxy parsing/translation/diagnostics → `eggress-pproxy-compat`;
+- system proxy application → `eggress-system-proxy`;
 - direct lower-level crates only where Python intentionally exposes that lower-level concept.
 
 ## Workstream 2 — Remove reach-through only when an existing owner can absorb it
 
-If `egress-python` uses `egress-cli` only to access reusable non-CLI logic, move/reuse that logic from its natural existing owner rather than making the bindings depend on CLI presentation code.
+If `eggress-python` uses `eggress-cli` only to access reusable non-CLI logic, move/reuse that logic from its natural existing owner rather than making the bindings depend on CLI presentation code.
 
-Likewise, eliminate direct `egress-config`, `egress-routing`, `egress-core`, `egress-uri`, or `egress-runtime` edges only when:
+Likewise, eliminate direct `eggress-config`, `eggress-routing`, `eggress-core`, `eggress-uri`, or `eggress-runtime` edges only when:
 
 1. the binding does not intentionally expose that crate's type/concept;
 2. an existing owner facade already provides the required behavior;
 3. moving the logic does not add a new public API.
 
-Do not create an `egress-python-support` crate.
+Do not create an `eggress-python-support` crate.
 
-Do not funnel everything through `egress-embed` if that would make embed depend on CLI-only or Python-only concerns.
+Do not funnel everything through `eggress-embed` if that would make embed depend on CLI-only or Python-only concerns.
 
 After each dependency removal, use `cargo tree -p eggress-python -e features` to verify no heavier replacement path was introduced.
 
 ## Workstream 3 — Repair native extension stubs
 
-Compare `crates/egress-python/src/lib.rs` module registration and each `#[pymethods]` block against `python/egress/_egress.pyi`.
+Compare `crates/eggress-python/src/lib.rs` module registration and each `#[pymethods]` block against `python/eggress/_eggress.pyi`.
 
 At minimum review current drift around:
 
@@ -87,10 +87,10 @@ Update stubs to describe the runtime that exists. Do not add runtime functions m
 
 Compare:
 
-- `python/egress/__init__.py`;
-- `python/egress/__init__.pyi`;
-- `python/egress/exceptions.py`;
-- `python/egress/exceptions.pyi`;
+- `python/eggress/__init__.py`;
+- `python/eggress/__init__.pyi`;
+- `python/eggress/exceptions.py`;
+- `python/eggress/exceptions.pyi`;
 - other module `.py/.pyi` pairs.
 
 Add a lightweight test that detects missing maintained exports without trying to assert every private helper.
@@ -101,7 +101,7 @@ Preserve every existing public name even if it is awkward or redundant.
 
 ## Workstream 5 — Capability metadata consistency
 
-`egress.capabilities()` currently returns a stable dictionary with hard-coded lists.
+`eggress.capabilities()` currently returns a stable dictionary with hard-coded lists.
 
 Do not expand or reorder that public output opportunistically in this phase.
 
@@ -133,7 +133,7 @@ Build the extension/wheel using the normal abi3 path and verify:
 
 - native import succeeds;
 - pure-Python package imports all documented symbols;
-- `egress-pproxy-compat` remains the only package owning top-level `pproxy`;
+- `eggress-pproxy-compat` remains the only package owning top-level `pproxy`;
 - no `sys.modules` aliasing is introduced;
 - source tree does not shadow the built extension under pytest importlib mode.
 
@@ -143,7 +143,7 @@ Build the extension/wheel using the normal abi3 path and verify:
 cargo check -p eggress-python --locked
 cargo tree -p eggress-python -e features
 
-(cd crates/egress-python && ../../.venv/bin/maturin develop)
+(cd crates/eggress-python && ../../.venv/bin/maturin develop)
 .venv/bin/python -m pytest   python/tests/test_wheel_import_smoke.py   python/tests/test_errors.py   python/tests/test_service.py   python/tests/test_pproxy_public_namespace.py   tests/compat -q
 
 .venv/bin/python -m pytest python/tests tests/compat -q
@@ -160,7 +160,7 @@ If a dependency changes, also run the repository's normal dependency audit/relea
 Do not remove a direct binding dependency if doing so would:
 
 1. require a new public Rust API solely for Python;
-2. make `egress-embed` own CLI presentation or Python-specific behavior;
+2. make `eggress-embed` own CLI presentation or Python-specific behavior;
 3. increase the dependency graph materially through a heavier facade;
 4. change a Python return type, exception, or capability value.
 
@@ -168,10 +168,10 @@ Retain the justified dependency and document why it is architectural rather than
 
 ## Acceptance criteria
 
-- [ ] Every direct internal `egress-python` dependency has a documented owner/use justification.
+- [ ] Every direct internal `eggress-python` dependency has a documented owner/use justification.
 - [ ] Unnecessary reach-through edges are removed without adding a new crate.
 - [ ] Removed dependencies do not return indirectly through a heavier facade without justification.
-- [ ] `_egress.pyi` matches registered native classes/functions/methods for the maintained surface.
+- [ ] `_eggress.pyi` matches registered native classes/functions/methods for the maintained surface.
 - [ ] Public `.py/.pyi` pairs and `__all__` agree.
 - [ ] Existing Python public names and import locations are preserved.
 - [ ] `capabilities()` retains its public contract and is protected against metadata drift.

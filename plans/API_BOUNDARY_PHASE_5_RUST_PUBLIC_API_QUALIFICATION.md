@@ -22,12 +22,12 @@ This is not an API redesign.
 
 The workspace publishes 28 crates. Several low-level crates intentionally expose reusable APIs, while higher-level consumers are generally expected to use:
 
-- `egress-embed` for full in-process service lifecycle;
-- `egress-outbound` (or the compatibility re-export `egress_embed::outbound`) for listener-free chains;
-- `egress-relay` for generic byte relay;
+- `eggress-embed` for full in-process service lifecycle;
+- `eggress-outbound` (or the compatibility re-export `eggress_embed::outbound`) for listener-free chains;
+- `eggress-relay` for generic byte relay;
 - protocol/transport/routing crates when a consumer explicitly wants those lower-level libraries.
 
-At the same time, published APIs include cross-crate types such as `EggressConfig::from_compiled(egress_config::RuntimeConfig, ...)`. These already constrain internal refactoring and must not be treated as private merely because a facade exists.
+At the same time, published APIs include cross-crate types such as `EggressConfig::from_compiled(eggress_config::RuntimeConfig, ...)`. These already constrain internal refactoring and must not be treated as private merely because a facade exists.
 
 ## Workstream 1 — Inventory public exposure by crate
 
@@ -42,14 +42,14 @@ This classification is documentation only. It does not authorize changing visibi
 
 Pay particular attention to:
 
-- `egress-embed`;
-- `egress-outbound`;
-- `egress-server`;
-- `egress-runtime`;
-- `egress-config`;
-- `egress-routing`;
-- `egress-core`;
-- `egress-relay`;
+- `eggress-embed`;
+- `eggress-outbound`;
+- `eggress-server`;
+- `eggress-runtime`;
+- `eggress-config`;
+- `eggress-routing`;
+- `eggress-core`;
+- `eggress-relay`;
 - protocol and transport crates.
 
 ## Workstream 2 — Freeze representative source-compatibility contracts
@@ -64,7 +64,7 @@ Cover at minimum:
 - `from_compiled`, `compiled`, `into_compiled`;
 - `EggressService::new`, blocking/async start signatures;
 - `EggressHandle` status/reload/shutdown;
-- `egress_embed::outbound::{OutboundConnector, OutboundConnectErrorKind, OutboundConnectStage}`.
+- `eggress_embed::outbound::{OutboundConnector, OutboundConnectErrorKind, OutboundConnectStage}`.
 
 ### eggress-outbound
 
@@ -79,11 +79,11 @@ Cover at minimum:
 
 Representative construction/use for:
 
-- `egress-relay`;
-- `egress-core::TargetAddr` / stream aliases / chain interfaces that are already public;
-- `egress-routing` model/router exports;
-- `egress-config::RuntimeConfig` and validation entry point;
-- compatibility re-exports from `egress-server` that downstream code may already import.
+- `eggress-relay`;
+- `eggress-core::TargetAddr` / stream aliases / chain interfaces that are already public;
+- `eggress-routing` model/router exports;
+- `eggress-config::RuntimeConfig` and validation entry point;
+- compatibility re-exports from `eggress-server` that downstream code may already import.
 
 Tests should compile and execute only enough to prove paths/signatures; do not build another exhaustive API snapshot framework.
 
@@ -96,7 +96,7 @@ Retain the existing required checks and add missing narrow compile fixtures only
 Required slices include:
 
 ```text
-egress-outbound:
+eggress-outbound:
   base
   toml
   pproxy-compat
@@ -104,7 +104,7 @@ egress-outbound:
   ssh + pproxy-compat
   udp
 
-egress-embed:
+eggress-embed:
   ssh
   pproxy-compat
   ssh + pproxy-compat
@@ -121,13 +121,13 @@ Update maintained architecture/README text so downstream users can tell:
 
 - where implementation authority lives;
 - which compatibility re-export path remains supported;
-- when to depend directly on `egress-outbound` vs `egress-embed`;
+- when to depend directly on `eggress-outbound` vs `eggress-embed`;
 - that `RuntimeConfig` crossing the embed boundary is an established supported coupling;
-- that `egress-server` / `egress-runtime` public items are not permission for internal code to duplicate their functionality elsewhere.
+- that `eggress-server` / `eggress-runtime` public items are not permission for internal code to duplicate their functionality elsewhere.
 
 Avoid language such as “internal” for a public item if that would imply downstream use is unsupported after it has already been published without such qualification.
 
-## Workstream 5 — Add a low-maintenance API regression gate
+## Workstream 5 — Add a low-maintenance API reggression gate
 
 Prefer ordinary compile tests checked by the existing Rust toolchain.
 
@@ -169,7 +169,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --locked
 ```
 
-Run the required OpenSSH regression when SSH-facing contract tests are touched.
+Run the required OpenSSH reggression when SSH-facing contract tests are touched.
 
 ## Stop conditions
 

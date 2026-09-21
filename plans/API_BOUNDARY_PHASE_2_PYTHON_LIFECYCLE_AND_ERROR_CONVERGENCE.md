@@ -42,7 +42,7 @@ The helper must preserve the existing compatibility option extraction and must n
 
 Do not add a new public start method.
 
-### Required regression matrix
+### Required reggression matrix
 
 Exercise native TOML and pproxy-created services through both sync and async start.
 
@@ -91,7 +91,7 @@ Include at least:
 
 The native extension defines `ConnectionError`, `ConnectionClosedError`, `TimeoutError`, `DnsError`, `AuthError`, `TlsError`, and related types.
 
-`python/egress/connection.py` also defines public connection exceptions. Managed `Connection` raises the pure-Python family while outbound native calls currently raise the native family directly.
+`python/eggress/connection.py` also defines public connection exceptions. Managed `Connection` raises the pure-Python family while outbound native calls currently raise the native family directly.
 
 ### Compatibility-first convergence rules
 
@@ -99,8 +99,8 @@ Do not delete or rename either currently importable family.
 
 The target behavior is:
 
-- existing imports from `egress.connection` continue to work;
-- existing imports from `egress._egress` continue to work;
+- existing imports from `eggress.connection` continue to work;
+- existing imports from `eggress._eggress` continue to work;
 - top-level aliases such as `ConnectionBaseError` keep their names;
 - broad `EggressError` catches continue to work;
 - public Python facade operations expose a coherent catch hierarchy;
@@ -137,7 +137,7 @@ Do not claim `astart()` uses `asyncio.to_thread` if the maintained implementatio
 ## Verification
 
 ```bash
-(cd crates/egress-python && ../../.venv/bin/maturin develop)
+(cd crates/eggress-python && ../../.venv/bin/maturin develop)
 
 .venv/bin/python -m pytest   python/tests/test_service.py   python/tests/test_errors.py   python/tests/test_asyncio_semantic.py   python/tests/test_outbound_stream_verification.py   python/tests/test_pproxy_compat.py -q
 

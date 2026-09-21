@@ -14,15 +14,15 @@
 
 ## Objective
 
-Remove duplicated TOML parse/version/validate/compile implementations from `egress-embed` and `egress-outbound` so `egress-config` is the single implementation authority, without changing any public constructor, reload behavior, error category, error text relied upon by current tests, feature gate, or capability.
+Remove duplicated TOML parse/version/validate/compile implementations from `eggress-embed` and `eggress-outbound` so `eggress-config` is the single implementation authority, without changing any public constructor, reload behavior, error category, error text relied upon by current tests, feature gate, or capability.
 
 ## Current duplication
 
 The same logical pipeline exists in three places:
 
-- `egress-config::validate_and_compile_toml()`;
-- `egress-embed::parse_validate_compile()`;
-- `egress-outbound::connector::parse_validate_compile()` behind feature `toml`.
+- `eggress-config::validate_and_compile_toml()`;
+- `eggress-embed::parse_validate_compile()`;
+- `eggress-outbound::connector::parse_validate_compile()` behind feature `toml`.
 
 Each performs:
 
@@ -33,7 +33,7 @@ toml::from_str
 → compile_config
 ```
 
-The facade-local versions flatten errors differently from `ConfigError::Display`. Consolidation therefore requires an explicit compatibility mapping, not a blind replacement with `egress_config::validate_and_compile_toml(input).map_err(|e| e.to_string())`.
+The facade-local versions flatten errors differently from `ConfigError::Display`. Consolidation therefore requires an explicit compatibility mapping, not a blind replacement with `eggress_config::validate_and_compile_toml(input).map_err(|e| e.to_string())`.
 
 ## Workstream 1 — Freeze existing facade error behavior
 
@@ -57,9 +57,9 @@ Record exact current `EggressError::category()` / `OutboundError::category()` pl
 
 ## Workstream 2 — Delegate compilation to eggress-config
 
-Change the embed and outbound local helpers to call `egress_config::validate_and_compile_toml()`.
+Change the embed and outbound local helpers to call `eggress_config::validate_and_compile_toml()`.
 
-Facade-specific adapters may pattern-match `egress_config::ConfigError` to preserve the existing message representation:
+Facade-specific adapters may pattern-match `eggress_config::ConfigError` to preserve the existing message representation:
 
 - `Parse(source)`: retain the prior parser message rather than adding the config crate's `failed to parse TOML:` prefix unless existing facade tests already expect the prefix;
 - `UnsupportedVersion(v)`: preserve `unsupported config version: {v}`;
@@ -79,11 +79,11 @@ After delegation, delete the duplicate parse/version/validate/compile bodies.
 - preserve current generation on rejection/failure;
 - reject listener topology changes exactly as before.
 
-No reload transaction logic should move into `egress-config`.
+No reload transaction logic should move into `eggress-config`.
 
 ## Workstream 4 — Simplify dependency/feature topology only when proven
 
-After the outbound duplicate parser is removed, inspect whether the direct optional `toml` dependency in `egress-outbound` is still used.
+After the outbound duplicate parser is removed, inspect whether the direct optional `toml` dependency in `eggress-outbound` is still used.
 
 If it is unused:
 
@@ -91,7 +91,7 @@ If it is unused:
 - change the outbound `toml` feature so it enables only the dependencies still required for TOML construction;
 - preserve the feature name `toml` and every existing feature combination.
 
-Do not remove `toml` from `egress-embed` if redaction/serialization still requires it.
+Do not remove `toml` from `eggress-embed` if redaction/serialization still requires it.
 
 Use `cargo tree -e features` before and after to confirm that no protocol or transport feature is accidentally activated.
 
@@ -99,9 +99,9 @@ Use `cargo tree -e features` before and after to confirm that no protocol or tra
 
 Update comments/rustdoc that currently call multiple boundaries “canonical.” The maintained wording should be:
 
-- `egress-config`: canonical parse/version/validate/compile implementation;
-- `egress-embed`: stable service facade and error-category adapter;
-- `egress-outbound`: outbound-specific post-compilation validation/route extraction.
+- `eggress-config`: canonical parse/version/validate/compile implementation;
+- `eggress-embed`: stable service facade and error-category adapter;
+- `eggress-outbound`: outbound-specific post-compilation validation/route extraction.
 
 Do not rewrite historical plans that intentionally describe the pre-convergence state.
 
@@ -132,7 +132,7 @@ cargo test --workspace --locked
 
 Stop and document rather than expanding scope if:
 
-1. preserving the existing facade error contract would require adding a new public API to `egress-config`;
+1. preserving the existing facade error contract would require adding a new public API to `eggress-config`;
 2. a current facade intentionally accepts input rejected by `validate_and_compile_toml()`;
 3. removing the outbound direct `toml` dependency changes an established feature slice unexpectedly.
 
@@ -141,7 +141,7 @@ In those cases, keep the narrowest adapter necessary and record why the remainin
 ## Acceptance criteria
 
 - [ ] Embed and outbound no longer independently implement TOML parse/version/validation/compilation.
-- [ ] `egress-config::validate_and_compile_toml()` is the single implementation authority.
+- [ ] `eggress-config::validate_and_compile_toml()` is the single implementation authority.
 - [ ] Existing public constructors and reload methods retain their signatures.
 - [ ] Existing facade error categories and redacted message families are preserved.
 - [ ] Reload generation/metrics/listener-topology semantics are unchanged.

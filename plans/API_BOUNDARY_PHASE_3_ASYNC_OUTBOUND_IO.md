@@ -36,7 +36,7 @@ The native method releases the GIL but calls the shared Tokio runtime with `bloc
 8. Explicit `close()` remains non-blocking from Python's perspective.
 9. Do not weaken cancellation or loop-affinity guarantees established by Phase 2.
 
-## Workstream 1 — Add a deterministic event-loop stall regression
+## Workstream 1 — Add a deterministic event-loop stall reggression
 
 Build a local fixture that creates real backpressure:
 
@@ -133,7 +133,7 @@ If stopped, keep the existing API and document the limitation; do not disguise b
 ## Verification
 
 ```bash
-(cd crates/egress-python && ../../.venv/bin/maturin develop)
+(cd crates/eggress-python && ../../.venv/bin/maturin develop)
 
 .venv/bin/python -m pytest   python/tests/test_outbound_stream_verification.py   python/tests/test_asyncio_semantic.py   python/tests/test_performance_smoke.py -q
 
