@@ -179,6 +179,13 @@ Post-milestone work covers advanced transport hardening, Python async API
 refinements, and release automation. These are ongoing improvements rather than
 blocking milestones.
 
+The current bounded maintenance campaign for implementation-authority
+convergence, Python interop, and Rust library contract qualification is
+registered in
+[`plans/API_BOUNDARY_AND_INTEROP_MAINTENANCE_ROADMAP.md`](../plans/API_BOUNDARY_AND_INTEROP_MAINTENANCE_ROADMAP.md).
+It is explicitly non-expansive: existing API surface and capability are fixed
+constraints.
+
 ## Next Phase
 
 See the active [compatibility matrix](parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
