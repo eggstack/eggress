@@ -188,6 +188,7 @@ API evidence added). Details remain in
 under the parent
 [`plans/API_BOUNDARY_AND_INTEROP_MAINTENANCE_ROADMAP.md`](../plans/API_BOUNDARY_AND_INTEROP_MAINTENANCE_ROADMAP.md).
 Existing API surface and capability remain fixed constraints.
+A final evidence-state polish pass (acceptance-checkbox reconciliation plus a deterministic native-write semantic proof) is tracked in [`plans/API_BOUNDARY_EVIDENCE_STATE_POLISH.md`](../plans/API_BOUNDARY_EVIDENCE_STATE_POLISH.md); it does not reopen runtime/API scope.
 
 ## Next Phase
 

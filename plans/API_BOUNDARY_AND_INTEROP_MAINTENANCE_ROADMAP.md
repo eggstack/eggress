@@ -165,3 +165,8 @@ This campaign is complete only when:
 ## Post-implementation corrective closure
 
 The five implementation phases landed in commit `c15c60b189d0588d254011e877b78b2ca8a6b3a9` and passed CI/Python smoke. Post-implementation review found a small number of residual API-contract and evidence defects. They are bounded by [`API_BOUNDARY_CORRECTIVE_CLOSURE.md`](API_BOUNDARY_CORRECTIVE_CLOSURE.md). Do not reopen the five phases beyond work required by that corrective plan.
+
+
+## Post-closure evidence-state polish
+
+The implementation and corrective closure remain **IMPLEMENTED**. A final evidence-only bookkeeping/test-quality pass is registered at [`API_BOUNDARY_EVIDENCE_STATE_POLISH.md`](API_BOUNDARY_EVIDENCE_STATE_POLISH.md). It may strengthen test evidence and reconcile acceptance checkboxes, but it must not reopen supported runtime/API scope.
