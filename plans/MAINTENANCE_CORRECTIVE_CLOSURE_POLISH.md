@@ -2,7 +2,7 @@
 
 ## Status
 
-**IN PROGRESS — 2026-09-21 (local verification green; remote CI pending)**
+**IMPLEMENTED — 2026-09-21**
 
 ## Baseline
 
@@ -321,7 +321,7 @@ This corrective polish is complete only when:
 - [x] Phase 5 criteria are reconciled against corrected maintained docs and native/TOML equivalence evidence.
 - [x] Parent roadmap records implementation commit `ba4102f68c3965a8cadb7634febd2d610e239e71` and remote workflow runs `35646523487` / `35646523343`.
 - [x] Full Python/compat suite passes after the new direct binding test.
-- [ ] The final corrective commit's remote `CI` and `Python smoke` workflows both succeed.
+- [x] The final corrective commit's remote `CI` and `Python smoke` workflows both succeed.
 - [x] No Rust/Python/CLI/config/protocol/transport public surface or capability changes.
 - [x] No new closure plan is needed after this pass.
 
@@ -334,5 +334,5 @@ Corrective pass (tests/planning/docs only; no runtime/public-surface change):
 - docs: `architecture/python-bindings.md` agreement paragraph now distinguishes direct-binding vs shared-owner vs process evidence; README/`AGENTS.md`/skills required no pruning (already current: outbound `toml` slice, feature maps, test inventory).
 - local gates: `cargo fmt --check` pass; `cargo clippy --workspace --all-targets -- -D warnings` pass; focused Rust (`eggress-runtime` lifecycle 18, `eggress-outbound` 15, `eggress-cli --lib` 11) pass; outbound base/`toml`/pproxy/`ssh`/`ssh+pproxy`/`udp` + embed `ssh`/pproxy/`ssh+pproxy` compile slices pass; focused Python (`test_pproxy_compat` 15, `test_pproxy_phase6_process` + `test_api_boundary_closure` 32) pass; full Python/compat `2311 passed, 115 skipped` (implementation was `2308 passed`; +3 new).
 - implementation provenance (unchanged): commit `ba4102f68c3965a8cadb7634febd2d610e239e71`, remote CI `35646523487` success, Python smoke `35646523343` success (`2308 passed, 115 skipped`).
-- corrective commit remote verification: pending — record new `CI` / `Python smoke` run IDs here after push before marking `IMPLEMENTED`.
+- corrective commit remote verification: corrective code commit `dc9a76f21d1a11806987050c75051758613be64d` — remote `CI` run `35655704749` success, remote `Python smoke` run `35655704713` success.
 - no Rust/Python/CLI/config/protocol/transport public-surface or capability changes; no new closure plan needed.

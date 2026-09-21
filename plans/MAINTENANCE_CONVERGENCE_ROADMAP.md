@@ -2,7 +2,7 @@
 
 ## Status
 
-**IMPLEMENTED; CORRECTIVE POLISH OPEN — 2026-09-21**
+**IMPLEMENTED — 2026-09-21**
 
 ## Baseline
 
@@ -88,7 +88,7 @@ This is documentation-state debt, not missing runtime capability.
 | 3 | [`MAINTENANCE_PHASE_3_PYTHON_CLI_OWNERSHIP.md`](MAINTENANCE_PHASE_3_PYTHON_CLI_OWNERSHIP.md) | Implemented | Reassess and, only if behaviorally exact, remove the binding-to-CLI operational dependency using existing owner APIs. |
 | 4 | [`MAINTENANCE_PHASE_4_PUBLIC_API_AND_FEATURE_QUALIFICATION.md`](MAINTENANCE_PHASE_4_PUBLIC_API_AND_FEATURE_QUALIFICATION.md) | Implemented | Expand lightweight public-path compile contracts and align CI feature slices with the maintained contract. |
 | 5 | [`MAINTENANCE_PHASE_5_DOCUMENTATION_AND_COMPAT_PROJECTION_CONVERGENCE.md`](MAINTENANCE_PHASE_5_DOCUMENTATION_AND_COMPAT_PROJECTION_CONVERGENCE.md) | Implemented | Reconcile stale maintained docs and strengthen native/TOML compatibility projection drift protection without redesign. |
-| 6 | [`MAINTENANCE_CORRECTIVE_CLOSURE_POLISH.md`](MAINTENANCE_CORRECTIVE_CLOSURE_POLISH.md) | Planned | Reconcile phase evidence/checklists, add direct `run_pproxy_test()` binding proof, and record exact remote closure provenance without reopening runtime scope. |
+| 6 | [`MAINTENANCE_CORRECTIVE_CLOSURE_POLISH.md`](MAINTENANCE_CORRECTIVE_CLOSURE_POLISH.md) | Implemented | Reconcile phase evidence/checklists, add direct `run_pproxy_test()` binding proof, and record exact remote closure provenance without reopening runtime scope. |
 
 ## Sequencing
 
@@ -180,5 +180,11 @@ Remote implementation verification for `ba4102f68c3965a8cadb7634febd2d610e239e71
 - GitHub Actions `Python smoke` run `35646523343`: success;
 - Python smoke result: `2308 passed, 115 skipped`.
 
-Post-implementation review found closure-state defects only: the five phase plans retain unchecked acceptance criteria and duplicate closure headings, and Phase 3 needs one direct native-binding regression so its evidence wording exactly matches the planned Python-visible contract. Those items are registered in [`MAINTENANCE_CORRECTIVE_CLOSURE_POLISH.md`](MAINTENANCE_CORRECTIVE_CLOSURE_POLISH.md). Runtime/API/capability scope remains closed while that polish is open.
+Corrective closure polish in [`MAINTENANCE_CORRECTIVE_CLOSURE_POLISH.md`](MAINTENANCE_CORRECTIVE_CLOSURE_POLISH.md) is complete: all five phase plans now carry checked acceptance criteria with explicit evidence maps and a single `## Closure record` heading each; Phase 3 has direct native-binding regression `TestRunPproxyTestNativeBinding` plus corrected evidence wording; `architecture/python-bindings.md` distinguishes direct-binding/shared-owner/process evidence. The corrective pass changed only tests/planning/docs (no runtime/public-surface behavior).
+
+Corrective verification for `dc9a76f21d1a11806987050c75051758613be64d` is green:
+
+- GitHub Actions `CI` run `35655704749`: success;
+- GitHub Actions `Python smoke` run `35655704713`: success;
+- Full Python/compat suite: `2311 passed, 115 skipped` (implementation baseline `2308 passed`; +3 new direct-binding cases).
 
