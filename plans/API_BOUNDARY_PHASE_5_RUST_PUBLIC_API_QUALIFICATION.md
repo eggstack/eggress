@@ -187,12 +187,23 @@ If the inventory reveals an API that should eventually be reduced, record it as 
 
 ## Acceptance criteria
 
-- [ ] Published crates have a maintained public-surface classification.
-- [ ] Representative compile contracts cover the primary embed/outbound and lower-level library paths.
-- [ ] Existing compatibility re-exports remain source-compatible.
-- [ ] Cross-crate public types such as `RuntimeConfig` remain usable through current paths.
-- [ ] Required feature slices compile.
-- [ ] No public item, feature, or method is removed, renamed, moved, or signature-changed.
-- [ ] Documentation clearly distinguishes implementation authority from supported import paths.
-- [ ] No new mandatory API-diff tooling is added to ordinary CI.
-- [ ] Workspace gate is green.
+- [x] Published crates have a maintained public-surface classification.
+- [x] Representative compile contracts cover the primary embed/outbound and lower-level library paths.
+- [x] Existing compatibility re-exports remain source-compatible.
+- [x] Cross-crate public types such as `RuntimeConfig` remain usable through current paths.
+- [x] Required feature slices compile.
+- [x] No public item, feature, or method is removed, renamed, moved, or signature-changed.
+- [x] Documentation clearly distinguishes implementation authority from supported import paths.
+- [x] No new mandatory API-diff tooling is added to ordinary CI.
+- [x] Workspace gate is green.
+
+## Closure evidence (2026-09-21 polish)
+
+- Classification: `docs/RUST_API.md` maintains primary/supporting/compatibility/implementation-seam qualification for all 28 crates; documentation-only, no visibility change.
+- Compile contracts: `crates/eggress-embed/tests/public_api.rs` (`embed_config_handoff_and_outbound_facade_paths_compile` with explicit `RuntimeConfig` handoff, `outbound_authority_and_compat_reexport_paths_compile` for `eggress-outbound` authority plus `eggress_embed::outbound` re-export, `relay_routing_core_representative_paths_compile` for `relay`/`RelayOptions`/`RelayReport`, `Router`/`RouteActionSpec`, `UpstreamId`/`TargetAddr`).
+- Re-exports/authority: `eggress_embed::outbound::{OutboundConnector, OutboundConnectErrorKind, OutboundConnectStage}` remain source-compatible facades over `eggress-outbound` authority; `EggressConfig::{from_toml_str, from_compiled, compiled, into_compiled}` and `EggressService`/`EggressHandle` paths compile.
+- Feature slices: `cargo check -p eggress-outbound --locked --no-default-features` (base/toml/pproxy-compat/ssh/ssh+pproxy-compat/udp) and `cargo check -p eggress-embed --locked --no-default-features --features ssh/pproxy-compat/ssh,pproxy-compat` all green; no `--all-features` substitution.
+- No removal/rename: no public item/feature/method removed, renamed, moved, or signature-changed in this line of work; `RuntimeConfig` embed handoff remains an established supported coupling.
+- Docs: `docs/RUST_API.md`, `architecture/overview.md`, and crate READMEs distinguish implementation authority from supported import paths without declaring published items internal-only.
+- Tooling: no `cargo-semver-checks`/`cargo-public-api`/nightly rustdoc gate added to ordinary CI.
+- Broad gate: `cargo test --workspace --locked` (2947 passed, 151 ignored), fmt/clippy green.

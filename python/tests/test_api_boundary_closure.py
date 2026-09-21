@@ -97,11 +97,19 @@ _DIRECT_URI = "direct://127.0.0.1:0"
 
 
 class TestNativeWriteContract:
-    def test_native_write_completes_without_drain(self):
-        """Native write must reach the peer without an explicit drain.
+    def test_native_write_round_trip_without_explicit_drain(self):
+        """Smoke: native write reaches the peer without an explicit drain.
 
-        Deterministic peer barrier: the server signals receipt. A queue-only
-        write would never arrive until drain, so the event would time out.
+        This is a round-trip smoke test only. It does not prove synchronous
+        completion semantics: the Tokio write pump consumes queued `Data`
+        independently, so a queue-only implementation could also transmit
+        promptly. The authoritative synchronous-completion proof is the
+        deterministic gated-transport Rust test
+        (`outbound::tests::native_sync_write_waits_for_transport_completion`),
+        which holds the transport gate closed and proves the sync result is
+        withheld until transport completion, plus
+        (`outbound::tests::async_submit_returns_before_transport_completion`)
+        for the queue-only async path.
         """
         received: list = []
         arrived = threading.Event()

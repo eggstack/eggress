@@ -142,12 +142,23 @@ In those cases, keep the narrowest adapter necessary and record why the remainin
 
 ## Acceptance criteria
 
-- [ ] Embed and outbound no longer independently implement TOML parse/version/validation/compilation.
-- [ ] `eggress-config::validate_and_compile_toml()` is the single implementation authority.
-- [ ] Existing public constructors and reload methods retain their signatures.
-- [ ] Existing facade error categories and redacted message families are preserved.
-- [ ] Reload generation/metrics/listener-topology semantics are unchanged.
-- [ ] Outbound feature `toml` still compiles in isolation.
-- [ ] Any now-unused direct `toml` dependency is removed without adding a replacement dependency.
-- [ ] Architecture comments identify one canonical compilation boundary.
-- [ ] Workspace tests and feature-slice checks are green.
+- [x] Embed and outbound no longer independently implement TOML parse/version/validation/compilation.
+- [x] `eggress-config::validate_and_compile_toml()` is the single implementation authority.
+- [x] Existing public constructors and reload methods retain their signatures.
+- [x] Existing facade error categories and redacted message families are preserved.
+- [x] Reload generation/metrics/listener-topology semantics are unchanged.
+- [x] Outbound feature `toml` still compiles in isolation.
+- [x] Any now-unused direct `toml` dependency is removed without adding a replacement dependency.
+- [x] Architecture comments identify one canonical compilation boundary.
+- [x] Workspace tests and feature-slice checks are green.
+
+## Closure evidence (2026-09-21 polish)
+
+- Single authority: `crates/eggress-config/src/lib.rs::validate_and_compile_toml()`.
+- Facade adapters only: `crates/eggress-embed/src/lib.rs::parse_validate_compile()` and `crates/eggress-outbound/src/connector.rs::parse_validate_compile()` (cfg `toml`) both delegate to the config authority via private `config_error_message()` adapters preserving `unsupported config version:`, validation, and redacted families. No facade-local `toml::from_str`/version/validate/compile bodies remain.
+- Signatures: `EggressConfig::from_toml_str`, `EggressHandle::reload_toml_str`, `OutboundConnector::from_toml`, `OutboundConnector::validate_outbound_config` unchanged; exercised by `crates/eggress-embed/tests/start_stop.rs`, `reload.rs`, `reload_convergence.rs`, and `crates/eggress-outbound/src/connector.rs` unit tests (`test_outbound_connector_from_toml`, `from_toml_*`).
+- Error families: `crates/eggress-embed/tests/error_redaction.rs` (`error_category_labels`) plus outbound `from_toml_malformed_is_config`, `from_toml_unsupported_version_is_config`, `from_toml_invalid_uri_is_config`.
+- Reload semantics: `Reload` (not `Config`) classification, generation, metrics, listener-topology rejection covered by `crates/eggress-embed/tests/reload.rs` and `reload_convergence.rs`.
+- Feature topology: `crates/eggress-outbound/Cargo.toml` has no direct `toml` crate dependency; feature `toml = ["dep:eggress-config"]`. Verified with `cargo check -p eggress-outbound --locked --no-default-features --features toml` (plus base/pproxy/ssh/ssh+pproxy/udp slices).
+- Canonical-boundary comments: `crates/eggress-embed/src/lib.rs` and `crates/eggress-outbound/src/connector.rs` rustdoc identify the canonical `eggress-config` boundary and facade adapter roles.
+- Broad gate: `cargo test --workspace --locked` (2947 passed, 151 ignored), `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` green.

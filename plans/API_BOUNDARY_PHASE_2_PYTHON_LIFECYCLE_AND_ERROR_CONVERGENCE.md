@@ -168,12 +168,23 @@ The mandatory corrections that should still proceed are the shared start selecto
 
 ## Acceptance criteria
 
-- [ ] `start()` and `astart()` use one private start-selection path.
-- [ ] Services created from pproxy args apply the same compatibility runtime hooks under sync and async startup.
-- [ ] Async bridge helpers no longer flatten ordinary operation exceptions to generic `RuntimeError`.
-- [ ] Cancellation and loop-affinity behavior remain intact.
-- [ ] Existing native and pure-Python exception names remain importable.
-- [ ] Managed and outbound facade operations have explicit, tested catch semantics.
-- [ ] Error messages remain redacted.
-- [ ] Python lifecycle/error docs and stubs match runtime behavior.
-- [ ] Full Python suite and workspace gate are green.
+- [x] `start()` and `astart()` use one private start-selection path.
+- [x] Services created from pproxy args apply the same compatibility runtime hooks under sync and async startup.
+- [x] Async bridge helpers no longer flatten ordinary operation exceptions to generic `RuntimeError`.
+- [x] Cancellation and loop-affinity behavior remain intact.
+- [x] Existing native and pure-Python exception names remain importable.
+- [x] Managed and outbound facade operations have explicit, tested catch semantics.
+- [x] Error messages remain redacted.
+- [x] Python lifecycle/error docs and stubs match runtime behavior.
+- [x] Full Python suite and workspace gate are green.
+
+## Closure evidence (2026-09-21 polish)
+
+- Shared selector: `python/eggress/service.py::EggressService._select_start_operation()` used by both `start()` and `astart()`; observable seam ` _compatibility_start_args()` forwards `(auth_timeout_seconds, system_proxy)` without touching host proxy state.
+- Forwarding proof: `python/tests/test_api_boundary_closure.py::TestCompatibilityStartupForwarding` (parametrized default/`--auth 5`/`--sys`, sync/async identical selection, source-sharing assertion, non-compat `None`, representative values).
+- Bridge preservation: `python/eggress/_asyncio.py::AsyncBridge.run()` and `wrap_blocking_call()` propagate operation exceptions with original class/message; bridge-only `RuntimeError` for infrastructure failure. Covered by `TestExceptionIdentityMatrix::test_bridge_preserves_native_identity` plus `python/tests/test_asyncio_semantic.py`, `test_errors.py`, `test_service.py`.
+- Cancellation/loop-affinity: preserved; covered by `test_asyncio_semantic.py` cancellation/affinity tests and `test_outbound_stream_verification.py`.
+- Exception identity: `python/eggress/connection.py` aliases native classes (`LoopMismatchError`, `UnsupportedCompositionError` are `is` native); `TestExceptionIdentityMatrix` checks 11-name identity across native/`connection`/`exceptions`/top-level, hierarchy, stub agreement, managed/sync/async catch, closed-stream family.
+- Redaction: `crates/eggress-embed/tests/error_redaction.rs` plus Python redaction tests; no credential/URI leakage in messages.
+- Stubs/docs: `python/eggress/_eggress.pyi`, `python/eggress/exceptions.pyi` agree with runtime (matrix `test_stubs_agree_with_runtime`); `architecture/python-bindings.md` and `docs/PYTHON_BINDINGS.md` describe `AsyncBridge` (not `asyncio.to_thread`) and `astart()` behavior.
+- Broad gate: `python/tests/test_service.py`, `test_errors.py`, `test_asyncio_semantic.py`, `test_outbound_stream_verification.py`, `test_pproxy_compat.py` (205 passed in focused set), full `python/tests tests/compat` (2308 passed), `cargo test --workspace --locked` (2947 passed), fmt/clippy green.

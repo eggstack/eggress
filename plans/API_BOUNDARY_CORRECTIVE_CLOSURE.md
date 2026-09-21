@@ -380,27 +380,27 @@ No external pproxy oracle/differential run is required unless the compatibility-
 
 This corrective plan may be marked **IMPLEMENTED** only when all are true:
 
-- [ ] native `PyOutboundStream.write()` again has synchronous completion semantics;
-- [ ] `OutboundStream.write()` remains behaviorally unchanged;
-- [ ] `AsyncOutboundStream.write()` remains synchronous-to-call but performs only private ordered submission and does not wait on transport I/O;
-- [ ] accidental public `write_blocking_for_sync` is removed from runtime/stubs/docs;
-- [ ] async write ordering, drain failure, EOF ordering, close, and backpressure-loop-schedulability tests are green;
-- [ ] all maintained connection exception aliases point to one runtime class identity for the same named exception;
-- [ ] runtime exception identities/hierarchy agree with `.pyi` declarations;
-- [ ] `preview_connect()["hop_count"]` uses `hop_count()` and a multi-hop regression proves the difference from upstream count;
-- [ ] sync and async compatibility startup forwarding of auth timeout/system-proxy options is explicitly tested without mutating host proxy state;
-- [ ] representative Rust public paths listed above compile through maintained tests;
-- [ ] no Rust/Python/CLI/config/protocol capability is removed or renamed;
-- [ ] no new public API is added as a workaround;
-- [ ] required feature slices, Python suite, clippy, formatting, and workspace tests pass;
-- [ ] parent/phase/corrective planning statuses accurately reflect closure.
+- [x] native `PyOutboundStream.write()` again has synchronous completion semantics;
+- [x] `OutboundStream.write()` remains behaviorally unchanged;
+- [x] `AsyncOutboundStream.write()` remains synchronous-to-call but performs only private ordered submission and does not wait on transport I/O;
+- [x] accidental public `write_blocking_for_sync` is removed from runtime/stubs/docs;
+- [x] async write ordering, drain failure, EOF ordering, close, and backpressure-loop-schedulability tests are green;
+- [x] all maintained connection exception aliases point to one runtime class identity for the same named exception;
+- [x] runtime exception identities/hierarchy agree with `.pyi` declarations;
+- [x] `preview_connect()["hop_count"]` uses `hop_count()` and a multi-hop regression proves the difference from upstream count;
+- [x] sync and async compatibility startup forwarding of auth timeout/system-proxy options is explicitly tested without mutating host proxy state;
+- [x] representative Rust public paths listed above compile through maintained tests;
+- [x] no Rust/Python/CLI/config/protocol capability is removed or renamed;
+- [x] no new public API is added as a workaround;
+- [x] required feature slices, Python suite, clippy, formatting, and workspace tests pass;
+- [x] parent/phase/corrective planning statuses accurately reflect closure.
 
 ## Closure record
 
 Fill this section in place during implementation. Do not create another closure plan if the criteria above pass.
 
 - Implementation commit: `6a1b67c`
-- Native write contract evidence: `python/tests/test_api_boundary_closure.py::TestNativeWriteContract::test_native_write_completes_without_drain` (peer receipt without drain) + `test_sync_wrapper_write_echoes_without_explicit_drain`; native `PyOutboundStream.write()` restored to submit+barrier completion in `crates/eggress-python/src/outbound.rs`, `write_blocking_for_sync` removed from runtime and `_eggress.pyi`.
+- Native write contract evidence: deterministic gated-transport proofs `crates/eggress-python/src/outbound.rs::outbound::tests::native_sync_write_waits_for_transport_completion` (sync withheld until completion) and `outbound::tests::async_submit_returns_before_transport_completion` (queue-only submit vs pending barrier) via private `WritePump::submit_and_wait()`; Python `TestNativeWriteContract::test_native_write_round_trip_without_explicit_drain` retained as round-trip smoke only (renamed from `test_native_write_completes_without_drain` because peer receipt alone cannot prove completion) + `test_sync_wrapper_write_echoes_without_explicit_drain`; native `PyOutboundStream.write()` delegates to `submit_and_wait()` (submit+barrier) in `crates/eggress-python/src/outbound.rs`, `write_blocking_for_sync` removed from runtime and `_eggress.pyi`.
 - Async write-pump/private-submit evidence: `test_async_write_uses_private_submit_and_drain_completes`, `test_async_ordered_writes_plus_drain`, `test_async_write_keeps_loop_schedulable`, `test_write_eof_ordered_after_async_submissions`, `test_async_drain_surfaces_terminal_failure`, `test_close_wait_closed_leaves_no_pump_running`; async path uses private native `_submit_write` (absent from `eggress.__all__` and `_eggress.pyi` per `test_private_submit_exists_but_not_public`).
 - Exception identity evidence: `TestExceptionIdentityMatrix` (11-name identity across native/`connection`/`exceptions`/top-level, hierarchy, stub agreement, managed/sync/async catch, `AsyncBridge` identity preservation, closed-stream family); `LoopMismatchError`/`UnsupportedCompositionError` are native aliases in `python/eggress/connection.py`.
 - Hop-count regression evidence: `TestPreviewHopCount` (direct 0, single-hop 1, pproxy `__` two-hop 2, TOML `__` two-hop 2 with `upstream_count == 1`, shape unchanged); `preview_connect` uses `hop_count()` in `crates/eggress-python/src/outbound.rs`.

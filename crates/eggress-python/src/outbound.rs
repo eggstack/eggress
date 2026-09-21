@@ -165,6 +165,16 @@ impl WritePump {
         Ok(len)
     }
 
+    fn submit_and_wait(&self, runtime: &tokio::runtime::Runtime, data: &[u8]) -> PyResult<usize> {
+        // Synchronous completion semantics: enqueue, then wait for the
+        // ordered transport write to complete. Native `PyOutboundStream.write()`
+        // delegates to exactly this helper; the async adapter uses queue-only
+        // `submit()` instead. Private Rust detail, never exposed via PyO3.
+        let len = self.submit(data)?;
+        self.barrier(runtime, false)?;
+        Ok(len)
+    }
+
     fn barrier(&self, runtime: &tokio::runtime::Runtime, eof: bool) -> PyResult<()> {
         let _submit_guard = self
             .submit_lock
@@ -304,10 +314,12 @@ impl PyOutboundStream {
     }
 
     fn write_blocking(&self, py: Python<'_>, data: &[u8]) -> PyResult<usize> {
-        let len = self.write_pump.submit(data)?;
+        // Delegate to the exact synchronous-completion helper exercised by the
+        // deterministic gated-transport tests. The owned copy keeps the borrow
+        // valid across GIL release; `submit()` copies again into the queue.
+        let owned = data.to_vec();
         let runtime = self.runtime.clone();
-        py.detach(|| self.write_pump.barrier(&runtime, false))?;
-        Ok(len)
+        py.detach(|| self.write_pump.submit_and_wait(&runtime, &owned))
     }
 
     fn closed_inner(&self) -> bool {
@@ -596,5 +608,219 @@ impl PyOutboundConnector {
         dict.set_item("target_port", port)?;
         dict.set_item("hop_count", self.inner.hop_count())?;
         Ok(dict.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::pin::Pin;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::mpsc;
+    use std::task::{Context, Poll, Waker};
+    use std::time::Duration;
+    use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+
+    /// Deterministic gate-controlled transport for write-completion proofs.
+    ///
+    /// The first `poll_write` attempt signals `write_polled`. While the gate is
+    /// closed, `poll_write` stores the task waker through the normal waker path
+    /// and returns `Poll::Pending`. After the gate opens, the pending write is
+    /// allowed to complete. Satisfies the same `eggress_core::BoxStream` trait
+    /// boundary used in production; production code has no special-casing.
+    struct GatedState {
+        gate_open: AtomicBool,
+        signaled: AtomicBool,
+        polled_count: AtomicUsize,
+        write_polled_tx: Mutex<Option<mpsc::Sender<()>>>,
+        waker: Mutex<Option<Waker>>,
+        written: Mutex<Vec<u8>>,
+    }
+
+    struct GatedTransport {
+        state: Arc<GatedState>,
+    }
+
+    impl GatedTransport {
+        fn new() -> (Self, Arc<GatedState>, mpsc::Receiver<()>) {
+            let (tx, rx) = mpsc::channel();
+            let state = Arc::new(GatedState {
+                gate_open: AtomicBool::new(false),
+                signaled: AtomicBool::new(false),
+                polled_count: AtomicUsize::new(0),
+                write_polled_tx: Mutex::new(Some(tx)),
+                waker: Mutex::new(None),
+                written: Mutex::new(Vec::new()),
+            });
+            (
+                Self {
+                    state: Arc::clone(&state),
+                },
+                state,
+                rx,
+            )
+        }
+    }
+
+    impl GatedState {
+        fn open_gate(&self) {
+            self.gate_open.store(true, Ordering::SeqCst);
+            let waker = self.waker.lock().ok().and_then(|mut slot| slot.take());
+            if let Some(waker) = waker {
+                waker.wake();
+            }
+        }
+    }
+
+    impl AsyncRead for GatedTransport {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            _buf: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            // Write-completion tests never read; harmless EOF-style readiness.
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    impl AsyncWrite for GatedTransport {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            self.state.polled_count.fetch_add(1, Ordering::SeqCst);
+            if !self.state.signaled.swap(true, Ordering::SeqCst) {
+                let sender = self
+                    .state
+                    .write_polled_tx
+                    .lock()
+                    .ok()
+                    .and_then(|mut slot| slot.take());
+                if let Some(tx) = sender {
+                    let _ = tx.send(());
+                }
+            }
+            if self.state.gate_open.load(Ordering::SeqCst) {
+                if let Ok(mut written) = self.state.written.lock() {
+                    written.extend_from_slice(buf);
+                }
+                Poll::Ready(Ok(buf.len()))
+            } else {
+                if let Ok(mut slot) = self.state.waker.lock() {
+                    *slot = Some(cx.waker().clone());
+                }
+                Poll::Pending
+            }
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    fn test_runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("test runtime builds")
+    }
+
+    fn gated_pump(
+        runtime: &tokio::runtime::Runtime,
+    ) -> (WritePump, Arc<GatedState>, mpsc::Receiver<()>) {
+        let (transport, state, polled) = GatedTransport::new();
+        let boxed: eggress_core::BoxStream = Box::new(transport);
+        let (_read_half, pump) = WritePump::new(runtime, boxed);
+        (pump, state, polled)
+    }
+
+    #[test]
+    fn native_sync_write_waits_for_transport_completion() {
+        let runtime = Arc::new(test_runtime());
+        let (pump, gate, polled) = gated_pump(&runtime);
+        let pump = Arc::new(pump);
+        let (done_tx, done_rx) = mpsc::channel();
+
+        let pump_for_thread = Arc::clone(&pump);
+        let runtime_for_thread = Arc::clone(&runtime);
+        std::thread::spawn(move || {
+            let result = pump_for_thread.submit_and_wait(&runtime_for_thread, b"sync-bytes");
+            let _ = done_tx.send(result.map(|len| len.to_string()));
+        });
+
+        // Deterministic sync point: the pump has reached transport poll_write.
+        polled
+            .recv_timeout(Duration::from_secs(5))
+            .expect("transport poll_write must be reached");
+        assert!(gate.polled_count.load(Ordering::SeqCst) >= 1);
+
+        // While the gate stays closed, the synchronous completion result must
+        // not be delivered. The short timeout is only a harness safety bound
+        // after the poll_write sync point above.
+        assert!(
+            done_rx.recv_timeout(Duration::from_millis(200)).is_err(),
+            "sync write returned before transport completion"
+        );
+
+        gate.open_gate();
+        let completed = done_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("sync write must complete after gate opens");
+        assert_eq!(
+            completed.expect("sync write succeeds"),
+            "sync-bytes".len().to_string()
+        );
+        assert_eq!(
+            *gate.written.lock().expect("written lock"),
+            b"sync-bytes".to_vec()
+        );
+    }
+
+    #[test]
+    fn async_submit_returns_before_transport_completion() {
+        let runtime = Arc::new(test_runtime());
+        let (pump, gate, polled) = gated_pump(&runtime);
+        let pump = Arc::new(pump);
+
+        // Queue-only submission used by private `_submit_write` must return
+        // the byte count without opening the transport gate.
+        let submitted = pump.submit(b"queued-bytes").expect("submit returns len");
+        assert_eq!(submitted, b"queued-bytes".len());
+
+        let (barrier_tx, barrier_rx) = mpsc::channel();
+        let pump_for_thread = Arc::clone(&pump);
+        let runtime_for_thread = Arc::clone(&runtime);
+        std::thread::spawn(move || {
+            let result = pump_for_thread.barrier(&runtime_for_thread, false);
+            let _ = barrier_tx.send(result.is_ok());
+        });
+
+        // Wait until the pump has reached transport poll_write, then prove the
+        // barrier stays pending while the gate is closed.
+        polled
+            .recv_timeout(Duration::from_secs(5))
+            .expect("transport poll_write must be reached");
+        assert!(
+            barrier_rx.recv_timeout(Duration::from_millis(200)).is_err(),
+            "barrier completed before transport completion"
+        );
+
+        gate.open_gate();
+        assert!(
+            barrier_rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("barrier must complete after gate opens"),
+            "barrier must succeed after gate opens"
+        );
+        assert_eq!(
+            *gate.written.lock().expect("written lock"),
+            b"queued-bytes".to_vec()
+        );
     }
 }

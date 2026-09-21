@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION — 2026-09-21**
+**IMPLEMENTED — 2026-09-21**
 
 ## Baseline
 
@@ -427,37 +427,35 @@ Run additional fuzz/package/OpenSSH gates only if this evidence pass touches cod
 
 This evidence-polish pass is complete only when:
 
-- [ ] a deterministic in-process gated transport proves native synchronous write does not return before transport completion;
-- [ ] a complementary deterministic assertion proves the async/private submit path can return before transport completion while its barrier remains pending;
-- [ ] no wall-clock or kernel-buffer assumption is the primary proof of those semantics;
-- [ ] the existing Python native-write test no longer claims that peer receipt without `drain()` proves synchronous completion;
-- [ ] no supported runtime/API behavior changed during the evidence pass;
-- [ ] Phase 1 acceptance criteria are individually mapped to evidence and reconciled;
-- [ ] Phase 2 acceptance criteria are individually mapped to evidence and reconciled;
-- [ ] Phase 3 acceptance criteria are individually mapped to evidence and reconciled using the new gated-write proof where required;
-- [ ] Phase 4 acceptance criteria are individually mapped to evidence and reconciled;
-- [ ] Phase 5 acceptance criteria are individually mapped to evidence and reconciled;
-- [ ] corrective-closure acceptance criteria are individually mapped to evidence and reconciled;
-- [ ] no implemented plan remains with unexplained unchecked acceptance criteria;
-- [ ] `docs/ROADMAP.md`, parent roadmap, phase plans, corrective plan, and this plan describe the same closure state;
-- [ ] focused Python/PyO3 tests pass;
-- [ ] required feature slices pass;
-- [ ] formatting, clippy, workspace tests, and full Python/compat suite pass.
+- [x] a deterministic in-process gated transport proves native synchronous write does not return before transport completion;
+- [x] a complementary deterministic assertion proves the async/private submit path can return before transport completion while its barrier remains pending;
+- [x] no wall-clock or kernel-buffer assumption is the primary proof of those semantics;
+- [x] the existing Python native-write test no longer claims that peer receipt without `drain()` proves synchronous completion;
+- [x] no supported runtime/API behavior changed during the evidence pass;
+- [x] Phase 1 acceptance criteria are individually mapped to evidence and reconciled;
+- [x] Phase 2 acceptance criteria are individually mapped to evidence and reconciled;
+- [x] Phase 3 acceptance criteria are individually mapped to evidence and reconciled using the new gated-write proof where required;
+- [x] Phase 4 acceptance criteria are individually mapped to evidence and reconciled;
+- [x] Phase 5 acceptance criteria are individually mapped to evidence and reconciled;
+- [x] corrective-closure acceptance criteria are individually mapped to evidence and reconciled;
+- [x] no implemented plan remains with unexplained unchecked acceptance criteria;
+- [x] `docs/ROADMAP.md`, parent roadmap, phase plans, corrective plan, and this plan describe the same closure state;
+- [x] focused Python/PyO3 tests pass;
+- [x] required feature slices pass;
+- [x] formatting, clippy, workspace tests, and full Python/compat suite pass.
 
 ## Closure record
 
-Fill this section in place during implementation.
-
-- Evidence-polish commit:
-- Deterministic sync-write test:
-- Deterministic async-submit test:
-- Existing loopback test disposition:
-- Phase 1 criteria reconciled:
-- Phase 2 criteria reconciled:
-- Phase 3 criteria reconciled:
-- Phase 4 criteria reconciled:
-- Phase 5 criteria reconciled:
-- Corrective criteria reconciled:
-- Focused verification:
-- Broad verification:
-- Intentionally unresolved evidence:
+- Evidence-polish commit: (recorded in follow-up docs commit after push)
+- Deterministic sync-write test: `crates/eggress-python/src/outbound.rs::outbound::tests::native_sync_write_waits_for_transport_completion` (gate-controlled `BoxStream`; `write_polled` sync point; sync result withheld while gate closed; byte-count success after gate opens; private `WritePump::submit_and_wait()` is the exact helper native `write()` delegates to)
+- Deterministic async-submit test: `crates/eggress-python/src/outbound.rs::outbound::tests::async_submit_returns_before_transport_completion` (queue-only `submit()` returns before completion; `barrier()` stays pending until gate opens)
+- Existing loopback test disposition: `python/tests/test_api_boundary_closure.py::TestNativeWriteContract::test_native_write_completes_without_drain` renamed to `test_native_write_round_trip_without_explicit_drain` and reworded as round-trip smoke only, citing the Rust gated proofs as authoritative
+- Phase 1 criteria reconciled: 9/9 (single `eggress-config` authority, facade adapters, signatures, error families, reload semantics, `toml` slice, direct `toml` dep removed, canonical-boundary comments, gates green)
+- Phase 2 criteria reconciled: 9/9 (shared `_select_start_operation`, forwarding matrix, bridge preservation, cancellation/affinity, exception identity, catch semantics, redaction, stubs/docs, gates green)
+- Phase 3 criteria reconciled: 9/9 (sync API, schedulability, ordering, drain failure, close/cancellation/EOF, no thread per stream, sync unchanged, boxed transports, gates green; gated proofs authoritative)
+- Phase 4 criteria reconciled: 9/9 (ownership map, no new crate, stub/`__all__` agreement, names preserved, `capabilities()` contract, wheel/import smoke, docs current)
+- Phase 5 criteria reconciled: 9/9 (classification, compile contracts, re-exports, `RuntimeConfig` coupling, feature slices, no removal/rename, authority docs, no new diff tooling, gate green)
+- Corrective criteria reconciled: 14/14 (native/sync/async write contracts, `write_blocking_for_sync` removal, ordering/drain/EOF/close/backpressure, exception identity/hierarchy, hop count, startup forwarding, Rust paths, no capability removal, no new public API, slices/suites green, planning statuses accurate)
+- Focused verification: `RUSTFLAGS="-L /usr/lib/x86_64-linux-gnu -lpython3.12" cargo test -p eggress-python --locked -- outbound::tests` (2 passed; RUSTFLAGS needed locally because `extension-module` disables libpython link; CI links natively); `.venv/bin/python -m pytest python/tests/test_api_boundary_closure.py python/tests/test_asyncio_semantic.py python/tests/test_outbound_stream_verification.py python/tests/test_service.py python/tests/test_errors.py python/tests/test_public_exports.py python/tests/test_pproxy_compat.py -q` (205 passed, 11 skipped)
+- Broad verification: `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `RUSTFLAGS="-L /usr/lib/x86_64-linux-gnu -lpython3.12" cargo test --workspace --locked` (2947 passed, 151 ignored; +2 vs 2945 baseline for the new gated tests); `.venv/bin/python -m pytest python/tests tests/compat -q` (2308 passed, 115 skipped); outbound base/toml/pproxy-compat/ssh/ssh+pproxy-compat/udp plus embed ssh/pproxy-compat/ssh+pproxy-compat `cargo check` slices green
+- Intentionally unresolved evidence: none; all phase/corrective/polish boxes checked with concrete evidence mappings. No runtime/API behavior changed (internal `submit_and_wait()` factoring only; `write()`/`_submit_write` semantics preserved; no new public method, crate, or dependency).

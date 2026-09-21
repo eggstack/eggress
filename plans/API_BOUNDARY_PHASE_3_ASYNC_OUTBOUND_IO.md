@@ -150,12 +150,21 @@ cargo test --workspace --locked
 
 ## Acceptance criteria
 
-- [ ] `AsyncOutboundStream.write()` retains its synchronous `int` return API.
-- [ ] The event-loop thread remains schedulable while transport write I/O is backpressured.
-- [ ] Write submission order is preserved.
-- [ ] `drain()` waits for all prior writes and reports retained transport failures.
-- [ ] Close, wait_closed, cancellation, write_eof, and destructor behavior are deterministic and leak-free.
-- [ ] No thread is created per outbound stream.
-- [ ] Synchronous `OutboundStream` behavior is unchanged.
-- [ ] Arbitrary boxed transports remain supported.
-- [ ] Full Python and workspace gates are green.
+- [x] `AsyncOutboundStream.write()` retains its synchronous `int` return API.
+- [x] The event-loop thread remains schedulable while transport write I/O is backpressured.
+- [x] Write submission order is preserved.
+- [x] `drain()` waits for all prior writes and reports retained transport failures.
+- [x] Close, wait_closed, cancellation, write_eof, and destructor behavior are deterministic and leak-free.
+- [x] No thread is created per outbound stream.
+- [x] Synchronous `OutboundStream` behavior is unchanged.
+- [x] Arbitrary boxed transports remain supported.
+- [x] Full Python and workspace gates are green.
+
+## Closure evidence (2026-09-21 polish)
+
+- Sync API preserved: `python/eggress/outbound.py::AsyncOutboundStream.write(data) -> int` remains synchronous; native `PyOutboundStream.write()` keeps blocking completion via private `WritePump::submit_and_wait()` (`crates/eggress-python/src/outbound.rs`), which is `submit()` + ordered `barrier()`. High-level `OutboundStream.write()` unchanged via `write_blocking()`.
+- Authoritative gated proof (replaces the old loopback peer-receipt claim): `crates/eggress-python/src/outbound.rs::outbound::tests::native_sync_write_waits_for_transport_completion` holds a gate-controlled `BoxStream` closed, proves the sync result is withheld until `poll_write` completion, then opens the gate and proves byte-count success; `outbound::tests::async_submit_returns_before_transport_completion` proves queue-only `submit()` returns before completion while `barrier()` stays pending. No wall-clock/kernel-buffer assumption is the primary proof; short timeouts are harness safety bounds only after the `write_polled` sync point.
+- Python smoke (non-authoritative): `test_api_boundary_closure.py::TestNativeWriteContract::test_native_write_round_trip_without_explicit_drain` and `test_sync_wrapper_write_echoes_without_explicit_drain` are worded as round-trip smoke only.
+- Schedulability/ordering/failure: `test_async_write_keeps_loop_schedulable`, `test_async_ordered_writes_plus_drain`, `test_async_write_uses_private_submit_and_drain_completes`, `test_async_drain_surfaces_terminal_failure`, `test_write_eof_ordered_after_async_submissions`, `test_close_wait_closed_leaves_no_pump_running` in `test_api_boundary_closure.py`; `test_async_writes_are_ordered`, `test_async_write_keeps_event_loop_schedulable_under_backpressure`, `test_async_write_eof_follows_prior_writes` in `test_outbound_stream_verification.py`; cancellation/affinity in `test_asyncio_semantic.py`.
+- Pump design: one ordered Tokio pump per stream, no thread per stream, arbitrary `BoxStream` transports, no fd assumption, `drain()` as ordered barrier with retained terminal failure, `close()` non-blocking/idempotent, `wait_closed()` joins pump cleanup.
+- Broad gate: focused Python set (205 passed), full `python/tests tests/compat` (2308 passed), `cargo test --workspace --locked` (2947 passed), fmt/clippy green.

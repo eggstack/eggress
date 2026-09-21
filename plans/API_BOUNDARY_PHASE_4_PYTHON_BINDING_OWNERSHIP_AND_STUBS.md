@@ -170,12 +170,22 @@ Retain the justified dependency and document why it is architectural rather than
 
 ## Acceptance criteria
 
-- [ ] Every direct internal `eggress-python` dependency has a documented owner/use justification.
-- [ ] Unnecessary reach-through edges are removed without adding a new crate.
-- [ ] Removed dependencies do not return indirectly through a heavier facade without justification.
-- [ ] `_eggress.pyi` matches registered native classes/functions/methods for the maintained surface.
-- [ ] Public `.py/.pyi` pairs and `__all__` agree.
-- [ ] Existing Python public names and import locations are preserved.
-- [ ] `capabilities()` retains its public contract and is protected against metadata drift.
-- [ ] Wheel/import smoke and full Python suite are green.
-- [ ] Current Python architecture documentation no longer describes obsolete gaps as current.
+- [x] Every direct internal `eggress-python` dependency has a documented owner/use justification.
+- [x] Unnecessary reach-through edges are removed without adding a new crate.
+- [x] Removed dependencies do not return indirectly through a heavier facade without justification.
+- [x] `_eggress.pyi` matches registered native classes/functions/methods for the maintained surface.
+- [x] Public `.py/.pyi` pairs and `__all__` agree.
+- [x] Existing Python public names and import locations are preserved.
+- [x] `capabilities()` retains its public contract and is protected against metadata drift.
+- [x] Wheel/import smoke and full Python suite are green.
+- [x] Current Python architecture documentation no longer describes obsolete gaps as current.
+
+## Closure evidence (2026-09-21 polish)
+
+- Ownership map: `architecture/python-bindings.md## Binding ownership` justifies every direct `eggress-python` edge (embed lifecycle/facade, pproxy-compat parsing/translation, config/routing/core route-explain, uri redaction, system-proxy binding, cli upstream-test helper, runtime startup hooks). No new crate was added; retained edges are recorded as live architectural edges rather than accidental reach-through. `cargo tree -p eggress-python -e features` shows no heavier replacement path.
+- Stubs: `python/eggress/_eggress.pyi` matches `crates/eggress-python/src/lib.rs` module registration and `#[pymethods]` (including removal of accidental `write_blocking_for_sync`, private `_submit_write` absent from the maintained public stub surface per `test_private_submit_exists_but_not_public`); `python/eggress/exceptions.py`/`exceptions.pyi` identity covered by `TestExceptionIdentityMatrix::test_stubs_agree_with_runtime`.
+- Exports: `python/tests/test_public_exports.py::test_all_public_exports_are_bound_in_native_test_environment` validates `__all__`/`.pyi` agreement with conditional native-fallback tolerance; existing public names/import locations preserved (no renames).
+- Capabilities: `eggress.capabilities()` stable shape/values protected by `test_capabilities_contract_is_stable` and `test_wheel_import_smoke.py::test_capabilities`; pproxy manifest remains authoritative for compat claims.
+- Wheel/import: `python/tests/test_wheel_import_smoke.py`, `test_pproxy_public_namespace.py`, `tests/compat` verify native import, pure-Python symbols, sole `pproxy` ownership by `eggress-pproxy-compat`, no `sys.modules` aliasing, importlib-mode non-shadowing.
+- Docs: `architecture/python-bindings.md`, `docs/PYTHON_BINDINGS.md`, `docs/python/EGRESS_PYTHON_API_CURRENT_STATE.md`, `docs/python/PYTHON_LIFECYCLE_PARITY.md` no longer describe obsolete async gaps as current.
+- Broad gate: full `python/tests tests/compat` (2308 passed), `cargo test --workspace --locked` (2947 passed), fmt/clippy green.
