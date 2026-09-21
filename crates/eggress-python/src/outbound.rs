@@ -42,6 +42,29 @@ struct WritePumpStatus {
     eof: bool,
 }
 
+/// Private write-pump failure without any PyO3 dependency.
+///
+/// The deterministic gated-transport tests exercise the `*_impl` helpers
+/// through this type so `cargo test -p eggress-python` links without
+/// libpython (the `extension-module` feature disables libpython linking and
+/// the linker garbage-collects the PyO3-only wrappers when tests never call
+/// them). Production maps each variant to its established exception class
+/// with the exact pre-existing message.
+#[derive(Debug, PartialEq, Eq)]
+enum PumpError {
+    Closed(String),
+    Failed(String),
+}
+
+impl PumpError {
+    fn into_pyerr(self) -> PyErr {
+        match self {
+            PumpError::Closed(message) => ConnectionClosedError::new_err(message),
+            PumpError::Failed(message) => ConnectionError::new_err(message),
+        }
+    }
+}
+
 struct WritePump {
     sender: Mutex<Option<mpsc::UnboundedSender<WriteCommand>>>,
     task: Mutex<Option<tokio::task::JoinHandle<()>>>,
@@ -133,26 +156,35 @@ impl WritePump {
     }
 
     fn submit(&self, data: &[u8]) -> PyResult<usize> {
+        self.submit_impl(data).map_err(PumpError::into_pyerr)
+    }
+
+    /// Queue-only enqueue without waiting for transport completion.
+    ///
+    /// Private Rust detail (no PyO3): the async adapter's `_submit_write`
+    /// path and the synchronous `submit_and_wait_impl` both build on this.
+    /// The deterministic gated test exercises exactly this helper.
+    fn submit_impl(&self, data: &[u8]) -> Result<usize, PumpError> {
         let _submit_guard = self
             .submit_lock
             .lock()
-            .map_err(|_| ConnectionError::new_err("outbound write lock poisoned"))?;
+            .map_err(|_| PumpError::Failed("outbound write lock poisoned".to_string()))?;
         let sender = {
             let state = self
                 .status
                 .lock()
-                .map_err(|_| ConnectionError::new_err("outbound write state poisoned"))?;
+                .map_err(|_| PumpError::Failed("outbound write state poisoned".to_string()))?;
             if let Some(error) = &state.terminal_error {
-                return Err(ConnectionError::new_err(format!("write failed: {error}")));
+                return Err(PumpError::Failed(format!("write failed: {error}")));
             }
             if state.closed || state.eof {
-                return Err(ConnectionClosedError::new_err("outbound stream is closed"));
+                return Err(PumpError::Closed("outbound stream is closed".to_string()));
             }
             self.sender
                 .lock()
-                .map_err(|_| ConnectionError::new_err("outbound write lock poisoned"))?
+                .map_err(|_| PumpError::Failed("outbound write lock poisoned".to_string()))?
                 .clone()
-                .ok_or_else(|| ConnectionClosedError::new_err("outbound stream is closed"))?
+                .ok_or_else(|| PumpError::Closed("outbound stream is closed".to_string()))?
         };
         let len = data.len();
         if sender.send(WriteCommand::Data(data.to_vec())).is_err() {
@@ -160,40 +192,60 @@ impl WritePump {
                 state.terminal_error = Some("write pump stopped".to_string());
                 state.closed = true;
             }
-            return Err(ConnectionError::new_err("write failed: write pump stopped"));
+            return Err(PumpError::Failed(
+                "write failed: write pump stopped".to_string(),
+            ));
         }
         Ok(len)
     }
 
     fn submit_and_wait(&self, runtime: &tokio::runtime::Runtime, data: &[u8]) -> PyResult<usize> {
-        // Synchronous completion semantics: enqueue, then wait for the
-        // ordered transport write to complete. Native `PyOutboundStream.write()`
-        // delegates to exactly this helper; the async adapter uses queue-only
-        // `submit()` instead. Private Rust detail, never exposed via PyO3.
-        let len = self.submit(data)?;
-        self.barrier(runtime, false)?;
+        self.submit_and_wait_impl(runtime, data)
+            .map_err(PumpError::into_pyerr)
+    }
+
+    /// Synchronous completion semantics: enqueue, then wait for the
+    /// ordered transport write to complete. Native `PyOutboundStream.write()`
+    /// delegates (through `submit_and_wait`) to exactly this helper; the async
+    /// adapter uses queue-only `submit_impl()` instead. Private Rust detail,
+    /// never exposed via PyO3.
+    fn submit_and_wait_impl(
+        &self,
+        runtime: &tokio::runtime::Runtime,
+        data: &[u8],
+    ) -> Result<usize, PumpError> {
+        let len = self.submit_impl(data)?;
+        self.barrier_impl(runtime, false)?;
         Ok(len)
     }
 
     fn barrier(&self, runtime: &tokio::runtime::Runtime, eof: bool) -> PyResult<()> {
+        self.barrier_impl(runtime, eof)
+            .map_err(PumpError::into_pyerr)
+    }
+
+    /// Ordered completion barrier for writes submitted before the call.
+    /// Private Rust detail (no PyO3); the deterministic gated test exercises
+    /// exactly this helper for the queue-only async path.
+    fn barrier_impl(&self, runtime: &tokio::runtime::Runtime, eof: bool) -> Result<(), PumpError> {
         let _submit_guard = self
             .submit_lock
             .lock()
-            .map_err(|_| ConnectionError::new_err("outbound write lock poisoned"))?;
+            .map_err(|_| PumpError::Failed("outbound write lock poisoned".to_string()))?;
         let (waiter, receiver) = oneshot::channel();
         {
             let state = self
                 .status
                 .lock()
-                .map_err(|_| ConnectionError::new_err("outbound write state poisoned"))?;
+                .map_err(|_| PumpError::Failed("outbound write state poisoned".to_string()))?;
             if let Some(error) = &state.terminal_error {
-                return Err(ConnectionError::new_err(format!(
+                return Err(PumpError::Failed(format!(
                     "{} failed: {error}",
                     if eof { "write_eof" } else { "drain" }
                 )));
             }
             if state.closed {
-                return Err(ConnectionClosedError::new_err("outbound stream is closed"));
+                return Err(PumpError::Closed("outbound stream is closed".to_string()));
             }
             if eof && state.eof {
                 return Ok(());
@@ -201,26 +253,30 @@ impl WritePump {
             let sender = self
                 .sender
                 .lock()
-                .map_err(|_| ConnectionError::new_err("outbound write lock poisoned"))?
+                .map_err(|_| PumpError::Failed("outbound write lock poisoned".to_string()))?
                 .clone()
-                .ok_or_else(|| ConnectionClosedError::new_err("outbound stream is closed"))?;
+                .ok_or_else(|| PumpError::Closed("outbound stream is closed".to_string()))?;
             let command = if eof {
                 WriteCommand::Eof(waiter)
             } else {
                 WriteCommand::Barrier(waiter)
             };
             if sender.send(command).is_err() {
-                return Err(ConnectionError::new_err("drain failed: write pump stopped"));
+                return Err(PumpError::Failed(
+                    "drain failed: write pump stopped".to_string(),
+                ));
             }
         }
         let result = runtime.block_on(receiver);
         match result {
             Ok(Ok(())) => Ok(()),
-            Ok(Err(error)) => Err(ConnectionError::new_err(format!(
+            Ok(Err(error)) => Err(PumpError::Failed(format!(
                 "{} failed: {error}",
                 if eof { "write_eof" } else { "drain" }
             ))),
-            Err(_) => Err(ConnectionError::new_err("drain failed: write pump stopped")),
+            Err(_) => Err(PumpError::Failed(
+                "drain failed: write pump stopped".to_string(),
+            )),
         }
     }
 
@@ -750,7 +806,9 @@ mod tests {
         let pump_for_thread = Arc::clone(&pump);
         let runtime_for_thread = Arc::clone(&runtime);
         std::thread::spawn(move || {
-            let result = pump_for_thread.submit_and_wait(&runtime_for_thread, b"sync-bytes");
+            // PyO3-free helper: native `write()` delegates through
+            // `submit_and_wait` to exactly this `submit_and_wait_impl`.
+            let result = pump_for_thread.submit_and_wait_impl(&runtime_for_thread, b"sync-bytes");
             let _ = done_tx.send(result.map(|len| len.to_string()));
         });
 
@@ -790,14 +848,16 @@ mod tests {
 
         // Queue-only submission used by private `_submit_write` must return
         // the byte count without opening the transport gate.
-        let submitted = pump.submit(b"queued-bytes").expect("submit returns len");
+        let submitted = pump
+            .submit_impl(b"queued-bytes")
+            .expect("submit returns len");
         assert_eq!(submitted, b"queued-bytes".len());
 
         let (barrier_tx, barrier_rx) = mpsc::channel();
         let pump_for_thread = Arc::clone(&pump);
         let runtime_for_thread = Arc::clone(&runtime);
         std::thread::spawn(move || {
-            let result = pump_for_thread.barrier(&runtime_for_thread, false);
+            let result = pump_for_thread.barrier_impl(&runtime_for_thread, false);
             let _ = barrier_tx.send(result.is_ok());
         });
 
