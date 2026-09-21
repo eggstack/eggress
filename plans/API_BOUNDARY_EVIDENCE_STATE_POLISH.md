@@ -446,7 +446,7 @@ This evidence-polish pass is complete only when:
 
 ## Closure record
 
-- Evidence-polish commit: (recorded in follow-up docs commit after push)
+- Evidence-polish commit: `c7bb1bf`
 - Deterministic sync-write test: `crates/eggress-python/src/outbound.rs::outbound::tests::native_sync_write_waits_for_transport_completion` (gate-controlled `BoxStream`; `write_polled` sync point; sync result withheld while gate closed; byte-count success after gate opens; private `WritePump::submit_and_wait()` is the exact helper native `write()` delegates to)
 - Deterministic async-submit test: `crates/eggress-python/src/outbound.rs::outbound::tests::async_submit_returns_before_transport_completion` (queue-only `submit()` returns before completion; `barrier()` stays pending until gate opens)
 - Existing loopback test disposition: `python/tests/test_api_boundary_closure.py::TestNativeWriteContract::test_native_write_completes_without_drain` renamed to `test_native_write_round_trip_without_explicit_drain` and reworded as round-trip smoke only, citing the Rust gated proofs as authoritative
