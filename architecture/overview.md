@@ -330,9 +330,10 @@ summary of the discrete pieces:
   workspace commands; check with
   `cargo check --manifest-path fuzz/Cargo.toml --bins`.
 - **Benchmarks — `benches/` (root package `eggress-bench`, Criterion).**
-  Four suites: `route_match` (decision latency), `tcp_relay` (1 KiB/64 KiB
+  Five suites: `route_match` (decision latency), `tcp_relay` (1 KiB/64 KiB
   end-to-end throughput through the relay engine plus a
-  `copy_bidirectional` baseline), `udp_relay` (codec), `http_connect_upstream` (CONNECT lifecycle).
+  `copy_bidirectional` baseline), `udp_relay` (actual local UDP relay
+  flows), `tls_setup` (TLS construction), `http_connect_upstream` (CONNECT lifecycle).
 - **Scripts — `scripts/`.** Grouped helpers: strict pproxy probes
   (`strict_*_probe.py`), interop runners (`compat_shadowsocks.sh`,
   `compat_udp_pproxy.sh`), certification (`run_pproxy_certification.sh`,

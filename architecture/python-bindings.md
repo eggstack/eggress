@@ -162,6 +162,8 @@ Server(listen=[...], remote=[...])
 | Location | What it covers |
 |---|---|
 | `python/tests/test_service.py` | EggressService/EggressHandle lifecycle |
+| `python/tests/test_api_boundary_closure.py` | Native write round-trip smoke + exception/startup/hop-count contracts (authoritative sync-completion proof is the gated Rust test below) |
+| `crates/eggress-python/src/outbound.rs` (`outbound::tests`) | Deterministic gated-transport write proof: `native_sync_write_waits_for_transport_completion` (sync withheld until completion) + `async_submit_returns_before_transport_completion` (queue-only submit vs pending barrier) |
 | `python/tests/test_connection.py`, `test_connection_behavioral.py` | Connection state machine, context managers |
 | `python/tests/test_outbound_stream_verification.py` | OutboundConnector/OutboundStream |
 | `python/tests/test_pproxy_compat.py`, `test_pproxy_differential.py` | pproxy translation correctness |

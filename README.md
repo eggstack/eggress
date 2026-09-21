@@ -225,13 +225,15 @@ prepares inbound listener TLS state and UDP services once per listener
 generation, and keeps the generic relay/standalone UDP hot paths efficient
 without changing public protocol behavior. Informational Criterion coverage
 is split into setup-inclusive and steady-state relay cases, route selection,
-actual local UDP relay flows, and TLS construction:
+actual local UDP relay flows, TLS construction, and HTTP CONNECT upstream
+lifecycle:
 
 ```bash
 cargo bench --bench tcp_relay
 cargo bench --bench route_match
 cargo bench --bench udp_relay
 cargo bench --bench tls_setup
+cargo bench --bench http_connect_upstream
 ```
 
 These benchmarks are not CI timing gates; use same-host before/after runs for
