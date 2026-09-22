@@ -21,7 +21,7 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-base64 = "0.22"
+base64 = "0.23"
 subtle = { workspace = true }
 zeroize = { workspace = true }
 thiserror = { workspace = true }

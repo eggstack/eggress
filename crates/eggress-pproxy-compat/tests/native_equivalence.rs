@@ -222,8 +222,8 @@ fn outbound_chain_direct_matches_toml_upstream() {
             .expect("direct native");
         // TOML path: translate single chain via default args, take first upstream URI, parse native.
         let default_args = PproxyArgs::default_args();
-        let output =
-            translate_from_uris(&default_args, &[], &[chain.clone()]).expect("toml translate");
+        let output = translate_from_uris(&default_args, &[], std::slice::from_ref(&chain))
+            .expect("toml translate");
         assert!(
             output.unsupported().is_empty(),
             "unexpected unsupported for {uri}: {:?}",

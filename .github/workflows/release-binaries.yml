@@ -108,8 +108,8 @@ jobs:
         run: |
           set -euo pipefail
           ./scripts/install-zig.sh
-          # Pinned to the newest track whose MSRV fits the repo toolchain
-          # (1.85); newer tracks require rustc 1.88+ and break this step.
+          # Pinned for reproducibility; the 0.21.8 track's rustc 1.88+
+          # requirement fits the repo toolchain (MSRV 1.89).
           cargo install cargo-zigbuild --version 0.21.8 --locked
 
       - name: Build eggress-cli (default features, locked)
@@ -180,8 +180,8 @@ jobs:
         run: |
           set -euo pipefail
           ./scripts/install-zig.sh
-          # Pinned to the newest track whose MSRV fits the repo toolchain
-          # (1.85); newer tracks require rustc 1.88+ and break this step.
+          # Pinned for reproducibility; the 0.21.8 track's rustc 1.88+
+          # requirement fits the repo toolchain (MSRV 1.89).
           cargo install cargo-zigbuild --version 0.21.8 --locked
 
       - name: Build eggress-cli (default features, locked)

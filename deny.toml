@@ -4,8 +4,8 @@ targets = []
 [advisories]
 ignore = [
     # `time` is pulled only by the rcgen test-certificate dependency. The
-    # fixed release requires Rust 1.88, above this workspace's MSRV 1.85;
-    # keep the exception scoped and revisit it when the MSRV can move.
+    # fixed release requires Rust 1.88, within this workspace's MSRV 1.89;
+    # keep the exception scoped and revisit it when the dependency can move.
     "RUSTSEC-2026-0009",
 ]
 

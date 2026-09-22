@@ -148,7 +148,7 @@ Policy docs: `docs/CI_STATUS.md`, `docs/TESTING.md`.
 
 ### Containerfile
 
-Multi-stage build: `rust:1.85-slim` builder -> `gcr.io/distroless/cc-debian12:nonroot`.
+Multi-stage build: `rust:1.89-slim` builder -> `gcr.io/distroless/cc-debian12:nonroot`.
 Exposes ports 8080, 1080, 9090 (no role mapping in the Containerfile). Entry point: `/eggress`.
 The image ships the `eggress` binary only (no `pproxy` binary; `Containerfile:20,25` copies only `eggress` to `/eggress`).
 

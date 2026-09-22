@@ -15,7 +15,7 @@ Use when implementing new proxy protocols, transport wrappers, or modifying core
 - Deep dive: `architecture/relay.md` (engine) + `architecture/core.md` (facade).
 
 ## Key conventions
-- Edition 2021, MSRV 1.85, `unsafe_code = "deny"` everywhere
+- Edition 2021, MSRV 1.89, `unsafe_code = "deny"` everywhere
 - Async runtime: Tokio. Errors: `thiserror`. CLI: `clap` derive.
 - Streams are boxed at protocol/transport boundaries (`BoxStream`) — never propagate generic stream types
 - No C deps, no OpenSSL, no `build.rs` files
@@ -40,7 +40,7 @@ It is separate from native Shadowsocks AEAD and rustls TLS:
 
 SSH is an optional upstream transport behind the `ssh`
 feature. It uses `eggress-transport-ssh` and `russh` with no C/OpenSSL
-dependency; the workspace MSRV is therefore 1.85. Default and `common` builds
+dependency; the workspace MSRV is therefore 1.89. Default and `common` builds
 must remain SSH-free, and SSH remains upstream-only (listener forms fail with a
 structured diagnostic).
 

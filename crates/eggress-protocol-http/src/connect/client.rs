@@ -2,6 +2,7 @@ use base64::Engine;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use eggfetch_http_connect::{encode_connect_request, ConnectError, ConnectRequest, ConnectTarget};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, ReadBuf};
 
 use crate::error::HttpError;
@@ -40,23 +41,34 @@ pub fn validate_credentials(value: &str) -> Result<(), HttpError> {
     Ok(())
 }
 
-/// Format the CONNECT authority (`host:port`) for a target.
+/// Bound for the serialized outbound CONNECT request head.
 ///
-/// Domains and IPv4 literals render as `host:port`; IPv6 literals render
-/// bracketed as `[addr]:port` per authority-form syntax. The returned value
-/// is used for both the request line and the `Host` header so they agree.
+/// Eggress historically had no independently documented outbound
+/// request-head-size limit: the URI/config layers place no length bound on
+/// hosts or credentials, and the previous local builder grew a `Vec`
+/// without a cap. `encode_connect_request()` requires a caller-provided
+/// bound, so this migration uses a compatibility-preserving 64 KiB value
+/// (matching the upstream doc-example scale): orders of magnitude above any
+/// realistic CONNECT request (typically under 1 KiB, including long
+/// credentials), while keeping a hostile config-derived input from forcing
+/// an unbounded allocation before the first write.
+const MAX_CONNECT_REQUEST_HEAD: usize = 64 * 1024;
+
+/// Build the validated outbound CONNECT target.
 ///
-/// Rejects empty hosts and bytes that could split the request line
-/// (CR, LF, other ASCII controls, DEL, and space).
-fn authority_form(target: &TargetAddr) -> Result<String, HttpError> {
+/// Eggress target validation stays local because its accepted domain is
+/// narrower than `ConnectTarget::new()`: Eggress additionally rejects `:`,
+/// `@`, and `/` in domains, as well as empty hosts and bytes that could
+/// split the request line (CR, LF, other ASCII controls, DEL, and space).
+/// After the established validation passes, the approved host and port
+/// construct a `ConnectTarget` so authority rendering (including IPv6
+/// bracketing) is owned by `eggfetch-http-connect` and cannot diverge
+/// between the request line and the `Host` header: domains and IPv4
+/// literals render as `host:port`, IPv6 bracketed as `[addr]:port`.
+fn connect_target(target: &TargetAddr) -> Result<ConnectTarget, HttpError> {
     match &target.host {
-        TargetHost::Ip(ip) => {
-            if ip.is_ipv6() {
-                Ok(format!("[{}]:{}", ip, target.port))
-            } else {
-                Ok(format!("{}:{}", ip, target.port))
-            }
-        }
+        TargetHost::Ip(ip) => ConnectTarget::new(ip.to_string(), target.port)
+            .map_err(|_| HttpError::TargetParseError("invalid CONNECT target host".into())),
         TargetHost::Domain(domain) => {
             if domain.is_empty() {
                 return Err(HttpError::TargetParseError(
@@ -75,8 +87,29 @@ fn authority_form(target: &TargetAddr) -> Result<String, HttpError> {
                     "invalid CONNECT target host".into(),
                 ));
             }
-            Ok(format!("{}:{}", domain, target.port))
+            ConnectTarget::new(domain.clone(), target.port)
+                .map_err(|_| HttpError::TargetParseError("invalid CONNECT target host".into()))
         }
+    }
+}
+
+/// Map an `eggfetch-http-connect` construction error into the existing
+/// `HttpError` categories without adding public variants.
+///
+/// Upstream diagnostics never echo credentials or unbounded proxy bytes;
+/// the mapping additionally collapses every variant to a fixed,
+/// non-leaking Eggress error. The request path only exercises the target,
+/// credential, and head-size arms: no extra headers are supplied and no
+/// I/O or response parsing happens here, so the catch-all covers
+/// construction states that cannot arise from the inputs above.
+fn map_connect_error(error: ConnectError) -> HttpError {
+    match error {
+        ConnectError::InvalidTarget => {
+            HttpError::TargetParseError("invalid CONNECT target host".into())
+        }
+        ConnectError::InvalidCredentials => HttpError::InvalidCredentials,
+        ConnectError::RequestHeadTooLarge { .. } => HttpError::HeaderTooLarge,
+        _ => HttpError::MalformedRequest("invalid CONNECT request".into()),
     }
 }
 
@@ -84,29 +117,33 @@ fn authority_form(target: &TargetAddr) -> Result<String, HttpError> {
 ///
 /// Validates credentials before producing any wire bytes. Errors never
 /// include credential material.
+///
+/// Credential acceptance stays an Eggress contract: `validate_credentials()`
+/// permits `:` in usernames while the upstream `basic_auth_value()` helper
+/// rejects it, so the `Basic` value is encoded locally with the established
+/// `username:password` Base64 semantics and passed pre-encoded through
+/// `ConnectRequest::proxy_authorization`. Request framing itself is owned
+/// by `encode_connect_request()`.
 fn build_connect_request(
-    authority: &str,
+    target: &ConnectTarget,
     auth: Option<(&str, &str)>,
 ) -> Result<Vec<u8>, HttpError> {
     if let Some((user, pass)) = auth {
         validate_credentials(user)?;
         validate_credentials(pass)?;
     }
-    let mut request = Vec::with_capacity(128 + authority.len() * 2);
-    request.extend_from_slice(b"CONNECT ");
-    request.extend_from_slice(authority.as_bytes());
-    request.extend_from_slice(b" HTTP/1.1\r\nHost: ");
-    request.extend_from_slice(authority.as_bytes());
-    request.extend_from_slice(b"\r\n");
-    if let Some((user, pass)) = auth {
+    let auth_value = auth.map(|(user, pass)| {
         let credentials = format!("{}:{}", user, pass);
         let encoded = base64::engine::general_purpose::STANDARD.encode(credentials);
-        request.extend_from_slice(b"Proxy-Authorization: Basic ");
-        request.extend_from_slice(encoded.as_bytes());
-        request.extend_from_slice(b"\r\n");
-    }
-    request.extend_from_slice(b"\r\n");
-    Ok(request)
+        format!("Basic {encoded}")
+    });
+    let request = ConnectRequest {
+        target,
+        proxy_authorization: auth_value.as_deref(),
+        extra_headers: &[],
+        max_head_bytes: MAX_CONNECT_REQUEST_HEAD,
+    };
+    encode_connect_request(&request).map_err(map_connect_error)
 }
 
 /// Parse a status code from status-line bytes.
@@ -165,8 +202,8 @@ pub async fn http_connect(
     // Authority is computed first so request-line and Host agree, including
     // bracketed IPv6 form. Credential validation happens inside the builder
     // before any wire bytes are produced.
-    let authority = authority_form(target)?;
-    let request = build_connect_request(&authority, auth)?;
+    let target = connect_target(target)?;
+    let request = build_connect_request(&target, auth)?;
 
     stream.write_all(&request).await?;
     stream.flush().await?;
@@ -218,6 +255,16 @@ impl AsyncWrite for BufferedStream {
 }
 
 /// Read one CONNECT response head and return its status code.
+///
+/// Response parsing intentionally remains local to Eggress (Phase 5
+/// Outcome B): the public `HttpConnectLimits::max_headers_bytes` accounts
+/// the complete response head while reading, whereas
+/// `eggfetch-http-connect 0.2.0`'s `ConnectResponseLimits` separates a
+/// per-line cap from an aggregate header-field-bytes sum that excludes the
+/// status line and CRLF framing — and additionally requires `name: value`
+/// header shape where Eggress counts lines. Delegating would silently
+/// narrow or widen the accepted domain, so only request/authority
+/// ownership is shared; this parser is not an accidental duplicate.
 ///
 /// Reads bytes until the terminating `\r\n\r\n`, enforcing the total-head
 /// limit during the read. Header-count semantics match the documented
@@ -638,22 +685,28 @@ mod tests {
             host: TargetHost::Ip("::1".parse().unwrap()),
             port: 443,
         };
-        assert_eq!(authority_form(&v6).unwrap(), "[::1]:443");
+        assert_eq!(connect_target(&v6).unwrap().authority(), "[::1]:443");
         let v6_full = TargetAddr {
             host: TargetHost::Ip("2001:db8::1".parse().unwrap()),
             port: 8080,
         };
-        assert_eq!(authority_form(&v6_full).unwrap(), "[2001:db8::1]:8080");
+        assert_eq!(
+            connect_target(&v6_full).unwrap().authority(),
+            "[2001:db8::1]:8080"
+        );
         let v4 = TargetAddr {
             host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
             port: 80,
         };
-        assert_eq!(authority_form(&v4).unwrap(), "127.0.0.1:80");
+        assert_eq!(connect_target(&v4).unwrap().authority(), "127.0.0.1:80");
         let domain = TargetAddr {
             host: TargetHost::Domain("example.com".into()),
             port: 443,
         };
-        assert_eq!(authority_form(&domain).unwrap(), "example.com:443");
+        assert_eq!(
+            connect_target(&domain).unwrap().authority(),
+            "example.com:443"
+        );
     }
 
     #[test]
@@ -664,7 +717,7 @@ mod tests {
                 port: 80,
             };
             assert!(
-                authority_form(&target).is_err(),
+                connect_target(&target).is_err(),
                 "host {bad:?} must be rejected"
             );
         }
@@ -770,6 +823,111 @@ mod tests {
         let expected = base64::engine::general_purpose::STANDARD.encode("user:pass");
         let text = String::from_utf8(req).unwrap();
         assert!(text.contains(&format!("Proxy-Authorization: Basic {}", expected)));
+    }
+
+    #[tokio::test]
+    async fn test_wire_colon_username_auth_header_preserved() {
+        // Eggress accepts `:` in usernames; the upstream `basic_auth_value`
+        // helper rejects them, so this wire case pins the compatibility
+        // adapter: the value is encoded locally and framed upstream.
+        use base64::Engine;
+        let target = TargetAddr {
+            host: TargetHost::Domain("example.com".into()),
+            port: 80,
+        };
+        let (result, req) = canned_exchange(
+            target,
+            Some(("user:name", "pass")),
+            HttpConnectLimits::default(),
+            b"HTTP/1.1 200 OK\r\n\r\n".to_vec(),
+        )
+        .await;
+        assert!(result.is_ok());
+        let expected = base64::engine::general_purpose::STANDARD.encode("user:name:pass");
+        let text = String::from_utf8(req).unwrap();
+        assert!(text.contains(&format!("Proxy-Authorization: Basic {}", expected)));
+        assert!(text.starts_with("CONNECT example.com:80 HTTP/1.1\r\n"));
+        assert!(text.contains("\r\nHost: example.com:80\r\n"));
+    }
+
+    #[tokio::test]
+    async fn test_wire_empty_and_non_ascii_credentials_preserved() {
+        use base64::Engine;
+        let target = TargetAddr {
+            host: TargetHost::Domain("example.com".into()),
+            port: 80,
+        };
+        let (empty_result, empty_req) = canned_exchange(
+            target.clone(),
+            Some(("", "")),
+            HttpConnectLimits::default(),
+            b"HTTP/1.1 200 OK\r\n\r\n".to_vec(),
+        )
+        .await;
+        assert!(empty_result.is_ok());
+        let expected_empty = base64::engine::general_purpose::STANDARD.encode(":");
+        let empty_text = String::from_utf8(empty_req).unwrap();
+        assert!(empty_text.contains(&format!("Proxy-Authorization: Basic {}", expected_empty)));
+
+        let target = TargetAddr {
+            host: TargetHost::Domain("example.com".into()),
+            port: 80,
+        };
+        let (unicode_result, unicode_req) = canned_exchange(
+            target,
+            Some(("usér", "pâss")),
+            HttpConnectLimits::default(),
+            b"HTTP/1.1 200 OK\r\n\r\n".to_vec(),
+        )
+        .await;
+        assert!(unicode_result.is_ok());
+        let expected_unicode =
+            base64::engine::general_purpose::STANDARD.encode("usér:pâss".as_bytes());
+        let unicode_text = String::from_utf8(unicode_req).unwrap();
+        assert!(unicode_text.contains(&format!("Proxy-Authorization: Basic {}", expected_unicode)));
+    }
+
+    #[tokio::test]
+    async fn test_response_header_without_colon_accepted_outcome_b_pin() {
+        // Outcome B pin: the local response parser counts header lines
+        // without requiring `name: value` shape, while the upstream
+        // `read_connect_response_head` rejects colon-less lines as
+        // `MalformedHeader`. This acceptance must survive the migration.
+        let target = TargetAddr {
+            host: TargetHost::Domain("example.com".into()),
+            port: 80,
+        };
+        let (result, _) = canned_exchange(
+            target,
+            None,
+            HttpConnectLimits::default(),
+            b"HTTP/1.1 200 Connection Established\r\nNotAHeaderLine\r\n\r\n".to_vec(),
+        )
+        .await;
+        assert!(
+            result.is_ok(),
+            "colon-less header lines must be counted, not rejected"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_response_long_single_header_line_accepted_outcome_b_pin() {
+        // Outcome B pin: `max_headers_bytes` accounts the total head, with
+        // no per-line cap. A single 20 KiB header line fits the default
+        // 32 KiB total but would exceed the upstream per-line default
+        // (8192 B), so delegation would newly reject it.
+        let target = TargetAddr {
+            host: TargetHost::Domain("example.com".into()),
+            port: 80,
+        };
+        let mut resp = b"HTTP/1.1 200 Connection Established\r\nX-Pad: ".to_vec();
+        resp.extend_from_slice(&vec![b'A'; 20 * 1024]);
+        resp.extend_from_slice(b"\r\n\r\n");
+        let (result, _) = canned_exchange(target, None, HttpConnectLimits::default(), resp).await;
+        assert!(
+            result.is_ok(),
+            "long single header line within total budget must pass"
+        );
     }
 
     #[tokio::test]

@@ -276,7 +276,7 @@ eggress/
 
 ## Platform Constraints
 
-- Rust edition 2021, MSRV 1.85
+- Rust edition 2021, MSRV 1.89
 - `unsafe_code = "deny"` at workspace level
 - No OpenSSL, no C dependencies (`deny.toml` bans `openssl-sys`, `native-tls`, `aws-lc-sys`, `cmake`)
 - TLS via rustls only

@@ -49,7 +49,7 @@ users update with `pip`).
 cargo install eggress-cli --locked
 ```
 
-For Rust users, unsupported prebuilt targets, Cargo-managed provenance, and custom features (e.g. `ssh`, `quic`, `legacy-crypto`). The workspace declares Rust **MSRV 1.85**. From a repository checkout: `cargo install --path crates/eggress-cli`. Lean and feature-gated build examples live in [INSTALLATION.md](https://github.com/eggstack/eggress/blob/main/docs/INSTALLATION.md).
+For Rust users, unsupported prebuilt targets, Cargo-managed provenance, and custom features (e.g. `ssh`, `quic`, `legacy-crypto`). The workspace declares Rust **MSRV 1.89**. From a repository checkout: `cargo install --path crates/eggress-cli`. Lean and feature-gated build examples live in [INSTALLATION.md](https://github.com/eggstack/eggress/blob/main/docs/INSTALLATION.md).
 
 ### Rust library
 

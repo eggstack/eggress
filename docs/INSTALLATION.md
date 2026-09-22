@@ -149,7 +149,7 @@ cargo install eggress-cli --locked
 
 Appropriate for Rust users, unsupported prebuilt targets, Cargo-managed
 installation provenance, and custom builds/features. This installs both the
-`eggress` and `pproxy` binaries. The workspace declares Rust MSRV 1.85.
+`eggress` and `pproxy` binaries. The workspace declares Rust MSRV 1.89.
 
 From a repository checkout:
 

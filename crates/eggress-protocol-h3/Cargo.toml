@@ -15,7 +15,7 @@ default = []
 insecure-quic = ["eggress-transport-quic/insecure-quic"]
 
 [dependencies]
-base64 = "0.22"
+base64 = "0.23"
 bytes.workspace = true
 eggress-core.workspace = true
 eggress-transport-quic.workspace = true

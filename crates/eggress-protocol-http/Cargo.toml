@@ -11,7 +11,8 @@ categories = ["network-programming", "web-programming"]
 readme = "README.md"
 
 [dependencies]
-base64 = "0.22"
+base64 = "0.23"
+eggfetch-http-connect.workspace = true
 eggress-core.workspace = true
 http.workspace = true
 httparse.workspace = true

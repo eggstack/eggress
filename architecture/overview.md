@@ -394,7 +394,7 @@ summary of the discrete pieces:
   policy: `docs/release/RELEASE_PROCESS.md`; install guide:
   `docs/INSTALLATION.md`.
 - **Container — `Containerfile`.** Multi-stage
-  `rust:1.85-slim` → distroless nonroot; ports 8080/1080/9090; entrypoint
+  `rust:1.89-slim` → distroless nonroot; ports 8080/1080/9090; entrypoint
   `/eggress`.
 
 ---
@@ -429,7 +429,7 @@ summary of the discrete pieces:
   UDP, `unsafe_code = "deny"`, pure-Rust deps (no OpenSSL/C/build scripts
   without architectural reason).
 - **Platforms:** Linux, macOS, Windows where the capability exists; SSH/QUIC/
-  daemon/legacy-crypto are explicit opt-in features; MSRV 1.85, edition 2021.
+  daemon/legacy-crypto are explicit opt-in features; MSRV 1.89, edition 2021.
 
 Full checklists: `docs/CAPABILITIES.md`, `docs/OPERATIONS.md`,
 `docs/SECURITY_REVIEW.md` + `docs/security/`, compatibility contract in
@@ -464,7 +464,7 @@ Optional product surface: `ssh`, `quic`, `pproxy-legacy`, `legacy-crypto`,
 `pproxy-daemon` (CLI-only).
 Lean build:
 `cargo build -p eggress-cli --release --no-default-features --features common`.
-MSRV 1.85; release profiles use thin-LTO/symbol-stripping. Never substitute
+MSRV 1.89; release profiles use thin-LTO/symbol-stripping. Never substitute
 `--all-features` (drags in test-only `insecure-quic`); the bounded
 `full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon` check covers the
 product-relevant optional surface.

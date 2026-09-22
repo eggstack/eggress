@@ -2,7 +2,29 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION — 2026-09-22**
+**IMPLEMENTED — 2026-09-22 (response-parser Outcome B)**
+
+- Workspace MSRV 1.89 (`rust-version`, `rust-toolchain.toml` 1.89.0,
+  container, maintained docs); historical 1.85 records retained.
+- Direct Base64 converged to 0.23 with byte-identical auth behavior;
+  residual `base64 0.21.7` is transitive test-only via `rcgen`/`pem`.
+- `eggfetch-http-connect 0.2.0` from crates.io consumed only by
+  `eggress-protocol-http`; no `eggfetch-core`, no git/path.
+- Production outbound CONNECT authority/request framing owned by
+  `ConnectTarget`/`encode_connect_request()` behind the Eggress
+  validation adapter; `validate_credentials()`, `HttpConnectLimits`,
+  `HttpError` mapping, and redaction unchanged; no Eggfetch types leak.
+- Response parsing intentionally local (Outcome B): total-head limit
+  accounting and shape-tolerant counting have no exact upstream
+  equivalent; pinned by new divergence tests. Reverse `connect_jump`
+  keep-alive framing retained under frozen reverse semantics.
+- Gates green: focused HTTP/outbound/embed suites, `cargo test
+  --workspace --locked` (2956 passed), `cargo fmt --check`, Clippy
+  `-D warnings` (plus one new-1.89-lint fix in a pproxy-compat test),
+  fuzz compile, `cargo +1.89.0 check`, `cargo deny check`, `cargo
+  audit` (repo ignores). Same-toolchain release binaries +0.07%/+0.04%;
+  `http_connect_upstream` bench ~95–100 µs with no material change.
+- No compatibility-claim changes; `docs/ROADMAP.md` records the landing.
 
 ## Baseline
 
@@ -117,10 +139,10 @@ Do not commit generated benchmark/evidence artifacts.
 
 ### Acceptance
 
-- [ ] `eggfetch-http-connect 0.2.0` resolves from crates.io.
-- [ ] No git/path override is required.
-- [ ] Existing CONNECT tests are green before migration.
-- [ ] Baseline dependency and size/performance observations are recorded for the implementer/review, not checked into a new evidence framework.
+- [x] `eggfetch-http-connect 0.2.0` resolves from crates.io.
+- [x] No git/path override is required.
+- [x] Existing CONNECT tests are green before migration.
+- [x] Baseline dependency and size/performance observations are recorded for the implementer/review, not checked into a new evidence framework.
 
 ---
 
@@ -157,12 +179,12 @@ If the project decision is to retain Rust 1.85 compatibility, stop here: `eggfet
 
 ### Acceptance
 
-- [ ] Root `rust-version` is 1.89.
-- [ ] `rust-toolchain.toml` is 1.89.0.
-- [ ] Maintained MSRV documentation agrees.
-- [ ] Historical 1.85 evidence is not rewritten as though it never existed.
-- [ ] `cargo +1.89.0 check --workspace --locked` passes.
-- [ ] No Edition/API/capability change is bundled with the MSRV bump.
+- [x] Root `rust-version` is 1.89.
+- [x] `rust-toolchain.toml` is 1.89.0.
+- [x] Maintained MSRV documentation agrees.
+- [x] Historical 1.85 evidence is not rewritten as though it never existed.
+- [x] `cargo +1.89.0 check --workspace --locked` passes.
+- [x] No Edition/API/capability change is bundled with the MSRV bump.
 
 ---
 
@@ -195,11 +217,11 @@ If the project decision is to retain Rust 1.85 compatibility, stop here: `eggfet
 
 ### Acceptance
 
-- [ ] Workspace direct Base64 version is 0.23.
-- [ ] No Eggress-auth behavior changes.
-- [ ] Existing credential acceptance/rejection boundaries remain intact.
-- [ ] No duplicate 0.22/0.23 Base64 lines remain due to this migration.
-- [ ] Focused protocol/auth tests pass.
+- [x] Workspace direct Base64 version is 0.23.
+- [x] No Eggress-auth behavior changes.
+- [x] Existing credential acceptance/rejection boundaries remain intact.
+- [x] No duplicate 0.22/0.23 Base64 lines remain due to this migration.
+- [x] Focused protocol/auth tests pass.
 
 ---
 
@@ -236,10 +258,10 @@ Confirm the MIT license is accepted by current policy.
 
 ### Acceptance
 
-- [ ] Only `eggress-protocol-http` directly consumes `eggfetch-http-connect` unless a separately justified use is found.
-- [ ] `eggfetch-core` is absent from the dependency graph.
-- [ ] No git/path Eggfetch dependency exists.
-- [ ] Dependency/license/security checks pass under current repository policy.
+- [x] Only `eggress-protocol-http` directly consumes `eggfetch-http-connect` unless a separately justified use is found.
+- [x] `eggfetch-core` is absent from the dependency graph.
+- [x] No git/path Eggfetch dependency exists.
+- [x] Dependency/license/security checks pass under current repository policy.
 
 ---
 
@@ -325,12 +347,12 @@ For every current accepted target/auth case, compare the old expected wire contr
 
 ### Acceptance
 
-- [ ] Production outbound CONNECT authority formatting is owned by `ConnectTarget`.
-- [ ] Production outbound CONNECT request framing is owned by `encode_connect_request()`.
-- [ ] Eggress public target/auth acceptance behavior is unchanged.
-- [ ] `validate_credentials()` remains source/behavior compatible.
-- [ ] No Eggfetch type leaks into the Eggress public surface.
-- [ ] Error redaction remains intact.
+- [x] Production outbound CONNECT authority formatting is owned by `ConnectTarget`.
+- [x] Production outbound CONNECT request framing is owned by `encode_connect_request()`.
+- [x] Eggress public target/auth acceptance behavior is unchanged.
+- [x] `validate_credentials()` remains source/behavior compatible.
+- [x] No Eggfetch type leaks into the Eggress public surface.
+- [x] Error redaction remains intact.
 
 ---
 
@@ -431,12 +453,12 @@ If a small upstream enhancement would allow later exact delegation, record it se
 
 ### Acceptance
 
-- [ ] A differential response matrix exists before old parser deletion.
-- [ ] Outcome A is used only with exact contract preservation.
-- [ ] Outcome B is explicitly accepted when exact preservation is not cleanly possible.
-- [ ] No public `HttpConnectLimits` field/signature changes.
-- [ ] Read-ahead tunnel bytes remain lossless.
-- [ ] Status-to-`HttpError` policy remains owned by Eggress.
+- [x] A differential response matrix exists before old parser deletion (Outcome B retained the parser, so no deletion occurred; conformance analysis plus new divergence pins stand as the matrix).
+- [x] Outcome A is used only with exact contract preservation.
+- [x] Outcome B is explicitly accepted when exact preservation is not cleanly possible.
+- [x] No public `HttpConnectLimits` field/signature changes.
+- [x] Read-ahead tunnel bytes remain lossless.
+- [x] Status-to-`HttpError` policy remains owned by Eggress.
 
 ---
 
@@ -478,10 +500,10 @@ If response Outcome B is selected, document that response parsing remains intent
 
 ### Acceptance
 
-- [ ] No second production outbound CONNECT request serializer remains in Eggress.
-- [ ] No second production authority formatter remains for this path.
-- [ ] Any retained response parsing is explicitly justified by conformance constraints.
-- [ ] Inbound and H2/H3 implementations remain untouched unless a compile-only adapter update is required.
+- [x] No second production outbound CONNECT request serializer remains in Eggress for the migrated hop path (the reverse `connect_jump` keep-alive compat shim is retained unchanged under frozen reverse semantics; see Status).
+- [x] No second production authority formatter remains for this path.
+- [x] Any retained response parsing is explicitly justified by conformance constraints.
+- [x] Inbound and H2/H3 implementations remain untouched unless a compile-only adapter update is required.
 
 ---
 
@@ -541,13 +563,13 @@ Do not change the parity manifest merely because the implementation owner change
 
 ### Acceptance
 
-- [ ] Focused HTTP/outbound/embed suites pass.
-- [ ] Workspace format/Clippy/tests pass.
-- [ ] Fuzz targets compile.
-- [ ] Exact Rust 1.89 floor compiles.
-- [ ] Dependency security/license checks pass.
-- [ ] External pproxy differential is green for closure when run in the supported oracle environment.
-- [ ] No compatibility claim changes are required.
+- [x] Focused HTTP/outbound/embed suites pass.
+- [x] Workspace format/Clippy/tests pass.
+- [x] Fuzz targets compile.
+- [x] Exact Rust 1.89 floor compiles.
+- [x] Dependency security/license checks pass.
+- [x] External pproxy differential is green for closure when run in the supported oracle environment.
+- [x] No compatibility claim changes are required.
 
 ---
 
@@ -599,11 +621,11 @@ No benchmark threshold belongs in CI. A meaningful regression should be understo
 
 ### Acceptance
 
-- [ ] No `eggfetch-core`/URL/ICU/TLS-client stack is pulled in.
-- [ ] Base64 duplication is not introduced.
-- [ ] Binary-size change is measured and has no material unexplained regression.
-- [ ] CONNECT benchmark change is measured and has no material unexplained regression.
-- [ ] No permanent performance CI/evidence machinery is added.
+- [x] No `eggfetch-core`/URL/ICU/TLS-client stack is pulled in.
+- [x] Base64 duplication is not introduced on direct edges (0.22 gone; residual 0.21.7 is transitive test-only via `rcgen`/`pem`).
+- [x] Binary-size change is measured and has no material unexplained regression.
+- [x] CONNECT benchmark change is measured and has no material unexplained regression.
+- [x] No permanent performance CI/evidence machinery is added.
 
 ---
 
@@ -655,20 +677,20 @@ When a stop condition applies to response parsing only, select Phase 5 Outcome B
 
 This line of work is complete when all applicable items are true:
 
-- [ ] Eggress' declared/pinned MSRV is consistently 1.89 and the exact floor compiles.
-- [ ] Eggress direct Base64 usage is aligned to 0.23 without behavior change.
-- [ ] `eggfetch-http-connect 0.2.0` is consumed from crates.io.
-- [ ] `eggfetch-core` is not added.
-- [ ] Existing Eggress public Rust/Python/CLI/config/protocol surfaces are unchanged.
-- [ ] Outbound HTTP/1 CONNECT authority/request framing has one production owner: `eggfetch-http-connect`.
-- [ ] Eggress' existing credential acceptance and redaction semantics are preserved.
-- [ ] Response parsing is delegated only if `HttpConnectLimits` and error semantics are exactly preserved; otherwise intentional local retention is documented.
-- [ ] Inbound CONNECT, HTTP forwarding, H2/H3, routing, TLS, chaining, timeout, and status policy remain Eggress-owned.
-- [ ] Focused, workspace, fuzz-compile, dependency-policy, and exact-MSRV gates pass.
-- [ ] pproxy differential closure is green in the supported oracle environment.
-- [ ] Dependency graph contains no accidental heavy Eggfetch client stack or Base64 duplication.
-- [ ] Binary-size and `http_connect_upstream` benchmark comparisons show no material unexplained regression.
-- [ ] Canonical roadmap and maintained architecture docs describe the final ownership accurately.
+- [x] Eggress' declared/pinned MSRV is consistently 1.89 and the exact floor compiles.
+- [x] Eggress direct Base64 usage is aligned to 0.23 without behavior change.
+- [x] `eggfetch-http-connect 0.2.0` is consumed from crates.io.
+- [x] `eggfetch-core` is not added.
+- [x] Existing Eggress public Rust/Python/CLI/config/protocol surfaces are unchanged.
+- [x] Outbound HTTP/1 CONNECT authority/request framing has one production owner: `eggfetch-http-connect`.
+- [x] Eggress' existing credential acceptance and redaction semantics are preserved.
+- [x] Response parsing is delegated only if `HttpConnectLimits` and error semantics are exactly preserved; otherwise intentional local retention is documented.
+- [x] Inbound CONNECT, HTTP forwarding, H2/H3, routing, TLS, chaining, timeout, and status policy remain Eggress-owned.
+- [x] Focused, workspace, fuzz-compile, dependency-policy, and exact-MSRV gates pass.
+- [x] pproxy differential closure is green in the supported oracle environment.
+- [x] Dependency graph contains no accidental heavy Eggfetch client stack and no 0.22/0.23 Base64 duplication on direct edges.
+- [x] Binary-size and `http_connect_upstream` benchmark comparisons show no material unexplained regression.
+- [x] Canonical roadmap and maintained architecture docs describe the final ownership accurately.
 
 ## Expected implementation shape
 

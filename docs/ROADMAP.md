@@ -190,19 +190,36 @@ under the parent
 Existing API surface and capability remain fixed constraints.
 The final evidence-state polish pass (acceptance-checkbox reconciliation plus a deterministic native-write semantic proof) is complete in [`plans/API_BOUNDARY_EVIDENCE_STATE_POLISH.md`](../plans/API_BOUNDARY_EVIDENCE_STATE_POLISH.md); it did not reopen runtime/API scope.
 
-### Active maintenance handoff — Eggfetch 0.2 HTTP CONNECT consolidation
+### Completed maintenance — Eggfetch 0.2 HTTP CONNECT consolidation
 
-A narrow dependency/conformance migration is **READY FOR IMPLEMENTATION** in
-[`plans/EGGFETCH_0_2_HTTP_CONNECT_CONSOLIDATION.md`](../plans/EGGFETCH_0_2_HTTP_CONNECT_CONSOLIDATION.md).
+The narrow dependency/conformance migration from
+[`plans/EGGFETCH_0_2_HTTP_CONNECT_CONSOLIDATION.md`](../plans/EGGFETCH_0_2_HTTP_CONNECT_CONSOLIDATION.md)
+has landed with response-parser Outcome B:
 
-The authorized scope is intentionally small: adopt the published
-`eggfetch-http-connect 0.2.0` wire primitive for outbound HTTP/1 CONNECT
-authority/request ownership, and delegate response parsing only if the existing
-public `HttpConnectLimits` acceptance/error contract can be preserved exactly.
-The plan explicitly excludes `eggfetch-core`, preserves Eggress routing/TLS/
-chaining/status policy, and owns the required Rust 1.89 plus Base64 0.23
-dependency alignment.
+- Workspace MSRV is now 1.89 (`rust-toolchain.toml` pins 1.89.0) and
+  direct Base64 usage is aligned to 0.23 (byte-identical auth behavior).
+- `eggfetch-http-connect 0.2.0` (crates.io; no `eggfetch-core`, no
+  git/path) owns outbound HTTP/1 CONNECT authority rendering
+  (`ConnectTarget`) and request framing (`encode_connect_request()`);
+  Eggress keeps its validation adapter, `validate_credentials()`,
+  `HttpConnectLimits`, status-to-`HttpError` policy, and redaction, with
+  no public-surface changes and no Eggfetch types leaked.
+- Response parsing intentionally remains local: the public
+  total-head limit accounting and shape-tolerant header counting cannot
+  be reproduced exactly by the upstream 0.2.0 response limits.
+- Full workspace suite, Clippy, `cargo fmt --check`, fuzz compile,
+  exact-floor `cargo +1.89.0 check`, `cargo deny check`, and `cargo audit`
+  pass; same-toolchain release binaries are within 0.1% of baseline and
+  the CONNECT benchmark shows no material change.
+
+Compatibility claims remain governed by the active [compatibility
+matrix](parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md) and [capability
+manifest](parity/pproxy_capability_manifest.toml); this pass changed no
+claims.
 
 ## Next Phase
 
-Implement the registered Eggfetch HTTP CONNECT consolidation handoff above. Compatibility claims remain governed by the active [compatibility matrix](parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md) and [capability manifest](parity/pproxy_capability_manifest.toml); this maintenance pass is not authorization to change those claims.
+No further implementation handoff is registered. Future work is ongoing
+hardening tracked through ordinary maintenance; any new handoff must be
+explicitly registered here before implementation. Compatibility claims
+remain governed by the active [compatibility matrix](parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md) and [capability manifest](parity/pproxy_capability_manifest.toml).
