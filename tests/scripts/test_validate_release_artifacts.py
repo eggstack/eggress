@@ -111,6 +111,42 @@ def test_debug_artifact_rejected(tmp_path):
         va.validate(_stage(tmp_path, wheels=wheels))
 
 
+def test_compressed_manylinux_tags_accepted(tmp_path):
+    # Maturin emits both the precise floor and its legacy alias
+    # (manylinux_2_17 + manylinux2014) in one filename for compatibility.
+    wheels = [
+        (
+            f"eggress-{VERSION}-cp39-abi3-"
+            "manylinux_2_17_aarch64.manylinux2014_aarch64.whl"
+            if fam == "linux-aarch64-gnu"
+            else (
+                f"eggress-{VERSION}-cp39-abi3-"
+                "manylinux_2_17_x86_64.manylinux2014_x86_64.whl"
+                if fam == "linux-x86_64-gnu"
+                else f
+            )
+        )
+        for fam, f in WHEELS.items()
+    ]
+    result = va.validate(_stage(tmp_path, wheels=wheels))
+    assert result["linux-aarch64-gnu"].endswith(".manylinux2014_aarch64.whl")
+    assert result["linux-x86_64-gnu"].endswith(".manylinux2014_x86_64.whl")
+
+
+def test_mixed_platform_families_rejected(tmp_path):
+    wheels = [
+        (
+            f"eggress-{VERSION}-cp39-abi3-"
+            "manylinux_2_17_x86_64.musllinux_1_2_x86_64.whl"
+            if fam == "linux-x86_64-gnu"
+            else f
+        )
+        for fam, f in WHEELS.items()
+    ]
+    with pytest.raises(SystemExit, match="multiple platform families"):
+        va.validate(_stage(tmp_path, wheels=wheels))
+
+
 def test_gnu_musl_armv7_families_distinct():
     assert va.family_for_platform_tag("manylinux_2_17_x86_64") == "linux-x86_64-gnu"
     assert va.family_for_platform_tag("manylinux_2_17_aarch64") == "linux-aarch64-gnu"

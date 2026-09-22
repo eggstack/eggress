@@ -99,16 +99,29 @@ def validate(dist_dir: Path = DIST_DIR) -> dict[str, str]:
             version = str(ver)
         elif str(ver) != version:
             raise SystemExit(f"::error::wheel version mismatch: {wheel.name}")
-        if len(tags) != 1:
+        if len({(tag.interpreter, tag.abi) for tag in tags}) != 1:
             raise SystemExit(
-                f"::error::abi3 wheel must carry exactly one tag: {wheel.name}"
+                f"::error::wheel must carry one interpreter/abi pair: {wheel.name}"
             )
         tag = next(iter(tags))
         if tag.interpreter != EXPECTED_PYTHON_TAG or tag.abi != EXPECTED_ABI_TAG:
             raise SystemExit(f"::error::wheel is not cp39-abi3: {wheel.name}")
-        family = family_for_platform_tag(tag.platform)
-        if family is None:
+        # Maturin emits compressed platform tags (for example both
+        # `manylinux_2_17_aarch64` and its `manylinux2014_aarch64` alias) for
+        # installer compatibility. Every platform tag must map to the same
+        # known family; mixed or unknown platforms fail closed.
+        families = {
+            family_for_platform_tag(t.platform)
+            for t in tags
+            if family_for_platform_tag(t.platform) is not None
+        }
+        if not families:
             raise SystemExit(f"::error::unapproved wheel platform: {wheel.name}")
+        if len(families) != 1:
+            raise SystemExit(
+                f"::error::wheel spans multiple platform families: {wheel.name}"
+            )
+        family = families.pop()
         if family in targets:
             raise SystemExit(f"::error::duplicate wheel target {family}: {wheel.name}")
         targets[family] = wheel.name
