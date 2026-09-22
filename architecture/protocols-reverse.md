@@ -130,7 +130,7 @@ The pproxy compat adapter does NOT send or read the 0x01/0x00 accept/reject byte
 1. Loop: `run_session()` attempts connect, auth, resolve target, relay.
 2. On success (session ended cleanly): backoff resets to `reconnect_initial_ms`, reconnect immediately.
 3. On error: backoff doubles (1s -> 2s -> 4s ... -> 30s cap), sleeps with cancel-aware `tokio::select!`.
-4. Target resolution uses the injected `TargetResolver`. Production deployments inject a resolver that consults the route engine via `SharedRoutingService::decide()`.
+4. Target resolution uses the injected `TargetResolver`. Production deployments inject a resolver that consults the route engine via `SharedRoutingService::policy_decision()`.
 
 ### allow_bind enforcement
 
@@ -249,6 +249,6 @@ The pproxy compat adapter does NOT send or read the 0x01/0x00 accept/reject byte
 ## See also
 
 - [protocols-tunnels.md](protocols-tunnels.md) -- WebSocket and raw tunnel protocols.
-- [runtime.md](runtime.md) -- `TargetResolver` implementation via `SharedRoutingService::decide()`.
+- [runtime.md](runtime.md) -- `TargetResolver` implementation via `SharedRoutingService::policy_decision()`.
 - [pproxy-compat.md](pproxy-compat.md) -- pproxy compatibility layer overview.
 - [metrics.md](metrics.md) -- metrics architecture and Prometheus integration.

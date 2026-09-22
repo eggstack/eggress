@@ -147,6 +147,9 @@ EGRESS_RUN_PPROXY_DIFFERENTIAL=1 cargo test -p eggress-cli --test pproxy_differe
 - `docs/security/PPROXY_COMPAT_SECURITY_DIFFERENCES.md` — security differences vs pproxy
 - `docs/security/THREAT_MODEL.md` — full threat model
 - `docs/security/REDACTION_POLICY.md` — credential redaction policy
+- `docs/security/HARDENING_GUIDE.md` — hardening checklist
+- `docs/security/OPEN_PROXY_PREVENTION.md` — open-proxy prevention
+- `docs/security/REVERSE_SECURITY.md` — reverse channel security
 - `docs/SECURITY_REVIEW.md` — security review and residual risks
 
 ## Cipher regression notes

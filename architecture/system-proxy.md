@@ -170,7 +170,9 @@ Applied in `inspect_system_proxy_with_runner` for safe logging.
 - Windows bare proxy address applies to both HTTP and HTTPS.
 - `gsettings` output uses GVariant single-quote strings; parser strips
   surrounding quotes and handles escaped quotes in `ignore-hosts`.
-- `redact_proxy_uri` uses `rfind('@')` to handle nested `://` correctly.
+- `redact_proxy_uri` uses the shared `eggress-uri::syntax::find_userinfo_separator`
+  (last unbracketed `@`, bracket-aware) to handle nested `://` and `@` in
+  passwords correctly.
 
 ## See also
 

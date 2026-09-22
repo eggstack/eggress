@@ -157,7 +157,10 @@ See `.skills/cli-ops/skill.md` for the ten stable exit codes
 
 ## Embed API (eggress-embed)
 
-For embedding eggress in another Rust process, use the `eggress-embed` crate:
+For embedding eggress in another Rust process, use the `eggress-embed` crate.
+Full lifecycle plus listener-free `OutboundConnector` guidance lives in
+`.skills/embed-outbound/skill.md` (authority: `eggress-outbound`, facade:
+`eggress-embed::outbound`); the summary below is a pointer only.
 
 - `EggressConfig::from_toml_str()` / `from_toml_file()` — parse and validate config
 - `eggress-config::validate_and_compile_toml` is the canonical TOML

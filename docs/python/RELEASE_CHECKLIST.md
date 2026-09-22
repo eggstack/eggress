@@ -8,8 +8,8 @@ Pre-release checklist for the `eggress` Python package.
 cargo test -p eggress-testkit manifest
 ```
 
-Verifies `tests/compat/pproxy_manifest.toml` is internally consistent and all
-evidence levels match the `egress_status` claims.
+Verifies `docs/parity/pproxy_capability_manifest.toml` is internally consistent and all
+evidence levels match the status claims (`python3 scripts/validate_pproxy_parity_manifest.py --strict docs/parity/pproxy_capability_manifest.toml`).
 
 ## 2. Python tests pass
 

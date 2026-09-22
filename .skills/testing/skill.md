@@ -141,17 +141,20 @@ skip the fixture; any later setup or readiness failure remains fatal.
 
 ### UDP-specific tests
 - `crates/eggress-udp/tests/socks5_upstream.rs` — upstream relay scenarios
+- `crates/eggress-udp/tests/standalone_udp.rs` — standalone relay modes
+- `crates/eggress-udp/tests/udp_integration.rs` — association lifecycle integration
 - `crates/eggress-runtime/tests/udp_upstream.rs` — runtime UDP upstream
 
 ### Interoperability tests
 - `crates/eggress-cli/tests/interoperability_curl.rs` — curl-based
-- `crates/eggress-cli/tests/interoperability_pproxy.rs` — pproxy-based
+- `crates/eggress-cli/tests/interoperability_pproxy.rs` — gated pproxy 2.7.9 TCP and PacketCipher UDP checks across all four modern AEAD methods
+- `crates/eggress-cli/tests/interoperability_trojan.rs` — trojan interop
+- `crates/eggress-cli/tests/advanced_transport_interop.rs` — advanced transport interop
 
 ### Differential tests
 - `crates/eggress-cli/tests/differential_pproxy.rs` — gated differential tests against pproxy (`EGRESS_REQUIRE_EXTERNAL_INTEROP=1`)
 - `crates/eggress-cli/tests/pproxy_differential.rs` — optional reusable differential parity harness (`EGRESS_RUN_PPROXY_DIFFERENTIAL=1`)
 - `crates/eggress-cli/tests/interoperability_shadowsocks.rs` — gated Shadowsocks interop tests against maintained `ssserver`/`sslocal`; cover standard TCP/UDP framing and method-specific salts
-- `crates/eggress-cli/tests/interoperability_pproxy.rs` — gated pproxy 2.7.9 TCP and PacketCipher UDP checks across all four modern AEAD methods
 - `crates/eggress-cli/tests/oracle.rs` — scenario-driven oracle harness (31 scenarios, `EGRESS_PPROXY_CERTIFY=1`)
 
 Gated tests require environment variables and external tools. See `docs/DIFFERENTIAL_TESTING.md` for prerequisites, environment variables, and running instructions.
@@ -179,6 +182,11 @@ Black-box probe tests document pproxy behavior for ambiguous scenarios (refused 
 - `crates/eggress-cli/tests/pproxy_run_process.rs` — pproxy run subprocess lifecycle
 - `crates/eggress-cli/tests/pproxy_translation_golden.rs` — pproxy URI → TOML golden tests
 - `crates/eggress-cli/tests/reply_order.rs` — deferred success reply ordering
+- `crates/eggress-cli/tests/pproxy_cli.rs` — compat CLI surface
+- `crates/eggress-cli/tests/pproxy_binary.rs` — standalone binary behavior
+- `crates/eggress-cli/tests/integration.rs` — end-to-end CLI integration
+- `crates/eggress-cli/tests/feature_boundary_negative.rs` — feature-gate negative paths
+- `crates/eggress-cli/tests/version.rs` / `release_contract.rs` — version output and release archive/checksum contract (covers the `update` path)
 
 For strict pproxy CLI changes, keep a compact table-driven matrix for every
 frozen flag covering arity, repetition/default behavior, parse category, and
@@ -324,8 +332,11 @@ The `eggress-embed` crate has integration tests in `crates/eggress-embed/tests/`
 - `start_stop.rs` — blocking/async start and shutdown, multiple listeners, config errors
 - `proxy_traffic.rs` — SOCKS5 TCP echo through embed API, port-0 discovery
 - `reload.rs` — reload generation increment, invalid config, bind change rejection
+- `reload_convergence.rs` — file/string/native reload equivalence via canonical `apply_compiled_config`
 - `metrics_status.rs` — Prometheus counters, status fields, metrics after session
 - `error_redaction.rs` — no credentials in error messages, error categories
+- `public_api.rs` — public API surface stability
+- `ssh.rs` — OpenSSH-backed `OutboundConnector` regression (requires `EGRESS_REQUIRE_OPENSSH_TESTS=1` with `ssh,pproxy-compat`)
 - `outbound_detailed.rs` — typed `connect_tcp_detailed` matrix via the
   `eggress_embed::outbound` facade (no string
   parsing for categories; credential-safe Display/Debug/source)
@@ -343,6 +354,7 @@ Tests use local TCP echo servers (no public internet required).
 Python tests exercise the PyO3 bindings and pproxy compatibility layer:
 
 - `python/tests/test_pproxy_dropin.py` — PPProxyService, CompatibilityReport, start_pproxy tests
+- `python/tests/test_pproxy_phase4_contract.py` — phase-4 API contract coverage
 - `python/tests/test_pproxy_differential.py` — optional differential parity structural tests (gated)
 - `python/tests/test_pproxy_compat.py` — pproxy translation helpers
 - `python/tests/test_pproxy_redaction.py` — credential redaction in repr/diagnostics

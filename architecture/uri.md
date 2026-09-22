@@ -63,7 +63,8 @@ It returns neutral structures (`HostPort`, raw userinfo parts) and
 - empty/duplicate `__` handling stays with the owning grammar (native keeps
   `DuplicateHopSeparator` for `___`; compat keeps leading/trailing/doubled checks);
 - percent-decoding stays native-only (compat keeps values verbatim);
-- default ports stay compat-owned (8080 / ssh 22); native requires explicit ports;
+- compat listener defaults stay compat-owned (8080); native SSH defaults to
+  port 22 when no port is given, other native proxy hops require explicit ports;
 - empty hosts are rejected for native proxy hops but allowed for compat listeners.
 
 ### ProxyHopSpec fields

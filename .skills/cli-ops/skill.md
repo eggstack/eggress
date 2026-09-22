@@ -92,7 +92,8 @@ Tests: `cargo test -p eggress-cli --test cli_exit_codes` and
 
 - `DiagnosticCode` enum (`eggress-pproxy-compat/src/diagnostics.rs`) for
   stable error/warning codes; wrap in `StructuredDiagnostic` for JSON output.
-- `PproxyCheckOutput` drives `pproxy check --json`.
+- `PproxyCheckOutput` (owned by `eggress-cli::commands::pproxy`, rendered from
+  compat diagnostics) drives `pproxy check --json`.
 - Redact credentials in all diagnostics (see `.skills/security-dev/skill.md`).
 
 ## Admin HTTP (`eggress-admin`)
@@ -146,7 +147,6 @@ cargo test -p eggress-cli --test cli_exit_codes
 cargo test -p eggress-cli --test cli_tests
 cargo test -p eggress-cli --test version
 cargo test -p eggress-cli --test release_contract
-cargo test -p eggress-cli --bin eggress update
 bash packaging/tests/test-install.sh
 cargo test -p eggress-cli --test pproxy_binary
 cargo test -p eggress-cli --test pproxy_run_process
@@ -155,7 +155,7 @@ cargo test -p eggress-runtime --test admin
 cargo test -p eggress-runtime --test observability
 cargo test -p eggress-pproxy-compat diagnostics
 cargo test -p eggress-pproxy-compat exit_codes
-cargo test -p eggress-admin client
+cargo test -p eggress-admin client  # filter for client::tests unit coverage
 ```
 
 ## References

@@ -60,7 +60,7 @@ WS, WSS, Raw, and H2 upstream handlers now **consume the prior-hop stream** supp
   roles use dedicated runtime handlers rather than protocol sniffing.
 
 ## H2 CONNECT
-- Server: `h2_connect::handle_h2_connect()` accepts H2 connections, dispatches CONNECT, bridges stream to TCP target
+- Server: `h2_connect` module accepts H2 connections, dispatches CONNECT, bridges stream to TCP target (see `crates/eggress-protocol-http/src/h2_connect.rs`; the per-connection entry is `pub(crate)`)
 - Compatibility server: `eggress_server::advanced::serve_h2_connection()` accepts
   independent CONNECT streams, validates proxy auth, and routes each stream.
 - Client: Use `h2` crate to connect to upstream H2 proxy, issue CONNECT request
@@ -75,7 +75,7 @@ WS, WSS, Raw, and H2 upstream handlers now **consume the prior-hop stream** supp
 - Client: `WebSocketTunnelClient::connect()` connects to WS/WSS upstream, returns BoxStream
 - Key type: `WebSocketStreamAdapter` — wraps split WS stream as AsyncRead+AsyncWrite
 - Binary frames = stream data, Close = shutdown, Ping/Pong handled automatically
-- Max message size enforced (default 16MB)
+- Max message size enforced (default 8 MiB, `DEFAULT_MAX_MESSAGE_SIZE` in `crates/eggress-protocol-websocket/src/lib.rs`)
 
 ## Raw Tunnels
 - `RawTunnelListener::bind()` + `run()` accepts TCP, connects to fixed target, relays via copy_bidirectional

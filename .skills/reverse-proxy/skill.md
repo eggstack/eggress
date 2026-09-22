@@ -93,7 +93,7 @@ The reverse proxy supports these pproxy-compatible URI schemes:
 - **Auth payload capped** at 4 KiB to prevent unbounded memory growth
 
 ## Route integration
-- `LeafMatcher.reverse_listener` field — matches reverse listener by name in the routing rule engine
+- Config `LeafMatcher.reverse_listener` (`eggress-config/src/model.rs`) matches a reverse listener by name; the routing engine evaluates it as `MatchExpr::ReverseListener` (`eggress-routing/src/matcher.rs`)
 - `RouteEngineTargetResolver` in `eggress-runtime/src/reverse.rs` bridges the route engine to the `TargetResolver` trait, enabling dynamic target resolution through standard routing rules
 
 ## Limitations

@@ -1,5 +1,13 @@
 # Parity Target Freeze (Phase 36)
 
+> Historical snapshot (Phase 36, `v0.1.0` era), retained for provenance. The
+> current compat contract is `docs/parity/pproxy_capability_manifest.toml` +
+> `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`; the tier vocabulary
+> there (`matched` / `supported_difference` / `platform_limited` /
+> `intentional_non_parity`) supersedes the six-status table below. Do not cite
+> the frozen `0.1.0` versions or `tests/compat/pproxy_manifest.toml` paths as
+> current.
+
 This document freezes the versions and platforms that the eggress parity release
 candidate targets. All compatibility claims elsewhere in this repository are
 interpreted relative to these targets.
