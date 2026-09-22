@@ -1,5 +1,9 @@
 # Eggress Architecture Overview
 
+> Maintained review index. Last verified against the 1.0.7 tree on 2026-09-22:
+> 28 workspace crates, 26 files in this directory (this overview + 25 deep
+> dives), 11 fuzz targets, 5 Criterion benches, 4 GitHub workflows.
+
 Eggress is a Rust-native, embeddable, multi-protocol proxy framework and CLI
 targeting practical and behavioral compatibility with Python `pproxy==2.7.9`.
 It is built on Tokio around one central design decision: **everything is a
