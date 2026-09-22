@@ -138,6 +138,9 @@ No OpenSSL, no libssl, no libcrypto, no native-tls.
 
 ## Known Acceptable Advisories
 
-- `rustls-pemfile` 2.2.0 (RUSTSEC-2025-0134): unmaintained. This is a dev/read-only dependency
-  used only for certificate parsing in tests. Not a runtime dependency of the built wheel.
-  Acceptable until an actively maintained alternative is adopted upstream.
+- `rustls-pemfile` (RUSTSEC-2025-0134) no longer applies: it was replaced by
+  `rustls-pki-types` PEM APIs and is absent from the current lockfile, so no
+  live audit suppression for it is retained. The v0.1.0 record above is
+  historical provenance only. The remaining documented exception is
+  RUSTSEC-2023-0071 (`rsa` via the optional SSH stack; see
+  `docs/DEPENDENCY_POLICY.md`).

@@ -103,7 +103,7 @@ Run these only when their trigger condition applies:
 | Check | Trigger |
 |---|---|
 | `cargo deny check` | Dependency, feature, or license-policy changes; release preparation |
-| `cargo audit --ignore RUSTSEC-2025-0134 --ignore RUSTSEC-2023-0071` | Dependency changes; release preparation |
+| `cargo audit --ignore RUSTSEC-2023-0071` | Dependency changes; release preparation |
 | optional-compat compile gate above | SSH, QUIC/H3, SSR/`pproxy-legacy`, legacy-crypto, or daemon code paths |
 | pproxy differential/oracle suites | Compatibility behavior, manifests, URI translation, or pproxy namespace changes |
 | Shadowsocks external interoperability | Shadowsocks wire-format, cipher, or relay changes |

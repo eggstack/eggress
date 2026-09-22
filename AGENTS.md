@@ -36,7 +36,7 @@ cargo test --workspace --locked
 EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored --test-threads=1
 EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored --test-threads=1
 ```
-- Dependency changes / release prep only: `cargo deny check` and `cargo audit --ignore RUSTSEC-2025-0134 --ignore RUSTSEC-2023-0071`. Don't run audits, OS matrices, ignored interop, benches, soak, fuzz, or parity-report generation for unrelated changes.
+- Dependency changes / release prep only: `cargo deny check` and `cargo audit --ignore RUSTSEC-2023-0071`. Don't run audits, OS matrices, ignored interop, benches, soak, fuzz, or parity-report generation for unrelated changes.
 
 ## Invariants agents miss
 

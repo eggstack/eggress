@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION — 2026-09-22**
+**IMPLEMENTED — 2026-09-22**
 
 ## Baseline
 
@@ -130,10 +130,10 @@ Do not paste command transcripts or create a separate evidence file.
 
 ### Acceptance
 
-- [ ] Every checked corrective criterion is backed by identifiable evidence.
-- [ ] No criterion is checked merely because the plan status says `IMPLEMENTED`.
-- [ ] Exact-MSRV and dependency-policy/audit evidence is recorded compactly.
-- [ ] The corrective plan's status, acceptance boxes, and evidence note agree.
+- [x] Every checked corrective criterion is backed by identifiable evidence.
+- [x] No criterion is checked merely because the plan status says `IMPLEMENTED`.
+- [x] Exact-MSRV and dependency-policy/audit evidence is recorded compactly.
+- [x] The corrective plan's status, acceptance boxes, and evidence note agree.
 
 ---
 
@@ -186,11 +186,11 @@ The closure condition is that no **live** audit command or current suppression p
 
 ### Acceptance
 
-- [ ] No maintained/live cargo-audit command ignores `RUSTSEC-2025-0134`.
-- [ ] `RUSTSEC-2023-0071` remains the only documented cargo-audit ignore required by this cleanup.
-- [ ] `deny.toml` remains free of advisory ignores.
-- [ ] Historical provenance is not rewritten unnecessarily.
-- [ ] `cargo audit --ignore RUSTSEC-2023-0071` succeeds for the current lockfile.
+- [x] No maintained/live cargo-audit command ignores `RUSTSEC-2025-0134`.
+- [x] `RUSTSEC-2023-0071` remains the only documented cargo-audit ignore required by this cleanup.
+- [x] `deny.toml` remains free of advisory ignores.
+- [x] Historical provenance is not rewritten unnecessarily.
+- [x] `cargo audit --ignore RUSTSEC-2023-0071` succeeds for the current lockfile.
 
 ---
 
@@ -215,10 +215,10 @@ When Workstreams 1 and 2 pass:
 
 ### Acceptance
 
-- [ ] This plan, both parent plans, `plans/README.md`, and `docs/ROADMAP.md` agree on status.
-- [ ] No completed plan remains advertised as active.
-- [ ] No new completion document is created.
-- [ ] Runtime/API/capability scope remains untouched.
+- [x] This plan, both parent plans, `plans/README.md`, and `docs/ROADMAP.md` agree on status.
+- [x] No completed plan remains advertised as active.
+- [x] No new completion document is created.
+- [x] Runtime/API/capability scope remains untouched.
 
 ---
 
@@ -255,15 +255,15 @@ Hosted CI need not be rerun manually; the normal push-triggered workflows should
 
 This cleanup is complete only when:
 
-- [ ] the implemented corrective plan no longer contains unexplained unchecked acceptance criteria;
-- [ ] each reconciled checkbox is supported by concrete repository/CI/command evidence;
-- [ ] live audit guidance no longer suppresses `RUSTSEC-2025-0134`;
-- [ ] the current audit command suppresses only the separately documented `RUSTSEC-2023-0071` exception;
-- [ ] `cargo +1.89.0 check --workspace --locked` passes;
-- [ ] `cargo deny check` passes;
-- [ ] `cargo audit --ignore RUSTSEC-2023-0071` passes;
-- [ ] no dependency, runtime, API, feature, capability, parity, or compatibility claim changes;
-- [ ] planning state is internally consistent and this handoff is closed in place.
+- [x] the implemented corrective plan no longer contains unexplained unchecked acceptance criteria;
+- [x] each reconciled checkbox is supported by concrete repository/CI/command evidence;
+- [x] live audit guidance no longer suppresses `RUSTSEC-2025-0134`;
+- [x] the current audit command suppresses only the separately documented `RUSTSEC-2023-0071` exception;
+- [x] `cargo +1.89.0 check --workspace --locked` passes;
+- [x] `cargo deny check` passes;
+- [x] `cargo audit --ignore RUSTSEC-2023-0071` passes;
+- [x] no dependency, runtime, API, feature, capability, parity, or compatibility claim changes;
+- [x] planning state is internally consistent and this handoff is closed in place.
 
 ## Expected implementation footprint
 

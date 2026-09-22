@@ -230,20 +230,20 @@ The bounded corrective has landed as **IMPLEMENTED** in
 It preserved the implemented Outcome B ownership split without reopening
 protocol/API/capability scope. The Eggfetch runtime/dependency line is closed.
 
-### Active evidence/documentation handoff — Eggfetch 0.2 cleanup
+### Completed maintenance — Eggfetch 0.2 evidence/documentation cleanup
 
-A final documentation-only consistency pass is **READY FOR IMPLEMENTATION** in
+The final documentation-only consistency pass has landed as **IMPLEMENTED** in
 [`plans/EGGFETCH_0_2_EVIDENCE_DOCUMENTATION_CLEANUP.md`](../plans/EGGFETCH_0_2_EVIDENCE_DOCUMENTATION_CLEANUP.md).
 
-The pass is limited to reconciling the implemented corrective plan's acceptance
-checkboxes with real repository/CI/command evidence and removing stale live
-`RUSTSEC-2025-0134` cargo-audit ignores now that `rustls-pemfile` is absent
-from the lockfile. The separate `RUSTSEC-2023-0071` RSA exception remains
-outside this cleanup. Runtime, dependency, API, capability, parity, and
-compatibility behavior are fixed constraints.
+It reconciled the implemented corrective plan's acceptance checkboxes with real
+repository/CI/command evidence and removed stale live `RUSTSEC-2025-0134`
+cargo-audit ignores now that `rustls-pemfile` is absent from the lockfile. The
+separate `RUSTSEC-2023-0071` RSA exception remains outside this cleanup.
+Runtime, dependency, API, capability, parity, and compatibility behavior were
+fixed constraints. The Eggfetch runtime/dependency line remains closed.
 
 ## Next Phase
 
-Implement the registered Eggfetch evidence/documentation cleanup above.
+_No registered handoff._
 Compatibility claims remain governed by the active [compatibility matrix](parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
 and [capability manifest](parity/pproxy_capability_manifest.toml).

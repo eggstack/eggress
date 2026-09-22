@@ -4,6 +4,24 @@
 
 **IMPLEMENTED — 2026-09-22**
 
+## Implementation evidence — 2026-09-22 reconciliation
+
+Corrective implementation commit `cd18c19c391e72b93d994acf60298e872fce5f0c`:
+Workstream 1 uses `COMPAT_UNBOUNDED_REQUEST_HEAD = usize::MAX`
+(`crates/eggress-protocol-http/src/connect/client.rs:55`) with production
+`ConnectRequest` + `encode_connect_request()` (`:5`, `:146-148`) and
+`test_wire_large_credentials_above_64kib_preserved` (`:859`) plus retained
+target/auth/redaction coverage (`cargo test -p eggress-protocol-http --locked`
+passes, 175 tests). Response-parser Outcome B and `HttpConnectLimits` are
+unchanged; no public limit/config/API was added. Workstream 2 resolves
+`time 0.3.47` in root `Cargo.lock` (`fuzz/Cargo.lock` contains no `time`);
+`deny.toml` has `ignore = []` and no live `RUSTSEC-2026-0009` ignore remains.
+Hosted CI + Python smoke on `cd18c19` are both success. Local
+`cargo +1.89.0 check --workspace --locked` passes, `cargo deny check` passes
+(advisories/bans/licenses/sources ok), and
+`cargo audit --ignore RUSTSEC-2023-0071` passes (2 yanked warnings only;
+RSA exception retained, no `RUSTSEC-2025-0134` suppression).
+
 ## Baseline
 
 - Repository: `eggstack/eggress`
@@ -169,11 +187,11 @@ This corrective does not claim unlimited input is a desirable security policy. I
 
 ### Acceptance
 
-- [ ] No finite 64 KiB request-head compatibility limit remains in the outbound CONNECT adapter.
-- [ ] `eggfetch-http-connect` remains the sole production serializer for the migrated H1 CONNECT path.
-- [ ] A >64 KiB valid request regression succeeds.
-- [ ] Existing target/auth acceptance and redaction tests remain green.
-- [ ] No public limit/config/API is added.
+- [x] No finite 64 KiB request-head compatibility limit remains in the outbound CONNECT adapter.
+- [x] `eggfetch-http-connect` remains the sole production serializer for the migrated H1 CONNECT path.
+- [x] A >64 KiB valid request regression succeeds.
+- [x] Existing target/auth acceptance and redaction tests remain green.
+- [x] No public limit/config/API is added.
 
 ---
 
@@ -252,13 +270,13 @@ stop and document the resolver evidence. Do not trade one compatibility/security
 
 ### Acceptance
 
-- [ ] Root `Cargo.lock` resolves `time >=0.3.47`.
-- [ ] Any other committed lockfile containing vulnerable `time` is corrected.
-- [ ] `RUSTSEC-2026-0009` is absent from live audit ignore configuration.
-- [ ] Maintained audit commands no longer suppress RUSTSEC-2026-0009.
-- [ ] `cargo +1.89.0 check --workspace --locked` passes.
-- [ ] `cargo deny check` passes.
-- [ ] `cargo audit` passes except for independently documented, still-valid repository exceptions.
+- [x] Root `Cargo.lock` resolves `time >=0.3.47`.
+- [x] Any other committed lockfile containing vulnerable `time` is corrected.
+- [x] `RUSTSEC-2026-0009` is absent from live audit ignore configuration.
+- [x] Maintained audit commands no longer suppress RUSTSEC-2026-0009.
+- [x] `cargo +1.89.0 check --workspace --locked` passes.
+- [x] `cargo deny check` passes.
+- [x] `cargo audit` passes except for independently documented, still-valid repository exceptions.
 
 ---
 
@@ -279,10 +297,10 @@ stop and document the resolver evidence. Do not trade one compatibility/security
 
 ### Acceptance
 
-- [ ] `plans/README.md`, this plan, the parent plan, and `docs/ROADMAP.md` agree on status.
-- [ ] Exactly one active handoff is advertised during implementation: this corrective.
-- [ ] No completed plan is labeled ready/active.
-- [ ] Closure is recorded in place rather than through a new completion file.
+- [x] `plans/README.md`, this plan, the parent plan, and `docs/ROADMAP.md` agree on status.
+- [x] Exactly one active handoff is advertised during implementation: this corrective.
+- [x] No completed plan is labeled ready/active.
+- [x] Closure is recorded in place rather than through a new completion file.
 
 ---
 
@@ -332,16 +350,16 @@ Run an external compatibility suite only if implementation changes more than the
 
 This corrective line is complete only when:
 
-- [ ] valid outbound CONNECT requests are no longer newly rejected at 64 KiB;
-- [ ] the shared `eggfetch-http-connect` request serializer remains in place;
-- [ ] existing Eggress credential/target/error/redaction behavior remains unchanged;
-- [ ] response-parser Outcome B remains unchanged;
-- [ ] `time` resolves to a RUSTSEC-2026-0009-fixed version compatible with Rust 1.89;
-- [ ] the RUSTSEC-2026-0009 suppression is removed from live policy and documentation;
-- [ ] no unrelated dependency/API/capability changes were introduced;
-- [ ] focused, exact-MSRV, security, workspace, Clippy, format, and fuzz-compile gates pass;
-- [ ] hosted CI remains green;
-- [ ] planning/roadmap state is internally consistent and this corrective is closed in place.
+- [x] valid outbound CONNECT requests are no longer newly rejected at 64 KiB;
+- [x] the shared `eggfetch-http-connect` request serializer remains in place;
+- [x] existing Eggress credential/target/error/redaction behavior remains unchanged;
+- [x] response-parser Outcome B remains unchanged;
+- [x] `time` resolves to a RUSTSEC-2026-0009-fixed version compatible with Rust 1.89;
+- [x] the RUSTSEC-2026-0009 suppression is removed from live policy and documentation;
+- [x] no unrelated dependency/API/capability changes were introduced;
+- [x] focused, exact-MSRV, security, workspace, Clippy, format, and fuzz-compile gates pass;
+- [x] hosted CI remains green;
+- [x] planning/roadmap state is internally consistent and this corrective is closed in place.
 
 ## Expected implementation footprint
 
