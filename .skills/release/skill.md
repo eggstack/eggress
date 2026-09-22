@@ -81,8 +81,8 @@ The authoritative workflow is `.github/workflows/publish-python.yml`. It is
 release-only and bounded to ten `cp39-abi3` wheel families (Linux
 x86_64/aarch64/armv7l GNU + musllinux x86_64/aarch64/armv7l, macOS x86_64/arm64,
 Windows x86_64/ARM64) plus one sdist. GNU wheels use the manylinux floor
-declared per matrix entry (2014 for x86_64/aarch64, 2_31 for armv7l — never an
-invented armv7l manylinux2014 tag); musl wheels use `musllinux_1_2`. The
+declared per matrix entry (2014 for x86_64/aarch64, 2_28 for armv7l — never an
+invented armv7l manylinux2014 tag, and 2_31 has no maturin-action container); musl wheels use `musllinux_1_2`. The
 collector (`scripts/validate_release_artifacts.py`, `packaging`-based) fails
 on missing targets, duplicate targets, non-abi3 wheels, unapproved platforms,
 debug artifacts, or an unexpected sdist. Its installed-artifact smoke is

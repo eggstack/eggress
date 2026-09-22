@@ -12,7 +12,10 @@ x86_64/ARM64) plus one sdist, with a data-driven build matrix, a
 `tests/scripts/test_validate_release_artifacts.py`), native AArch64/Windows
 ARM64 smokes, musl/ARMv7 execution smokes, exhaustive 3.9–3.15 compat smoke
 (3.15 RC-qualified), pinned maturin (`v1.14.1`), and `--locked` release
-builds. Classifiers and install/bindings docs now state 3.9–3.15. Tier B
+builds. Release qualification picked GNU armv7l `manylinux_2_28` over `2_31`
+(maturin-action ships no armv7l container at `2_31`, so the job fell back to a
+host build where `ring` missed its cross-gcc); this is the plan's "oldest
+currently supported image that actually builds" clause. Classifiers and install/bindings docs now state 3.9–3.15. Tier B
 remains deferred per sequencing (each target still needs a build proof plus
 executable smoke before joining the required set); physical SBC
 target-class qualification is documented as a pending one-time procedure;

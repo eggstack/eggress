@@ -31,8 +31,12 @@ permissions:
 # Target conventions follow `maturin generate-ci` (maturin 1.14): short target
 # aliases (`x86_64`, `aarch64`, `armv7`, `x64`) with an explicit `manylinux`
 # policy per Linux entry. `musllinux_1_2` selects the musl wheel family.
-# GNU armv7l uses the newer `2_31` floor: PyPA never shipped an armv7l
-# manylinux2014 tag, so one must not be invented here.
+# GNU armv7l uses the `2_28` floor: PyPA never shipped an armv7l
+# manylinux2014 tag, so one must not be invented here, and maturin-action has
+# no container for armv7l at `2_31` (it falls back to a host build where
+# `ring` misses its cross-gcc). `2_28` is the newest floor with container
+# support (`ghcr.io/rust-cross/manylinux_2_28-cross:armv7`); the validator
+# accepts any real `manylinux_*_armv7l` floor.
 #
 # Tier B (i686/ppc64le/s390x/riscv64 GNU+musl) is deferred until Tier A is
 # green: each target still needs a PyPA-image build proof, a dependency-graph
@@ -125,7 +129,7 @@ jobs:
             family: linux-aarch64-gnu
           - os: ubuntu-latest
             target: armv7
-            manylinux: "2_31"
+            manylinux: "2_28"
             family: linux-armv7l-gnu
           - os: ubuntu-latest
             target: x86_64
