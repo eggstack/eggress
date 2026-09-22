@@ -190,8 +190,19 @@ under the parent
 Existing API surface and capability remain fixed constraints.
 The final evidence-state polish pass (acceptance-checkbox reconciliation plus a deterministic native-write semantic proof) is complete in [`plans/API_BOUNDARY_EVIDENCE_STATE_POLISH.md`](../plans/API_BOUNDARY_EVIDENCE_STATE_POLISH.md); it did not reopen runtime/API scope.
 
+### Active maintenance handoff — Eggfetch 0.2 HTTP CONNECT consolidation
+
+A narrow dependency/conformance migration is **READY FOR IMPLEMENTATION** in
+[`plans/EGGFETCH_0_2_HTTP_CONNECT_CONSOLIDATION.md`](../plans/EGGFETCH_0_2_HTTP_CONNECT_CONSOLIDATION.md).
+
+The authorized scope is intentionally small: adopt the published
+`eggfetch-http-connect 0.2.0` wire primitive for outbound HTTP/1 CONNECT
+authority/request ownership, and delegate response parsing only if the existing
+public `HttpConnectLimits` acceptance/error contract can be preserved exactly.
+The plan explicitly excludes `eggfetch-core`, preserves Eggress routing/TLS/
+chaining/status policy, and owns the required Rust 1.89 plus Base64 0.23
+dependency alignment.
+
 ## Next Phase
 
-See the active [compatibility matrix](parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
-for current claims and the [capability manifest](parity/pproxy_capability_manifest.toml)
-for detailed evidence.
+Implement the registered Eggfetch HTTP CONNECT consolidation handoff above. Compatibility claims remain governed by the active [compatibility matrix](parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md) and [capability manifest](parity/pproxy_capability_manifest.toml); this maintenance pass is not authorization to change those claims.
