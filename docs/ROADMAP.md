@@ -228,10 +228,22 @@ the pre-migration Eggress contract; the Rust-1.85-era
 The bounded corrective has landed as **IMPLEMENTED** in
 [`plans/EGGFETCH_0_2_CORRECTIVE_CLOSURE.md`](../plans/EGGFETCH_0_2_CORRECTIVE_CLOSURE.md).
 It preserved the implemented Outcome B ownership split without reopening
-protocol/API/capability scope. The Eggfetch line is closed.
+protocol/API/capability scope. The Eggfetch runtime/dependency line is closed.
+
+### Active evidence/documentation handoff — Eggfetch 0.2 cleanup
+
+A final documentation-only consistency pass is **READY FOR IMPLEMENTATION** in
+[`plans/EGGFETCH_0_2_EVIDENCE_DOCUMENTATION_CLEANUP.md`](../plans/EGGFETCH_0_2_EVIDENCE_DOCUMENTATION_CLEANUP.md).
+
+The pass is limited to reconciling the implemented corrective plan's acceptance
+checkboxes with real repository/CI/command evidence and removing stale live
+`RUSTSEC-2025-0134` cargo-audit ignores now that `rustls-pemfile` is absent
+from the lockfile. The separate `RUSTSEC-2023-0071` RSA exception remains
+outside this cleanup. Runtime, dependency, API, capability, parity, and
+compatibility behavior are fixed constraints.
 
 ## Next Phase
 
-No implementation handoff is currently registered. Compatibility
-claims remain governed by the active [compatibility matrix](parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
+Implement the registered Eggfetch evidence/documentation cleanup above.
+Compatibility claims remain governed by the active [compatibility matrix](parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
 and [capability manifest](parity/pproxy_capability_manifest.toml).
