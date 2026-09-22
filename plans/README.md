@@ -15,7 +15,9 @@
 
 ## Active registered handoff
 
-_No registered handoff._
+- [`DISTRIBUTION_AND_RELEASE_MAINTENANCE_ROADMAP.md`](DISTRIBUTION_AND_RELEASE_MAINTENANCE_ROADMAP.md) — **READY FOR IMPLEMENTATION**. Broadens PyPI wheel/platform coverage and ordinary CPython qualification through 3.15, including ARM/SBC targets, while simplifying the still-manual crates.io release path without changing runtime/API/capability surfaces.
+  - [`PYPI_WHEEL_MATRIX_EXPANSION.md`](PYPI_WHEEL_MATRIX_EXPANSION.md) — expand and qualify the wheel matrix, ARM/SBC coverage, and Python 3.9–3.15 stable-ABI support.
+  - [`MANUAL_CRATES_IO_PUBLISHING_SIMPLIFICATION.md`](MANUAL_CRATES_IO_PUBLISHING_SIMPLIFICATION.md) — replace hand-maintained publish tiers/fixed delays with Cargo workspace metadata/native publication or a resumable graph-derived local helper; crates.io remains manual.
 
 ## Recently completed
 
