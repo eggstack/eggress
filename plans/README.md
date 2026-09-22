@@ -15,7 +15,7 @@
 
 ## Active registered handoff
 
-None currently registered.
+- [`EGGFETCH_0_2_EVIDENCE_DOCUMENTATION_CLEANUP.md`](EGGFETCH_0_2_EVIDENCE_DOCUMENTATION_CLEANUP.md) — **READY FOR IMPLEMENTATION**. Reconcile the implemented Eggfetch corrective acceptance/evidence state and remove stale live `RUSTSEC-2025-0134` cargo-audit guidance without reopening runtime, dependency, API, capability, or parity scope.
 
 ## Recently completed
 
