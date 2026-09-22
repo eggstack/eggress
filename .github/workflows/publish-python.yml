@@ -363,18 +363,22 @@ jobs:
           echo "Smoke test passed"
 
   musl-smoke:
-    name: "musllinux smoke (${{ matrix.os }})"
+    # pip only accepts musllinux wheels on a musl userland, so these smokes
+    # run inside Alpine containers (native arch each: no QEMU needed).
+    name: "musllinux smoke (${{ matrix.arch }})"
     needs: collect-artifacts
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             arch: x86_64
+            platform: linux/amd64
           - os: ubuntu-24.04-arm
             arch: aarch64
+            platform: linux/arm64
     steps:
       - uses: actions/checkout@v4
 
@@ -383,36 +387,27 @@ jobs:
           name: release-artifacts
           path: dist/
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Find matching musl wheel
-        id: find-wheel
+      - name: Smoke musl wheel on Alpine
         shell: bash
         run: |
           set -euo pipefail
           WHEEL=$(ls dist/*musllinux*${{ matrix.arch }}*.whl | head -1)
           if [[ -z "${WHEEL}" ]]; then
-            echo "::error::No musllinux ${{ matrix.arch }} wheel found"
+            echo "No musllinux ${{ matrix.arch }} wheel found"
             ls dist/*.whl
             exit 1
           fi
-          echo "Found wheel: $(basename ${WHEEL})"
-          echo "wheel_path=${WHEEL}" >> "$GITHUB_OUTPUT"
-
-      - name: Install and smoke test
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m venv .venv-musl
-          .venv-musl/bin/python -m pip install --upgrade pip
-          .venv-musl/bin/python -m pip install "${{ steps.find-wheel.outputs.wheel_path }}"
-          .venv-musl/bin/python -m pip install --no-deps ./python-pproxy-compat
-          .venv-musl/bin/python scripts/release_artifact_smoke.py
-          echo "=== target evidence ==="
-          .venv-musl/bin/python -c "import platform, sys; print('machine:', platform.machine()); print(sys.version); print('libc:', platform.libc_ver())"
-          echo "wheel: ${{ steps.find-wheel.outputs.wheel_path }}"
+          echo "Smoking $(basename ${WHEEL}) on Alpine (${{ matrix.platform }})"
+          docker run --rm --platform ${{ matrix.platform }} \
+            -v "${PWD}:/io" -w /io python:3.12-alpine sh -c "
+            set -euo pipefail
+            python -m pip install --upgrade pip
+            python -m pip install '/io/${WHEEL}'
+            python -m pip install --no-deps /io/python-pproxy-compat
+            python -c 'import platform, sys; print(\"machine:\", platform.machine()); print(sys.version); print(\"libc:\", platform.libc_ver())'
+            echo 'wheel: ${WHEEL}'
+            python /io/scripts/release_artifact_smoke.py
+          "
           echo "musllinux ${{ matrix.arch }} smoke passed"
 
   armv7-smoke:
@@ -433,24 +428,49 @@ jobs:
         with:
           platforms: arm
 
-      - name: Smoke GNU + musl armv7 wheels under QEMU
+      - name: Smoke GNU armv7 wheel under QEMU
         shell: bash
         run: |
           set -euo pipefail
-          ls dist/*armv7l*.whl
-          for WHEEL in dist/*armv7l*.whl; do
-            echo "=== Smoking $(basename ${WHEEL}) ==="
-            docker run --rm --platform linux/arm/v7 \
-              -v "${PWD}:/io" -w /io python:3.12-slim bash -c "
-              set -euo pipefail
-              python -m pip install --upgrade pip
-              python -m pip install '/io/${WHEEL}'
-              python -m pip install --no-deps /io/python-pproxy-compat
-              python -c 'import platform, sys; print(\"machine:\", platform.machine()); print(sys.version); print(\"libc:\", platform.libc_ver())'
-              echo 'wheel: ${WHEEL}'
-              python /io/scripts/release_artifact_smoke.py
-            "
-          done
+          WHEEL=$(ls dist/*manylinux*armv7l*.whl | head -1)
+          if [[ -z "${WHEEL}" ]]; then
+            echo "No GNU armv7l wheel found"
+            ls dist/*.whl
+            exit 1
+          fi
+          echo "=== Smoking $(basename ${WHEEL}) (glibc) ==="
+          docker run --rm --platform linux/arm/v7 \
+            -v "${PWD}:/io" -w /io python:3.12-slim bash -c "
+            set -euo pipefail
+            python -m pip install --upgrade pip
+            python -m pip install '/io/${WHEEL}'
+            python -m pip install --no-deps /io/python-pproxy-compat
+            python -c 'import platform, sys; print(\"machine:\", platform.machine()); print(sys.version); print(\"libc:\", platform.libc_ver())'
+            echo 'wheel: ${WHEEL}'
+            python /io/scripts/release_artifact_smoke.py
+          "
+
+      - name: Smoke musl armv7 wheel under QEMU
+        shell: bash
+        run: |
+          set -euo pipefail
+          WHEEL=$(ls dist/*musllinux*armv7l*.whl | head -1)
+          if [[ -z "${WHEEL}" ]]; then
+            echo "No musllinux armv7l wheel found"
+            ls dist/*.whl
+            exit 1
+          fi
+          echo "=== Smoking $(basename ${WHEEL}) (musl) ==="
+          docker run --rm --platform linux/arm/v7 \
+            -v "${PWD}:/io" -w /io python:3.12-alpine sh -c "
+            set -euo pipefail
+            python -m pip install --upgrade pip
+            python -m pip install '/io/${WHEEL}'
+            python -m pip install --no-deps /io/python-pproxy-compat
+            python -c 'import platform, sys; print(\"machine:\", platform.machine()); print(sys.version); print(\"libc:\", platform.libc_ver())'
+            echo 'wheel: ${WHEEL}'
+            python /io/scripts/release_artifact_smoke.py
+          "
           echo "ARMv7 smoke passed"
 
   compat-smoke:
