@@ -217,22 +217,21 @@ matrix](parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md) and [capability
 manifest](parity/pproxy_capability_manifest.toml); this pass changed no
 claims.
 
-### Active corrective handoff — Eggfetch 0.2 closure
+### Completed maintenance — Eggfetch 0.2 closure
 
 Post-implementation review found three narrow residuals: the shared request
-serializer was given a new 64 KiB request-head cap that did not exist in the
-pre-migration Eggress contract; the Rust-1.85-era
-`RUSTSEC-2026-0009`/`time` exception is now removable under MSRV 1.89; and
+serializer had been given a new 64 KiB request-head cap that did not exist in
+the pre-migration Eggress contract; the Rust-1.85-era
+`RUSTSEC-2026-0009`/`time` exception was removable under MSRV 1.89; and
 `plans/README.md` retained stale active-parent bookkeeping.
 
-The bounded corrective is **READY FOR IMPLEMENTATION** in
+The bounded corrective has landed as **IMPLEMENTED** in
 [`plans/EGGFETCH_0_2_CORRECTIVE_CLOSURE.md`](../plans/EGGFETCH_0_2_CORRECTIVE_CLOSURE.md).
-It must preserve the implemented Outcome B ownership split and may not reopen
-protocol/API/capability scope.
+It preserved the implemented Outcome B ownership split without reopening
+protocol/API/capability scope. The Eggfetch line is closed.
 
 ## Next Phase
 
-Implement the registered Eggfetch corrective closure above. Compatibility
+No implementation handoff is currently registered. Compatibility
 claims remain governed by the active [compatibility matrix](parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
-and [capability manifest](parity/pproxy_capability_manifest.toml); the
-corrective is not authorization to change those claims.
+and [capability manifest](parity/pproxy_capability_manifest.toml).

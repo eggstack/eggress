@@ -50,7 +50,8 @@ any wire bytes) so the request line and `Host` agree. Domains/IPv4 render
 as `host:port`; IPv6 renders bracketed as `[addr]:port`. Outbound request
 framing is owned by `encode_connect_request()` (request line, generated
 `Host`, `Proxy-Authorization` placement, CRLF framing, unsafe-header
-rejection; 64 KiB compatibility-preserving head bound). Credential
+rejection; compatibility-unbounded head bound preserving the pre-migration
+absence of an adapter-imposed size cap). Credential
 acceptance stays an Eggress contract: `validate_credentials()` permits
 `:` in usernames (the upstream `basic_auth_value()` helper rejects them),
 so the `Basic` value is encoded locally with the established
@@ -198,8 +199,8 @@ at `idle_timeout / 2`.
   helpers, target adapter unit tests (IPv4/IPv6/domain authority via
   `ConnectTarget`, injection rejection), wire tests (request-line/Host
   agreement, bracketed IPv6, non-default ports, auth header, colon-bearing
-  and empty and non-ASCII credentials preserved, pre-write credential
-  rejection, secret redaction), status tests (200/201/204 success,
+  and empty and non-ASCII and large >64 KiB credentials preserved,
+  pre-write credential rejection, secret redaction), status tests (200/201/204 success,
   403/407/502/504/arbitrary mappings, malformed/truncated/overlong/
   total-limit, exact-100 vs 101 header counts, non-UTF-8 header acceptance,
   pipelined read-ahead), Outcome B pins (colon-less header line accepted,

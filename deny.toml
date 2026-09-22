@@ -2,12 +2,7 @@
 targets = []
 
 [advisories]
-ignore = [
-    # `time` is pulled only by the rcgen test-certificate dependency. The
-    # fixed release requires Rust 1.88, within this workspace's MSRV 1.89;
-    # keep the exception scoped and revisit it when the dependency can move.
-    "RUSTSEC-2026-0009",
-]
+ignore = []
 
 # `rustls-pemfile` (RUSTSEC-2025-0134) was replaced by `rustls-pki-types` PEM
 # APIs (`CertificateDer::pem_slice_iter`, `PrivatePkcs8KeyDer::from_pem_slice`)

@@ -15,12 +15,9 @@
 
 ## Active registered handoff
 
-- [`EGGFETCH_0_2_CORRECTIVE_CLOSURE.md`](EGGFETCH_0_2_CORRECTIVE_CLOSURE.md) — **READY FOR IMPLEMENTATION**. Restore pre-migration outbound CONNECT request-size compatibility, remove the now-obsolete `RUSTSEC-2026-0009` exception under MSRV 1.89, and reconcile planning state without reopening the implemented Outcome B architecture.
+None currently registered.
 
-## Recently completed parent
+## Recently completed
 
+- [`EGGFETCH_0_2_CORRECTIVE_CLOSURE.md`](EGGFETCH_0_2_CORRECTIVE_CLOSURE.md) — **IMPLEMENTED**. Restored pre-migration outbound CONNECT request-size compatibility, removed the obsolete `RUSTSEC-2026-0009` exception under MSRV 1.89, and reconciled planning state without reopening the implemented Outcome B architecture.
 - [`EGGFETCH_0_2_HTTP_CONNECT_CONSOLIDATION.md`](EGGFETCH_0_2_HTTP_CONNECT_CONSOLIDATION.md) — **IMPLEMENTED — response-parser Outcome B**. `eggfetch-http-connect 0.2.0` owns outbound H1 CONNECT authority/request framing; Eggress intentionally retains its public-limit-compatible response parser.
-
-When the active corrective lands, mark it implemented in place, remove it from
-the active subsection, and update the canonical roadmap. Do not create a second
-completion document.

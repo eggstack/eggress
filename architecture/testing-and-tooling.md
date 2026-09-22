@@ -189,7 +189,7 @@ cargo check --manifest-path fuzz/Cargo.toml --bins
 
 # Dependency/advisory checks (dependency changes, release prep)
 cargo deny check
-cargo audit --ignore RUSTSEC-2025-0134 --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0009
+cargo audit --ignore RUSTSEC-2025-0134 --ignore RUSTSEC-2023-0071
 
 # External compatibility (opt-in, installs pproxy==2.7.9)
 EGRESS_REQUIRE_EXTERNAL_INTEROP=1 \

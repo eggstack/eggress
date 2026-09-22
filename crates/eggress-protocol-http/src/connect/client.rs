@@ -41,18 +41,18 @@ pub fn validate_credentials(value: &str) -> Result<(), HttpError> {
     Ok(())
 }
 
-/// Bound for the serialized outbound CONNECT request head.
+/// Compatibility-unbounded bound for the serialized outbound CONNECT request head.
 ///
 /// Eggress historically had no independently documented outbound
 /// request-head-size limit: the URI/config layers place no length bound on
 /// hosts or credentials, and the previous local builder grew a `Vec`
 /// without a cap. `encode_connect_request()` requires a caller-provided
-/// bound, so this migration uses a compatibility-preserving 64 KiB value
-/// (matching the upstream doc-example scale): orders of magnitude above any
-/// realistic CONNECT request (typically under 1 KiB, including long
-/// credentials), while keeping a hostile config-derived input from forcing
-/// an unbounded allocation before the first write.
-const MAX_CONNECT_REQUEST_HEAD: usize = 64 * 1024;
+/// bound, so this adapter passes `usize::MAX` to preserve the pre-migration
+/// contract: valid credentials/targets must not be newly rejected at an
+/// adapter-imposed size. A true request-size hardening policy, if desired,
+/// must be designed separately at the input/config layer before credential
+/// and authority allocations occur.
+const COMPAT_UNBOUNDED_REQUEST_HEAD: usize = usize::MAX;
 
 /// Build the validated outbound CONNECT target.
 ///
@@ -98,10 +98,12 @@ fn connect_target(target: &TargetAddr) -> Result<ConnectTarget, HttpError> {
 ///
 /// Upstream diagnostics never echo credentials or unbounded proxy bytes;
 /// the mapping additionally collapses every variant to a fixed,
-/// non-leaking Eggress error. The request path only exercises the target,
-/// credential, and head-size arms: no extra headers are supplied and no
-/// I/O or response parsing happens here, so the catch-all covers
-/// construction states that cannot arise from the inputs above.
+/// non-leaking Eggress error. The request path only exercises the target
+/// and credential arms under the compatibility-unbounded head bound: no
+/// extra headers are supplied and no I/O or response parsing happens here,
+/// so the head-size arm is retained only as a fixed mapping and the
+/// catch-all covers construction states that cannot arise from the inputs
+/// above.
 fn map_connect_error(error: ConnectError) -> HttpError {
     match error {
         ConnectError::InvalidTarget => {
@@ -141,7 +143,7 @@ fn build_connect_request(
         target,
         proxy_authorization: auth_value.as_deref(),
         extra_headers: &[],
-        max_head_bytes: MAX_CONNECT_REQUEST_HEAD,
+        max_head_bytes: COMPAT_UNBOUNDED_REQUEST_HEAD,
     };
     encode_connect_request(&request).map_err(map_connect_error)
 }
@@ -653,7 +655,10 @@ mod tests {
                 if req.len() >= 4 && &req[req.len() - 4..] == b"\r\n\r\n" {
                     break;
                 }
-                if req.len() > 65536 {
+                // Test-harness bound only: the production adapter is
+                // compatibility-unbounded, so allow heads well above the
+                // former 64 KiB cap (the >64 KiB regression is ~96 KiB).
+                if req.len() > 2 * 1024 * 1024 {
                     break;
                 }
             }
@@ -846,6 +851,39 @@ mod tests {
         let expected = base64::engine::general_purpose::STANDARD.encode("user:name:pass");
         let text = String::from_utf8(req).unwrap();
         assert!(text.contains(&format!("Proxy-Authorization: Basic {}", expected)));
+        assert!(text.starts_with("CONNECT example.com:80 HTTP/1.1\r\n"));
+        assert!(text.contains("\r\nHost: example.com:80\r\n"));
+    }
+
+    #[tokio::test]
+    async fn test_wire_large_credentials_above_64kib_preserved() {
+        // Corrective regression: the pre-migration builder had no
+        // request-head cap, so a valid >64 KiB CONNECT head must succeed.
+        // A 72 KiB password serializes to ~96 KiB on the wire and would
+        // have failed under the removed 64 KiB adapter bound.
+        use base64::Engine;
+        let large_password = "a".repeat(72 * 1024);
+        let target = TargetAddr {
+            host: TargetHost::Domain("example.com".into()),
+            port: 80,
+        };
+        let (result, req) = canned_exchange(
+            target,
+            Some(("user", large_password.as_str())),
+            HttpConnectLimits::default(),
+            b"HTTP/1.1 200 OK\r\n\r\n".to_vec(),
+        )
+        .await;
+        assert!(result.is_ok(), "large valid head must not be rejected");
+        assert!(
+            req.len() > 64 * 1024,
+            "regression must actually exceed 64 KiB, got {}",
+            req.len()
+        );
+        let expected =
+            base64::engine::general_purpose::STANDARD.encode(format!("user:{large_password}"));
+        let text = String::from_utf8(req).unwrap();
+        assert!(text.contains(&format!("Proxy-Authorization: Basic {expected}")));
         assert!(text.starts_with("CONNECT example.com:80 HTTP/1.1\r\n"));
         assert!(text.contains("\r\nHost: example.com:80\r\n"));
     }
