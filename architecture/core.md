@@ -122,9 +122,9 @@ direct connector with DNS-rebinding protection, and the multi-hop
 
 - `classify_upstream_chain(chain: &ProxyChainSpec) -> UpstreamCapabilities`
 - `UpstreamCapabilities`: tcp_connect + udp_associate, each a `CapabilityResult` (Supported / UnsupportedProtocol{protocol} / UnsupportedChain{reason})
-- Single-hop rules: HTTP/Socks4/Trojan/H2/H3/WebSocket/Raw/Ssh/Unix = TCP only; Socks5/Shadowsocks = TCP + UDP; SSR = TCP only; QUIC alone = no TCP
+- Single-hop rules: HTTP/Socks4/Trojan/H2/H3/WebSocket/Raw/Ssh/Unix = TCP only; Socks5/Shadowsocks = TCP + UDP; SSR = TCP only; QUIC alone = no TCP. (Raw/Ssh/Unix share one match arm, and their UDP-unsupported verdict is always labeled with the shared `"Raw"` reason label (`capability.rs:181-186`).
 - Multi-hop: TCP supported; UDP supported only when every hop is single-protocol Socks5 or Shadowsocks
-- QUIC at first hop: TCP supported, UDP unsupported ("QUIC UDP stream mapping")
+- QUIC at first hop: TCP supported, UDP unsupported. The multi-hop first-hop-QUIC reason is `"QUIC UDP stream mapping is only supported at the first hop"`; the shorter `"QUIC UDP stream mapping"` string is only the single-hop stacked case (`capability.rs:73-78` vs `:90-97`)
 - Zero hops (direct): both unsupported ("direct")
 
 ## How it works (control flow)
@@ -156,7 +156,7 @@ direct connector with DNS-rebinding protection, and the multi-hop
 
 - DNS-rebinding protection: `is_reserved_or_private_ip` covers all RFC-reserved ranges; IPv4-mapped IPv6 addresses are converted to v4 before checking
 - `ConnectOptions::enforce_dns_rebinding_check` is enabled by default (default true) -- callers must explicitly disable it to skip the check
-- `CredentialSpec::Debug` and `RedactedUri::Display` never emit plaintext passwords
+- `eggress-uri`'s `CredentialSpec::Debug` and `RedactedUri::Display` never emit plaintext passwords (core only consumes these types; they are defined in `eggress-uri`)
 - `ClientIdentity::Debug` does not redact (identities are not secrets)
 
 ## Concurrency & lifecycle

@@ -10,12 +10,13 @@ proxy-usable HTTP from other protocols by method/response shape.
 | File | Role | Key lines |
 |---|---|---|
 | `connect/server.rs` | `handle_connect`: bounded CONNECT head, Basic auth constant-time compare, 200/407 | `MAX_HEAD_SIZE` (:10), `MAX_HEADER_LINES` (:13), `handle_connect` (:35), `parse_authority` (:177), `parse_basic_auth` (:259) |
-| `connect/client.rs` | `http_connect`: authority-form CONNECT, byte-preserving reply parse; `validate_credentials` rejects control chars | `HttpConnectLimits`, `validate_credentials`, `authority_form`, `build_connect_request`, `http_connect`, `read_response_status`, `parse_status_code` (compat helper) |
+| `connect/client.rs` | `http_connect`: authority-form CONNECT, byte-preserving reply parse; `validate_credentials` rejects control chars | `HttpConnectLimits`, `validate_credentials`, `http_connect`, `parse_status_code` (compat helper); private helpers (not re-exported): `authority_form`, `build_connect_request`, `read_response_status` |
 | `forward/server.rs` | Absolute-to-origin form, hop-by-hop filter, body framing, chunk caps, informational bound | `BodyCopyLimits` (:7), `determine_request_body_kind` (:269), `filter_hop_by_hop` (:398), `forward_response` (:647), `parse_header_line` (:1085) |
 | `h2_connect.rs` | H2 CONNECT client/server/relay; `H2ConnectionPool`/`H2PoolRegistry` keyed by endpoint + SHA-256 cred hash; `H2_PROTOCOL_METRICS` | `h2_connect_relay` (:168), `H2PoolKey` (:441), `H2ConnectionPool` (:550) |
 | `detect.rs` | `HttpDetector`: confidence 100 for methods, 95 for responses | `HttpDetector` (:7), `HTTP_METHODS` (:9) |
 | `error.rs` | `HttpError` with `status_code()` mapping | `HttpError` (:3), `status_code` (:82) |
 | `connect/test_server.rs` | Synthetic CONNECT proxy (Success/AuthRequired/Forbidden/MalformedStatus/SlowResponse/HeadersTooLarge) | `ProxyMode` (:7) |
+| `connect/mod.rs`, `forward/mod.rs` | Re-export shims for the `connect` / `forward` submodules | — |
 
 ## Public API surface
 

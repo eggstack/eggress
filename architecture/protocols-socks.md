@@ -10,6 +10,10 @@ version sniffers.
 | File | Role | Key lines |
 |---|---|---|
 | `detector.rs` | `Socks4Detector`: version byte 0x04, confidence 100 | `Socks4Detector` (:10) |
+| `socks4/mod.rs` | Submodule root; defines `MAX_USER_ID_LEN` | `MAX_USER_ID_LEN` (:9) |
+| `socks4/error.rs` | `Socks4Error` taxonomy | `Socks4Error` |
+| `socks4/test_server.rs` | Test-only synthetic SOCKS4 server | — |
+| `socks5/mod.rs` | Submodule root for the SOCKS5 implementation | — |
 | `lib.rs` | `Socks5Detector`: version byte 0x05, confidence 100; re-exports | `Socks5Detector` (:21) |
 | `socks4/server.rs` | `read_socks4_request` / `write_socks4_reply`; 4a domain when IP=`0.0.0.x`(x!=0); USERID<=255; BIND rejected | `MAX_USER_ID_LEN` (`socks4/mod.rs:9`), `read_socks4_request` (:52), `write_socks4_reply` (:143) |
 | `socks4/client.rs` | `socks4_connect`: IP->SOCKS4, domain->SOCKS4a (IP=0.0.0.1); IPv6 rejected | `socks4_connect` (:16) |
@@ -188,7 +192,7 @@ never downgrades password-required to no-auth (:server.rs:285-288).
    when last octet is non-zero (:server.rs:95). IP=0.0.0.0 is normal
    (invalid) IPv4.
 5. **Domain encode checks byte length, not char length**: `encode_reply`
-   (:server.rs:97) compares `domain.len()` (UTF-8 bytes) against 255.
+   (`socks5/server.rs:87`, domain check at `:95`) compares `domain.len()` (UTF-8 bytes) against 255.
    Multi-byte chars can cause a visually-short domain to exceed the limit.
 6. **Sync vs async parse**: `parse_method_negotiation` and
    `parse_connect_request` are sync (`&[u8]` -> `Result`) for fuzzing.

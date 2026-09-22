@@ -9,7 +9,7 @@ compatible adapters (raw and SOCKS5-framed backward channels).
 
 | File | Role |
 |---|---|
-| `src/lib.rs` | Native auth handshake: `write_auth` sends `user:pass\n`, `read_handshake` reads 1-byte verdict (0x01 accept / 0x00 reject), `server_auth_handshake` orchestrates full server-side flow, `redact_auth` for logs, `ControlState` enum, half-close-preserving `relay_bidirectional_with_timeout` + `relay_bidirectional_boxed` (BoxStream for TLS), auth payload cap 4096 bytes, 100 ms delay on auth failure. Auth/handshake are generic over `AsyncRead+AsyncWrite` so plaintext TCP and TLS share framing |
+| `src/lib.rs` | Native auth handshake: `write_auth` sends `user:pass\n`, `read_handshake` reads 1-byte verdict (0x01 accept / 0x00 reject), `server_auth_handshake` orchestrates full server-side flow, `redact_auth` for logs, `ControlState` enum, half-close-preserving `relay_bidirectional_with_timeout` + `relay_bidirectional_boxed` (BoxStream for TLS), auth payload cap 4096 bytes (`MAX_AUTH_BYTES`, `lib.rs:132`). The 100 ms auth-failure delay (`AUTH_FAILURE_DELAY`) lives in `server.rs:13` (enacted at `server.rs:536`). Auth/handshake are generic over `AsyncRead+AsyncWrite` so plaintext TCP and TLS share framing |
 | `src/tls.rs` | `ReverseServerTlsConfig` / `ReverseClientTlsConfig`: PEM validation, `build_server_config` / `build_client_config` via `eggress-transport-tls`, redacted `Debug`, zeroizing `Drop` |
 | `src/server.rs` | `ReverseServer`: control listener pools authenticated channels via `mpsc`; external connections pop a channel and relay. `ReverseServerConfig::validate()` enforces defense-in-depth: non-loopback external bind requires BOTH auth credentials AND non-empty `allow_bind` allowlist. `ReverseServerState` atomic counters for admin hooks. Optional `tls` wraps control TCP with `tls_accept` before auth; external relay stays plaintext TCP via `relay_bidirectional_boxed` |
 | `src/client.rs` | `ReverseClient`: connect, TLS (`tls_connect` with reused `Arc<ClientConfig>` + SNI) before auth, resolve target via `TargetResolver` trait, relay via `relay_bidirectional_boxed`, reconnect. Backoff: 1 s initial, doubling, 30 s cap. `DefaultTargetResolver` returns configured host/port or rejects |
@@ -25,7 +25,7 @@ compatible adapters (raw and SOCKS5-framed backward channels).
 | `HANDSHAKE_ACCEPT` | const | `0x01` |
 | `HANDSHAKE_REJECT` | const | `0x00` |
 | `ControlState` | enum | `Disconnected`, `Connecting`, `Authenticating`, `Ready`, `Draining`, `Closed` |
-| `ProtocolError` | enum | `AuthFailed`, `AuthRequired`, `ConnectionClosed`, `BindDenied(SocketAddr)`, `ConfigInvalid(String)`, `Io(io::Error)` |
+| `ProtocolError` | enum | `AuthFailed`, `AuthRequired`, `ConnectionClosed`, `BindDenied(SocketAddr)`, `ConfigInvalid(String)`, `Tls(String)`, `Io(io::Error)` |
 | `write_auth(stream, user, pass)` | async fn | Writes `user:pass\n` to TCP stream |
 | `read_handshake(stream)` | async fn | Reads 1 byte; returns `AuthFailed` if reject |
 | `write_handshake_accept(stream)` | async fn | Sends `0x01` |
@@ -167,12 +167,12 @@ The pproxy compat adapter does NOT send or read the 0x01/0x00 accept/reject byte
 | `reconnect_max_ms` | 30000 | Ceiling for exponential backoff |
 | Backoff formula | `min(initial * 2^n, max)` | Doubles each failure, resets on success |
 | Target connect timeout | 10000 ms | Per `target_connect_timeout_ms` |
-| Drain grace | 50 ms (hardcoded in `run`) | After cancel, before returning |
+| Drain grace | Config default `drain_grace_ms` 5000 ms (`client.rs:81`); plus a separate hardcoded 50 ms sleep in `run` (`client.rs:240`) | After cancel, before returning |
 
 ## Security notes
 
 - **Plaintext auth without TLS.** Credentials cross the wire as `user:pass\n` with no challenge. Captured handshakes are replayable. Prefer `[[reverse_servers.tls]]` / `[[reverse_clients.tls]]` (server-authenticated TLS, optional mTLS) when control traffic leaves a trusted network; see `docs/CONFIG_REFERENCE.md`.
-- **TLS uses shared infrastructure.** `src/tls.rs` builds via `eggress-transport-tls` builders (no reverse-specific crypto). Server `require_client_cert` without `client_ca` fails at validation/build; client cert without key fails; missing/invalid `server_name` fails; malformed PEM fails at config compile. `pproxy_compat` + TLS is rejected (wire must stay byte-compatible plaintext).
+- **TLS uses shared infrastructure.** `src/tls.rs` builds via `eggress-transport-tls` builders (no reverse-specific crypto). Server `require_client_cert` without `client_ca` fails at validation/build; client cert without key fails; missing/invalid `server_name` fails; malformed PEM fails at config compile. `pproxy_compat` + TLS is rejected at config compilation (wire must stay byte-compatible plaintext; enforced in `eggress-config`, `compile/reverse.rs:63-66,233-236`).
 - **Constant-time comparison.** `server_auth_handshake` uses `subtle::ConstantTimeEq` for credential validation.
 - **Auth failure delay.** 100 ms sleep (`AUTH_FAILURE_DELAY` at `server.rs:13`) after failed auth to slow brute-force attempts.
 - **Auth payload cap.** 4096 bytes maximum (`MAX_AUTH_BYTES` at `lib.rs:132`). Prevents unbounded memory growth from malicious clients.

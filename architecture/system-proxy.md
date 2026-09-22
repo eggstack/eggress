@@ -10,7 +10,7 @@ shell-style strings, preserving names with spaces.
 
 | File | Role |
 |------|------|
-| `src/lib.rs` | Crate root; re-exports (`plan_apply`, `apply_*`, `AppliedProxy`, `ApplyPlan`, `Command`, `CompatibilityProxyKind`, `RollbackState`) |
+| `src/lib.rs` | Crate root; re-exports (`plan_apply`, `apply_*`, `AppliedProxy`, `ApplyPlan`, `Command`, `CompatibilityProxyKind`, `RollbackState`, plus capability/command-runner/inspection re-exports: `check_system_proxy_capability`, `system_proxy_platform_info`, `SystemProxyCapabilityReport`, `SystemProxyStatus`, `CommandRunner`, `MockCommandRunner`, `RealCommandRunner`, `inspect_system_proxy`, `InspectionResult`, `SystemProxySettings` — see `lib.rs:8-17`) |
 | `src/apply.rs` | `plan_apply()` (dry-run), `ApplyPlan`, `apply_compatibility_proxy[_with_runner]()`, `AppliedProxy` (RAII rollback), `RollbackState`, `Command`, `CompatibilityProxyKind`; `create_rollback` / `execute_apply` / `generate_revert_commands` are `pub` in `apply.rs` but NOT re-exported at crate root (refer to them as `apply::…`) |
 | `src/capability.rs` | `SystemProxyCapability` (9 variants), `SystemProxyStatus`, `check_system_proxy_capability[_with_overrides]()`, `system_proxy_platform_info()` |
 | `src/backends/mod.rs` | Backend module declarations |

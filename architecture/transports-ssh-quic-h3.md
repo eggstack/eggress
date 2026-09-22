@@ -29,7 +29,7 @@ Single-file crate. All types and logic live in `src/lib.rs`.
 | `::open_unix_channel()` | :299 | Unix domain socket channel; validates non-empty path |
 | `::start_remote_tcp_forward()` | :323 | Server-side TCP forwarding (pproxy compat) |
 | `::shutdown()` / `::invalidate(key)` | :410/:415 | Bulk clear / single session eviction |
-| `SshAuth` | :44 | `Password(String)` or `PrivateKey(String)` — debug redacts both |
+| `SshAuth` | :44 | `Password(String)` or `PrivateKey(String)` — the latter is a filesystem *path* loaded via `russh::keys::load_secret_key`; debug redacts both |
 | `SshHostKeyPolicy` | :114 | `KnownHosts` / `KnownHostsFile(PathBuf)` / `InsecureCompatibility` |
 | `SshSessionKey` | :60 | Cache key: `host`, `port`, `username`, `auth`, `hop_index` |
 | `SshRemoteForward` | :203 | Session handle + `mpsc::Receiver` for forwarded channels |
@@ -85,6 +85,8 @@ Quinn types upward.
 | `QuicClient::connect(host, port, config)` | :222 | DNS resolve, bind ephemeral UDP, TLS setup |
 | `QuicClient::open_stream()` | :302 | Bi-stream; reconnects once on dead cached connection |
 | `QuicClient::get_connection()` | :315 | Cached `QuicConnection` for H3 integration |
+| `QuicClient::reset_connection()` | :323 | Drop the cached connection; the H3 retry path calls this |
+| `QuicClient::local_addr()` | :348 | Local UDP socket address of the endpoint |
 | `QuicClient::close()` | :328 | Stop endpoint and all connections |
 | `QuicListener::bind(addr, config)` | :340 | Bind UDP with TLS certificate material |
 | `QuicListener::run(cancel, handler)` | :355 | Accept loop: each bi-stream dispatched independently |
@@ -170,8 +172,8 @@ HTTP/3 CONNECT protocol layer over the QUIC transport.
 ## Review entry points
 
 - SSH: `cargo test -p eggress-transport-ssh --test openssh`
-- QUIC: `cargo test -p eggress-transport-quic`
-- H3: `cargo test -p eggress-protocol-h3`
+- QUIC: `cargo test -p eggress-transport-quic --features insecure-quic` (round-trip tests are `#[cfg(all(test, feature = "insecure-quic"))]`; plain `cargo test` runs unit/config tests only)
+- H3: `cargo test -p eggress-protocol-h3 --features insecure-quic` (same gating as QUIC)
 
 The public embed boundary has a separate required runtime gate because its
 regression is ownership of the listener-free `OutboundConnector` executor:

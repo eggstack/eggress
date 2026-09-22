@@ -9,7 +9,7 @@ swap.
 
 | File | Role |
 |---|---|
-| `src/lib.rs` | Public facade/re-exports only (no matching/selection logic) |
+| `src/lib.rs` | Public facade/re-exports only (no matching/selection logic); plus the crate's main test module (`mod tests`) |
 | `src/model.rs` | IDs, request/result/action types: `TransportKind`, `UpstreamGroupId`, `RuleId`, `RouteActionSpec`, `RouteRequest`, `RouteDecision`, `SelectedRoute` + `SelectionReason`, `RouteError`, `RouteService` trait, explanation DTOs |
 | `src/matcher.rs` | `MatchExpr` (17 variants: 4 composites + 13 concrete), `PortMatcher` (`new_range`/`new_set`), `normalize_host_for_exact`, suffix/host helpers; matching semantics preserved exactly |
 | `src/rule.rs` | `CompiledRule` (id + matcher + action) |

@@ -134,7 +134,7 @@ Resolution rules:
 | false | Present + enabled=true | **Rejected** (conflict) |
 | false | Present + enabled=false | Uses disabled udp config |
 
-### UDP transport validation (`validate/upstreams.rs:validate_upstream_transport`)
+### UDP transport validation (`validate/upstreams.rs::validate_upstream_transport`, `pub(crate)`)
 
 When any listener has UDP enabled:
 - Upstream chains are checked via `classify_upstream_chain()`
@@ -172,8 +172,8 @@ Non-fatal warnings emitted during `validate_config_security()`:
 
 ## Configuration/features
 
-- `toml` for parsing; `regex` for host/port regex compilation; `ipnet` for CIDR; `zeroize` for secret hygiene; `rcgen`/`tempfile` dev-only
-- Feature: `quic` (optional H3/QUIC listener support)
+- `toml` for parsing; `regex` for host/port regex compilation; `ipnet` for CIDR; `zeroize` for secret hygiene; `rcgen`/`tempfile` dev-only. Internal deps: `eggress-core`, `eggress-udp`, `eggress-uri`, `eggress-routing`, `eggress-transport-tls`, plus `rustls`
+- Features: `default = []` (empty); `quic` (optional H3/QUIC listener support)
 - Duration parsing: `ns`, `us`/`μs`, `ms`, `s`, `m`, `h`, `d` -- with overflow checking via `checked_mul`
 - File size limit: 1 MB (`MAX_CONFIG_SIZE`) with TOCTOU guard (read one extra byte after stat)
 - No `unsafe` code

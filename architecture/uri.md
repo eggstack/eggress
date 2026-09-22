@@ -161,10 +161,10 @@ Error messages include hop context (e.g. `"hop 1: missing scheme"`).
 
 ## How it works (control flow)
 
-1. `parse_proxy_chain(uri)` calls `split_hops()` — any `_` run >= 3 check plus shared
-   `syntax::split_chain_hops` (bracket/brace-aware, unmatched fails closed)
+1. `parse_proxy_chain(uri)` calls `split_hops()` — a native `any _ run >= 3` pre-check (`lib.rs:347-349`) plus the shared
+    `syntax::split_chain_hops` (bracket/brace-aware, unmatched fails closed; `syntax.rs:114`)
 2. Each hop string is passed to `parse_hop()` which:
-   - Detects trailing local-bind modifier (`find_last_at_outside_scheme` over shared `@` scan)
+    - Detects trailing local-bind modifier (private `find_last_at_outside_scheme` helper in `lib.rs:397`; userinfo itself uses the shared `syntax::find_userinfo_separator` `@` scan)
    - Extracts scheme, calls `parse_protocols()` (`+` split, `tls` modifier, `ProtocolSpec::parse_name`)
    - Extracts `#auth_prefix` fragment
    - Extracts credentials (shared `find_userinfo_separator` scan, strict native percent-decode)
@@ -229,7 +229,7 @@ Error messages include hop context (e.g. `"hop 1: missing scheme"`).
 - The `+` separator is for protocol stacking within a scheme; `__` is for hop chaining. Do not confuse with URI path separators.
 - `syntax::find_userinfo_separator` finds the **last** unbracketed `@` after `://`. This is critical for passwords containing `@`. (Hop splitting itself is `syntax::split_chain_hops`.)
 - Port 0 is rejected for all protocols except single-protocol Unix (where port is always 0).
-- `split_chain_hops` rejects any `_` run >= 3 as `DuplicateHopSeparator`.
+- The native pre-check (not the shared splitter) rejects any `_` run >= 3 as `DuplicateHopSeparator`; `syntax::split_chain_hops` itself is the bracket/brace-aware splitter that fails closed on unmatched brackets.
 - The `plugins` path segment is parsed from the URI path after the endpoint (e.g. `socks5://host:1080/plugin1,plugin2`). Leading commas are trimmed.
 
 ## See also

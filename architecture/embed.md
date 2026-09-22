@@ -21,38 +21,38 @@ listeners entirely. Designed as the binding target for PyO3.
 | `from_toml_str(input)` | `src/lib.rs` | Delegate parse/version/validate/compile to canonical `eggress-config`; store compiled `RuntimeConfig` + ancillary source TOML |
 | `from_compiled(compiled, source)` | `src/lib.rs` | Construct from native `RuntimeConfig` (pproxy direct path); startup uses only `compiled` |
 | `compiled()` / `into_compiled()` | `src/lib.rs` | Borrow/consume the canonical compiled handoff |
-| `from_toml_file(path)` | :143 | Read file then delegate to `from_toml_str` |
-| `source_toml()` | :154 | Return raw TOML text |
-| `to_redacted_toml()` | :163 | TOML with secrets replaced by `****` and URI userinfo by `****@` |
+| `from_toml_file(path)` | :139 | Read file then delegate to `from_toml_str` |
+| `source_toml()` | :150 | Return raw TOML text |
+| `to_redacted_toml()` | :159 | TOML with secrets replaced by `****` and URI userinfo by `****@` |
 
 `eggress-config::validate_and_compile_toml()` is the single parse/version/
 validation/compilation authority. The embed facade's private adapter preserves
 its established error messages; `OutboundConnector` owns only outbound-specific
 post-compilation checks, and reload maps failures to `Reload` + metrics.
 
-### EggressService (`src/lib.rs:177`)
+### EggressService (`src/lib.rs:173`)
 
 | Method | Line | Description |
 |---|---|---|
-| `new(config)` | :183 | Wrap a validated config |
-| `from_toml_str(input)` | :188 | Convenience: parse + new |
-| `from_toml_file(path)` | :193 | Convenience: file parse + new |
+| `new(config)` | :179 | Wrap a validated config |
+| `from_toml_str(input)` | :184 | Convenience: parse + new |
+| `from_toml_file(path)` | :189 | Convenience: file parse + new |
 | `start()` async | `src/lib.rs` | In-memory `start_from_config` (no temp file) inside caller's Tokio runtime |
 | `start_blocking()` | `src/lib.rs` | In-memory `start_from_config` (no temp file); single `eggress-embed-run` thread |
 | `start_blocking_with_compatibility_options(options)` | `src/lib.rs` | Deprecated legacy source-compatible facade (`CompatibilityOptions`); converts via `from_legacy_options` then shares `startup_in_memory` (empty maps to `None`) |
 | `start_blocking_with_compatibility_hooks(hooks)` | `src/lib.rs` | Preferred typed path with explicit `CompatibilityRuntimeHooks`; same `startup_in_memory` core (`Some` compat) |
 
-### EggressHandle (`src/lib.rs:422`)
+### EggressHandle (`src/lib.rs:418`)
 
 | Method | Line | Description |
 |---|---|---|
-| `bound_addresses()` | :433 | `BoundAddresses` with listener + admin addrs |
-| `status()` | :461 | `ServiceStatus`: generation, readiness, connections, uptime, listeners |
-| `metrics_text()` | :501 | Prometheus metrics text |
-| `reload_toml_str(input)` | :515 | Hot-reload routing/upstream/groups/health; rejects startup-captured listener changes |
-| `reload_toml_file(path)` | :572 | File-based reload |
-| `shutdown()` async | :601 | Cancel token + join runtime |
-| `shutdown_blocking()` | :619 | Blocking shutdown |
+| `bound_addresses()` | :429 | `BoundAddresses` with listener + admin addrs |
+| `status()` | :457 | `ServiceStatus`: generation, readiness, connections, uptime, listeners |
+| `metrics_text()` | :497 | Prometheus metrics text |
+| `reload_toml_str(input)` | :511 | Hot-reload routing/upstream/groups/health; rejects startup-captured listener changes |
+| `reload_toml_file(path)` | :568 | File-based reload |
+| `shutdown()` async | :597 | Cancel token + join runtime |
+| `shutdown_blocking()` | :615 | Blocking shutdown |
 
 ### OutboundConnector (`eggress_embed::outbound::*`, authority in `eggress-outbound`)
 
@@ -221,7 +221,7 @@ private `connect_tcp_inner()` with the legacy methods and return
 - No temp config file exists (in-memory startup); plaintext credentials never
   touch the filesystem via embed startup. Retained source TOML (ancillary
   display state) stays in memory only.
-- `to_redacted_toml()` walks the TOML tree generically (:788-827):
+- `to_redacted_toml()` walks the TOML tree generically (`REDACTED_SECRET_KEYS` at :754, `redact_toml_value[_inner]` at :779-799):
   - Keys matching `REDACTED_SECRET_KEYS` (`password`, `password_env`,
     `secret`, `secret_ref`, `token`, `api_key`, `apikey`, `credentials`,
     `bearer`, `bearer_token`, `bearer_token_env`)
@@ -238,7 +238,7 @@ private `connect_tcp_inner()` with the legacy methods and return
 
 ## Concurrency & lifecycle
 
-- `reload_mutex` (:428) is a `std::sync::Mutex` — serializes reload
+- `reload_mutex` (:424) is a `std::sync::Mutex` — serializes reload
   attempts. Poisoned mutex is recovered via `into_inner()`.
 - `state.snapshot` is an `ArcSwap` — readers see a consistent snapshot
   without blocking writers.
@@ -271,7 +271,7 @@ Inline tests (`src/lib.rs`):
 
 - `start()` requires an active Tokio runtime context; calling it outside
   one produces a runtime error, not a compile error.
-- The 30-second readiness timeout (:375) is a hard wall — if the
+- The 30-second readiness timeout (:371) is a hard wall — if the
   service doesn't become ready in time, the handle is not returned.
 - `reload_toml_str` rejects ANY listener topology change (count, name, or
   bind). Only routing rules, upstreams, and health state can be hot-reloaded.

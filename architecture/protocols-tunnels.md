@@ -10,6 +10,7 @@ Two thin tunnel wrappers used as chain hops and listener protocols:
 |---|---|
 | `websocket/src/lib.rs` | `WebSocketStreamAdapter` (AsyncRead+AsyncWrite over binary frames), `WebSocketTunnelServer`, `WebSocketTunnelClient`, free `accept_upgrade_with_auth` / `accept_upgrade_with_auth_and_limit` functions, private `parse_basic_auth` helper (`lib.rs:361`, not exported) |
 | `websocket/src/error.rs` | `WebSocketError` enum: `Handshake`, `Connect`, `Protocol`, `MessageTooLarge`, `Io` |
+| `raw/src/lib.rs` | Re-export facade for the raw tunnel crate |
 | `raw/src/tunnel.rs` | `RawTunnelListener`: bind, accept loop, semaphore-gated relay to fixed target |
 | `raw/src/error.rs` | `RawTunnelError` enum: `NoTarget`, `TargetConnect`, `Io`, `DnsRebinding` |
 
@@ -25,7 +26,7 @@ Two thin tunnel wrappers used as chain hops and listener protocols:
 | `WebSocketTunnelServer` | struct | Holds `max_message_size`; provides `accept_upgrade`, `accept_upgrade_over_stream`, `accept_upgrade_with_config`, `accept_upgrade_with_config_over_stream` |
 | `WebSocketTunnelClient` | struct | Holds `max_message_size`; provides `connect`, `connect_with_config`, `connect_over_stream`, `connect_over_stream_with_config` |
 | `accept_upgrade_with_auth(stream, credentials)` | free fn | Server-side upgrade with optional Basic proxy auth; returns `(BoxStream, Option<String>)` where `String` is the authenticated username |
-| `DEFAULT_MAX_MESSAGE_SIZE` | const | 8 MiB (8 * 1024 * 1024) |
+| `DEFAULT_MAX_MESSAGE_SIZE` | private const | 8 MiB (8 * 1024 * 1024), set via `new()`; not exported |
 
 ### Raw (`eggress-protocol-raw`)
 
@@ -35,7 +36,7 @@ Two thin tunnel wrappers used as chain hops and listener protocols:
 | `RawTunnelListener::bind(bind_addr, target)` | async fn | Binds TCP socket; semaphore defaults to 1024 permits |
 | `RawTunnelListener::local_addr()` | method | Returns `Result<SocketAddr, io::Error>` |
 | `RawTunnelListener::run()` | async fn | Accept loop; spawns `handle_raw_connection` per peer |
-| `DEFAULT_MAX_CONNECTIONS` | const | 1024 |
+| `DEFAULT_MAX_CONNECTIONS` | private const | 1024 (semaphore default in `tunnel.rs:27`); not exported |
 
 ## Wire format / protocol mechanics
 

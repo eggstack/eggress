@@ -68,7 +68,7 @@ pub struct StaticAdminSnapshot { pub snapshot: AdminSnapshot }
 
 ## How it works — request handling pipeline
 
-1. **Accept** — `AdminServer::run()` loops on `self.listener.accept()`. Each connection acquires a semaphore permit from a pool of 64 (`server.rs:96-105`). If no permit is available, the connection is dropped immediately.
+1. **Accept** — `AdminServer::run()` loops on `self.listener.accept()`. Each connection acquires a semaphore permit from a pool of 64 (`server.rs:176-187`). If no permit is available, the connection is dropped immediately.
 2. **Auth check** — before dispatching, `authorized()` (`server.rs:109`) checks `AdminState.auth`:
    - **Bearer**: `Authorization: Bearer <token>` compared via `subtle::ConstantTimeEq`
    - **Basic**: `Authorization: Basic <base64>` decoded, split on `:`, CT-compared
@@ -76,7 +76,7 @@ pub struct StaticAdminSnapshot { pub snapshot: AdminSnapshot }
 3. **Timeout** — each HTTP/1.1 connection is wrapped in `tokio::time::timeout(Duration::from_secs(30), conn)` (`server.rs:241`).
 4. **Snapshot** — handlers call `state.snapshot()` which delegates to `AdminSnapshotProvider::snapshot()`. A fresh snapshot is fetched per request, so reloads are immediately visible without restarting admin.
 5. **Dispatch** — `handle_request()` (`routes.rs:15`) pattern-matches on path. Body-consuming endpoints (`/-/route-explain`) use `collect_limited()` to enforce the 16 KiB limit.
-6. **Non-loopback warning** — `AdminServer::new()` logs a warning when bound to a non-loopback address (`server.rs:161-168`).
+6. **Non-loopback warning** — `AdminServer::new()` logs a warning when bound to a non-loopback address (`server.rs:157-170`).
 
 ## Limits
 
@@ -107,9 +107,9 @@ Thread-safe registry (`RwLock<HashMap<ReverseServerId, ReverseServerEntry>>`). R
 - **Snapshot freshness**: handlers fetch a fresh `AdminSnapshot` from the provider per request, so config reloads are immediately visible.
 - **Non-loopback warning**: binding to a non-loopback address emits a tracing warning; auth is recommended (401 with `WWW-Authenticate: Bearer, Basic` otherwise).
 - **Readiness flips before drain**: readiness must become `false` before connection drain begins (tested invariant: `lib.rs:456`).
-- **Auth constant-time**: both Bearer token and Basic username/password comparisons use `subtle::ConstantTimeEq` to prevent timing side-channels (`server.rs:115,135-136`).
+- **Auth constant-time**: both Bearer token and Basic username/password comparisons use `subtle::ConstantTimeEq` to prevent timing side-channels (`server.rs:115,134-139`).
 - **Auth per-request**: auth is checked inside the service_fn closure per request, not per-connection, so keep-alive connections are still gated.
-- **Body limit streaming**: `collect_limited()` rejects bodies exceeding 16 KiB chunk-by-chunk, avoiding unbounded memory allocation (`routes.rs:388-412`).
+- **Body limit streaming**: `collect_limited()` rejects bodies exceeding 16 KiB chunk-by-chunk, avoiding unbounded memory allocation (`routes.rs:388-413`).
 - **Identity validation**: empty identity rejected; identity over 256 bytes rejected; non-`None` identity wrapped as `ClientIdentity::Username` (`routes.rs:316-335`).
 
 ## Security notes

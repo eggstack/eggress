@@ -1,6 +1,6 @@
 # Testing, Benchmarking, Fuzzing, and Oracle Tooling
 
-Verification infrastructure spans five crates/directories plus CI policy.
+Verification infrastructure spans test tooling, benchmarks, fuzzing, oracle assets, scripts, packaging, and CI policy.
 Local fast tests are the default; external-oracle work is opt-in.
 
 ## Layout / module map
@@ -124,7 +124,7 @@ Regression injection modules (`tests/regression_injections/`, `inject_*` + `__in
 | 0 | Unit implementation | none | `test_milestone_c_functional.py`, `test_milestone_c_properties.py` |
 | 1 | Candidate contract | none | `test_asyncio_semantic.py`, `test_protocol_behavioral.py`, `test_cipher_truth.py` |
 | 2 | Paired oracle differential | `EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1` | `test_pproxy_differential.py`, `test_pproxy_oracle.py` |
-| 3 | External interop | `EGRESS_REQUIRE_EXTERNAL_INTEROP=1` | `interoperability_shadowsocks.rs` (Rust) |
+| 3 | External interop | `EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1` (Rust `crates/eggress-cli/tests/interoperability_shadowsocks.rs`); `EGRESS_REQUIRE_EXTERNAL_INTEROP=1` gates the pproxy differential/interop suites (`differential_pproxy.rs`, `interoperability_pproxy.rs`) | `crates/eggress-cli/tests/interoperability_shadowsocks.rs`, `python/tests/interop/`, `test_pproxy_*` |
 | 4 | Platform | none | transparent proxy, PF tests |
 | 5 | Release certification | none | strict manifest validation, report freshness |
 
@@ -135,18 +135,22 @@ cannot shadow the installed wheel's compiled `_eggress` extension.
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `ci.yml` | push/PR to main | Ubuntu Rust smoke: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --locked`, bounded optional-compat compile check (`full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon --bins`, no `insecure-quic`), no-default embed `ssh`, `pproxy-compat`, and combined compile checks, required local OpenSSH embed runtime regression, fuzz-target compilation |
-| `python-test.yml` | PR/push (path-scoped: `crates/eggress-embed/**`, `crates/eggress-python/**`, `python/**`, `tests/compat/**`, `Cargo.toml`, `Cargo.lock`) | Ubuntu Python 3.12 smoke: build wheel with maturin, install `eggress-pproxy-compat`, run pytest |
-| `publish-python.yml` | `v*` tag push or manual dispatch | Validate tag/version coherence, build 5-platform wheels + sdist, smoke test, publish to PyPI via protected `pypi` environment |
+| `ci.yml` | push/PR to main | Ubuntu Rust smoke: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --locked`, bounded optional-compat compile check (`full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon --bins`, no `insecure-quic`), no-default embed `ssh`, `pproxy-compat`, and combined compile checks, six no-default `eggress-outbound` feature slices (base, `toml`, `pproxy-compat`, `ssh`, `ssh,pproxy-compat`, `udp`), required local OpenSSH embed runtime regression, fuzz-target compilation |
+| `python-test.yml` | PR + push to `main`, path-scoped to `crates/eggress-embed/**`, `crates/eggress-python/**`, `python/**`, `tests/compat/**`, `Cargo.toml`, `Cargo.lock`, plus the workflow file itself | Ubuntu Python 3.12 smoke: build wheel with maturin, install `eggress-pproxy-compat`, run pytest |
+| `publish-python.yml` | `v*` tag push or manual dispatch | Validate tag/version coherence, build 5-platform wheels + sdist, smoke test, publish to PyPI via protected `pypi` environment (TestPyPI via manual dispatch only) |
 | `release-binaries.yml` | `v*` tag push or manual dispatch against an existing tag | Preflight tag/version gate, five target `eggress`+`pproxy` archives with native smoke + SHA-256, then a `contents: write` assemble job attaching archives and installers |
 
 Policy docs: `docs/CI_STATUS.md`, `docs/TESTING.md`.
+
+### packaging/ (installers)
+
+`packaging/install.sh` (Unix) + `packaging/install.ps1` (Windows) bootstrap the prebuilt `eggress`+`pproxy` pair from a GitHub Release with SHA-256 and staged-version verification; behavior is pinned by `packaging/tests/test-install.sh`. The release workflow attaches the installers alongside the archives (`release-binaries.yml`).
 
 ### Containerfile
 
 Multi-stage build: `rust:1.85-slim` builder -> `gcr.io/distroless/cc-debian12:nonroot`.
 Exposes ports 8080, 1080, 9090 (no role mapping in the Containerfile). Entry point: `/eggress`.
-The image ships the `eggress` binary only (no `pproxy` binary); `ARG VERSION` defaults to a placeholder and is overridden by the release workflow.
+The image ships the `eggress` binary only (no `pproxy` binary; `Containerfile:20,25` copies only `eggress` to `/eggress`).
 
 ## Verification workflow
 

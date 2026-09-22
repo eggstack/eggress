@@ -52,7 +52,7 @@ AEAD(len_u16_be, nonce=N)     -- 18 bytes (2 plaintext + 16 tag)
 AEAD(payload, nonce=N+1)      -- payload_len + 16 bytes
 ```
 
-Chunk payload max: `0x3FFF` (16383, `MAX_CHUNK_PAYLOAD` in `aead.rs:15`). Zero-length payload signals end-of-stream (`tcp_stream.rs:360`).
+Chunk payload max: `0x3FFF` (16383, `MAX_CHUNK_PAYLOAD` in `aead.rs:15`, duplicated at `tcp_stream.rs:15`). Zero-length payload signals end-of-stream (`tcp_stream.rs:360`).
 
 Client write nonces start at 2 (address header consumed 0,1). Server read nonces mirror this offset (`tcp_stream.rs:117-120`).
 

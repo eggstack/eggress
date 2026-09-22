@@ -27,7 +27,7 @@ UDP association management, relay, upstream forwarding, and standalone relay mod
 | `error.rs` | `UdpError`: structured error enum |
 | `testkit.rs` | `start_udp_echo_server`, `Socks5UdpTestServer`: integration test helpers |
 
-## UdpMode Enum (`lib.rs:23-31`)
+## UdpMode Enum (`lib.rs:25-31`)
 
 | Variant | Description |
 |---|---|

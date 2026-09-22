@@ -11,9 +11,10 @@ health probes, reverse routing gate, and ordered shutdown.
 | `src/supervisor.rs` | Orchestration facade: `ServiceSupervisor` public API (`start`/`start_from_config`/`start_from_config_with_compatibility` + deprecated legacy `start_from_config_with_options` shim/`run()`/`reload_config()`), `CompatibilityRuntimeHooks` + legacy `CompatibilityOptions` adapter + `SystemProxyRequest`, run-phase orchestration (health → listeners → UDP/accept loops → auxiliary → signals → shutdown) |
 | `src/supervisor/startup.rs` | `init_supervisor()` (feature gates, bind pre-validation, metrics/UDP/health wiring, `RuntimeState` assembly), `resolve_udp_global_limit()`, `build_ssh_sessions(allow_insecure_host_keys: bool)` |
 | `src/supervisor/state.rs` | `RuntimeState` (snapshot, routing, session + runtime metrics, readiness, accounting, UDP registry, health, reverse state) + canonical `apply_compiled_config` transaction |
-| `src/supervisor/reload.rs` | `ReloadResult`, `classify_listeners()` + `classify_reload_config()` (restart-required contract) |
+| `src/lib.rs` | Crate root / public re-exports |
+| `src/supervisor/reload.rs` | `ReloadResult`, `classify_listeners()` (crate-private) + `classify_reload_config()` (restart-required contract) |
 | `src/supervisor/connection.rs` | `PreparedListener`/`PreparedQuicListener`, per-generation prepared TLS/UDP state, shared `wrap_tls_server()`, `build_connection_config()` (`ConnectionBuildParams`, `InboundSecurity`) |
-| `src/supervisor/listeners.rs` | Private listener-preparation phase: `PreparedListenerSet` (`prepared`/`prepared_quic`/`unix`/`transparent`), `PreparedUnixListener`/`PreparedTransparentListener` (named replacements for 11-tuples), `prepare_listener_set()` (standard/Unix/transparent/QUIC bind + TLS + UDP service, sync failures before readiness), `publish_listener_addresses()` (startup-captured topology) |
+| `src/supervisor/listeners.rs` | Private listener-preparation phase: `PreparedListenerSet` (`prepared`/`prepared_quic`/`unix`/`transparent`), `PreparedUnixListener`/`PreparedTransparentListener`/`PreparedTransparentListenerPlaceholder` (named replacements for 11-tuples), `prepare_listener_set()` (standard/Unix/transparent/QUIC bind + TLS + UDP service, sync failures before readiness), `publish_listener_addresses()` (startup-captured topology) |
 | `src/supervisor/services.rs` | Private auxiliary-service phase: `apply_compatibility_proxy()` (`--sys` select/apply, fail-closed without `operations`), `spawn_reverse_services()` (`reverse` servers/clients from snapshot), `prebind_and_spawn_admin()` (`operations` pre-bind before readiness, spawn last-shutdown task) |
 | `src/supervisor/signals.rs` | Private readiness/signal phase: `run_signal_loop()` (readiness after signal install, cancel/CTRL-C/SIGTERM, file-backed SIGHUP via `apply_compiled_config`, reload metrics) |
 | `src/supervisor/udp_runtime.rs` | `RuntimeUdpService` (`UdpService` impl), listener-generation `make_udp_service()`, `compute_advertise_ip()`, `prepare_shadowsocks_udp_relay()` |
@@ -39,7 +40,7 @@ health probes, reverse routing gate, and ordered shutdown.
 | `ServiceSupervisor::reload_config(&mut self)` | Load-and-swap without blocking signal loop |
 | `ServiceSupervisor::shutdown_token()` | Exposes master cancel for external callers |
 | `RuntimeState::generation()` | Reads `snapshot.load().generation` |
-| `compile_runtime_snapshot(rt, prev)` | `Result<CompiledRuntimeSnapshot, Box<dyn Error>>` |
+| `compile_runtime_snapshot(rt, prev)` | `Result<CompiledRuntimeSnapshot, Box<dyn Error + Send + Sync>>` |
 
 ## Compatibility ownership (Phase 3)
 
@@ -164,7 +165,7 @@ upstream changes preserve Arc identity for unchanged siblings.
 
 ## Reverse routing gate
 
-`RouteEngineTargetResolver` (`src/reverse.rs:72-101`) builds a synthetic
+`RouteEngineTargetResolver` (`src/reverse.rs:34-99`) builds a synthetic
 `RouteRequest` with `transport=ReverseTcp` on each reconnection:
 
 | Router decision | `TargetResolution` |
@@ -185,9 +186,11 @@ Startup failures are structured `Result` errors, never panics.
 | `operations` | Admin server, `RuntimeAdminListenerInfos`, system-proxy dep |
 | `reverse` | Reverse server/client spawning, `reverse_registry` (implies `operations`) |
 | `extended` | Shadowsocks metrics, Shadowsocks UDP relay (`eggress-udp/shadowsocks`) |
+| `legacy-crypto` | Legacy Shadowsocks ciphers via `extended` + SSR `legacy-crypto` |
 | `pproxy-legacy` | SSR framing (requires `extended`) |
 | `ssh` | `SshSessionCache`, SSH session shutdown |
 | `quic` | QUIC/HTTP3 listener binding |
+| `insecure-quic` | Test-only QUIC cert bypass (never in the product gate) |
 
 **Hot-reloadable:** rules, groups, upstreams, health config, PAC/static.
 

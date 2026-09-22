@@ -98,7 +98,7 @@ caches.
 ### Server config construction
 
 1. `TlsServerConfigBuilder::build()` checks that `key_der` is `Some` and `cert_chain` is non-empty.
-2. `ServerConfig::builder().with_no_client_auth().with_single_cert(chain, key)` is called.
+2. With a client CA it uses `with_client_cert_verifier(verifier)` (`WebPkiClientVerifier`, `server.rs:92-111`); `ServerConfig::builder().with_no_client_auth().with_single_cert(chain, key)` is only the no-CA path (`server.rs:107-111`).
 3. ALPN protocols are set on the resulting config.
 4. The config is wrapped in `Arc` and returned.
 
@@ -115,7 +115,7 @@ Both `tls_connect` and `tls_accept` use `tokio-rustls`:
 |---|---|
 | `eggress-outbound` (`executor.rs`) | Upstream `+tls` hops: builds `TlsClientConfigBuilder` with system roots or custom CA, calls `tls_connect` on the box stream |
 | `eggress-runtime` (`supervisor/connection.rs`) | Listener TLS: prepares one `Arc<ServerConfig>` per listener generation, then `wrap_tls_server()` only calls `tls_accept` on inbound streams (shared by standard/transparent/Unix paths) |
-| `eggress-protocol-trojan` (`tcp.rs`) | Trojan client: builds `TlsClientConfigBuilder` with system roots, calls `tls_connect` for the Trojan-over-TLS channel |
+| `eggress-protocol-trojan` (`tcp.rs`) | Trojan client: builds `TlsClientConfigBuilder` with system roots, then performs the handshake directly via `tokio_rustls::TlsConnector` (`tcp.rs:258-266`; does not call `tls_connect`) |
 | `eggress-protocol-reverse` (`tls.rs`, `server.rs`, `client.rs`) | Native reverse control TLS/mTLS: server builds once via `TlsServerConfigBuilder` (+ optional client CA/require), client builds once via `TlsClientConfigBuilder` (+ optional client cert/key) and reuses `Arc` across reconnects; `tls_accept`/`tls_connect` wrap control TCP before reverse framing |
 
 ## Security notes
@@ -147,6 +147,8 @@ Both `tls_connect` and `tls_accept` use `tokio-rustls`:
 | `builder_with_custom_ca_pem` | Custom CA PEM parsed into root store |
 | `builder_with_alpn` | ALPN protocols set correctly |
 | `insecure_connects_to_self_signed_server` | End-to-end: self-signed cert + insecure client = successful TLS echo |
+| `default_verified_configs_are_shared_and_h2_is_distinct` | Process-shared default verified configs; H2 config is distinct (`client.rs:420`) |
+| `default_insecure_configs_are_shared_and_isolated_from_verified` | Shared insecure defaults isolated from verified ones; requires `--features insecure-tls` (`client.rs:437`) |
 
 ### Unit tests (`server.rs`)
 

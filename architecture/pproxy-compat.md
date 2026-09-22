@@ -10,7 +10,7 @@ diagnostics, and the fail-closed startup gate.
 
 | File | Role |
 |---|---|
-| `lib.rs` | Public re-exports: `PproxyArgs`, `translate_pproxy_args`, `translate_from_uris`, `classify_aggregate_tier`, `evaluate_execution_gate`, `ManifestTier`, `DiagnosticCode`, `StructuredDiagnostic`, `CompatIssue`, `IssueSeverity`, `CompatRegex`, `PproxyRuleFile` |
+| `lib.rs` | Primary entry points (selected): `PproxyArgs`, `translate_pproxy_args`, `translate_from_uris`, `classify_aggregate_tier`, `evaluate_execution_gate`, `ManifestTier`, `DiagnosticCode`, `StructuredDiagnostic`, `CompatIssue`, `IssueSeverity`, `CompatRegex`, `PproxyRuleFile` (full list in `lib.rs:14-30`) |
 | `args.rs` | `PproxyArgs`: frozen pproxy 2.7.9 flag parser; strict violations for unknown flags/values |
 | `uri.rs` | `PproxyUri`/`PproxyChain`/`PproxyPluginSpec` — compat grammar over shared `eggress-uri::syntax` primitives; native tokens delegate to `ProtocolSpec::parse_name`, compat-only tokens stay explicit |
 | `translate/` | Split by semantic area: `entry` (arg-level entry points + `CombinedTranslation`), `intermediates` (shared semantic builder), `mod` (module re-exports), `model` (TOML structs shared by builder/renderers), `rules` (patterns/rule files), `toml_render` (presentation-only TOML), `native` (native compilation + `NativeTranslation`), `tests` (renderer unit tests) |
@@ -93,7 +93,7 @@ delegate to it). Key mappings:
 |---|---|---|
 | `ssh-listener`, `ssh-upstream` | `unsupported_protocol` | `intentional_non_parity` |
 | `ssr-listener`, `ssr-upstream`, `ssr-udp` | `unsupported_security_sensitive_legacy_feature` | `intentional_non_parity` |
-| `daemon` without `pproxy-daemon` | `unsupported_flag` | `unsupported` (fail-closed); with the Linux `pproxy-daemon` feature it is `compatible_with_warning` per `cli.daemon` |
+| `daemon` without `pproxy-daemon` | `unsupported_flag` | `unsupported` (fail-closed); with the Linux `pproxy-daemon` feature it is `compatible_with_warning` per the `cli.daemon` entry in `docs/parity/pproxy_capability_manifest.toml` |
 | `legacy-cipher` | `invalid_cipher_method` | `unsupported` |
 | `socks4-bind`, `socks5-bind` | `unsupported_protocol` | `unsupported` |
 | `system-proxy`, `auth-timeout` | `unsupported_flag` | `compatible_with_warning` |

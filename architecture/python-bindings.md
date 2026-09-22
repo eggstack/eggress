@@ -33,6 +33,7 @@ fn _eggress()`, unchanged exported names/hierarchy/abi3 metadata).
 
 | Module | Role |
 |---|---|
+| `__init__.py` | Package root/export surface |
 | `service.py` | `EggressService` (pre-start builder), `EggressHandle` (sync), `AsyncEggressHandle` (async via `AsyncBridge`); `PPProxyHandle` type alias |
 | `connection.py` | `Connection` — managed proxy service (listener + relay); wraps `PyConnection` with state machine and `ConnectionState` enum; connection exception names are direct aliases of the native `_eggress` classes (single runtime identity) |
 | `async_connection.py` | `AsyncConnection` — async wrapper with loop-affinity enforcement via `AsyncBridge`/`CloseWaiter` |
@@ -59,6 +60,7 @@ Shipped by `eggress-pproxy-compat`, not by the `eggress` wheel:
 | Module | Role |
 |---|---|
 | `__init__.py` | Re-exports `Connection`, `Server`, `DIRECT`, `Rule` + submodules |
+| `__doc__.py` | Package documentation module |
 | `__main__.py` | `python -m pproxy` entry point → `server.main()` |
 | `server.py` | `proxies_by_uri` (= `Connection` = `Server`), `compile_rule`, `schedule`, `main()` — pproxy-shaped URI factories and CLI |
 | `proto.py`, `cipher.py`, `cipherpy.py`, `plugin.py` | Re-exports from `eggress.protocol`, `eggress.cipher`, `eggress.plugin` |
@@ -110,7 +112,7 @@ Server(listen=[...], remote=[...])
 
 ## How it works
 
-1. **maturin build**: `crates/eggress-python/pyproject.toml:40-44`
+1. **maturin build**: `crates/eggress-python/pyproject.toml:41-43`
    declares `module-name = "eggress._eggress"`, `python-source = "../../python"`,
    `abi3-py39`. The `python/eggress/` tree is bundled into the wheel alongside
    the compiled `_eggress.so`.
