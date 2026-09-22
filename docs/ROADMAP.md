@@ -244,6 +244,15 @@ fixed constraints. The Eggfetch runtime/dependency line remains closed.
 
 ## Next Phase
 
-_No registered handoff._
+The active registered handoff is the bounded distribution/release-maintenance campaign in
+[`plans/DISTRIBUTION_AND_RELEASE_MAINTENANCE_ROADMAP.md`](../plans/DISTRIBUTION_AND_RELEASE_MAINTENANCE_ROADMAP.md).
+
+Registered execution plans:
+
+1. [`plans/PYPI_WHEEL_MATRIX_EXPANSION.md`](../plans/PYPI_WHEEL_MATRIX_EXPANSION.md) — expand the canonical PyPI wheel matrix, qualify ordinary CPython 3.9–3.15 through the existing `cp39-abi3` contract, add ARM/SBC target evidence, and make artifact validation matrix-driven.
+2. [`plans/MANUAL_CRATES_IO_PUBLISHING_SIMPLIFICATION.md`](../plans/MANUAL_CRATES_IO_PUBLISHING_SIMPLIFICATION.md) — keep crates.io publication local/manual while replacing hand-maintained dependency tiers and unconditional fixed delays with Cargo workspace publication or a graph-derived resumable helper.
+
+This campaign is release-engineering only. Existing Rust/Python/CLI/configuration/protocol behavior and pproxy compatibility claims remain fixed constraints. Free-threaded Python and automated crates.io publication are explicitly outside the registered baseline.
+
 Compatibility claims remain governed by the active [compatibility matrix](parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
 and [capability manifest](parity/pproxy_capability_manifest.toml).
