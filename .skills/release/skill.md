@@ -78,11 +78,14 @@ git push origin main
 ### 5. Verify the release-only Python workflow
 
 The authoritative workflow is `.github/workflows/publish-python.yml`. It is
-release-only and bounded to five `cp39-abi3` wheels (Linux x86_64/aarch64,
-macOS x86_64/arm64, Windows x86_64) plus one sdist. Linux wheels use the
-manylinux2014/glibc 2.17 floor. The collector parses wheel filenames and fails
-on missing targets, duplicate targets, non-abi3 wheels, debug artifacts, or an
-unexpected sdist. Its installed-artifact smoke is
+release-only and bounded to ten `cp39-abi3` wheel families (Linux
+x86_64/aarch64/armv7l GNU + musllinux x86_64/aarch64/armv7l, macOS x86_64/arm64,
+Windows x86_64/ARM64) plus one sdist. GNU wheels use the manylinux floor
+declared per matrix entry (2014 for x86_64/aarch64, 2_31 for armv7l — never an
+invented armv7l manylinux2014 tag); musl wheels use `musllinux_1_2`. The
+collector (`scripts/validate_release_artifacts.py`, `packaging`-based) fails
+on missing targets, duplicate targets, non-abi3 wheels, unapproved platforms,
+debug artifacts, or an unexpected sdist. Its installed-artifact smoke is
 `scripts/release_artifact_smoke.py`, which imports both `eggress` and top-level
 `pproxy`, starts a port-0 service, checks readiness/bound addresses, shuts it
 down, and checks readiness is false.
@@ -104,7 +107,7 @@ git tag -a v<new_version> -m "Release v<new_version>"
 git push origin v<new_version>
 ```
 
-The Python workflow builds prebuilt wheels for Linux (x86_64, aarch64), macOS (x86_64, arm64), and Windows (x86_64), plus one source distribution, then publishes to PyPI via OIDC trusted publishers. Production publication enforces version coherence and fails on existing versions rather than skipping.
+The Python workflow builds prebuilt wheels for Linux (x86_64, aarch64, armv7l; GNU + musl), macOS (x86_64, arm64), and Windows (x86_64, ARM64), plus one source distribution, then publishes to PyPI via OIDC trusted publishers. Production publication enforces version coherence and fails on existing versions rather than skipping. Ordinary CPython 3.9–3.15 is covered by one `cp39-abi3` artifact per platform (3.15 RC-qualified); free-threaded wheels are explicitly separate.
 
 The binary workflow (`release-binaries.yml`) validates the tag with `scripts/release-preflight.sh`, builds the five canonical `eggress-cli` archives with default features (`eggress`+`pproxy` per archive), smoke-tests `eggress version` / `pproxy --version` natively, and creates/updates the GitHub Release with archives, SHA-256 sidecars, and `packaging/install.sh` / `packaging/install.ps1`. It never publishes crates.io packages and never reruns the ordinary suite.
 
@@ -125,17 +128,28 @@ bash packaging/tests/test-install.sh
 ### 7. Publish Rust crates to crates.io (manual)
 
 Crates.io publication is operator-driven; no workflow publishes crates. All
-internal crates carry crates.io metadata and are publishable. Because crates.io
-rate-limits new crate publications to roughly one per 10 minutes, use the
-tiered helper which publishes in dependency order and waits out the cooldown:
+internal crates carry crates.io metadata and are publishable. The publish
+order is derived from `cargo metadata` on every run (never from a
+hand-maintained tier list), and registry throttling is handled with bounded
+reactive backoff rather than fixed sleeps:
 
 ```bash
-# Dry run first
-./scripts/publish-remaining.sh --dry-run
+# List the metadata-derived order
+python3 scripts/publish-crates.py --list
 
-# Publish remaining crates in dependency order (~4h wall time)
-./scripts/publish-remaining.sh
+# Verify without uploading (workspace package check + registry state)
+python3 scripts/publish-crates.py --dry-run
+
+# Publish with resume support (skips already-published versions)
+python3 scripts/publish-crates.py --execute
 ```
+
+`scripts/publish-remaining.sh` is only a thin compatibility wrapper around
+the same helper. The normal path never passes `--no-verify` or
+`--allow-dirty`. If publication stops midway, rerun `--execute`: it
+recomputes the graph, re-verifies versions, and continues with the first
+unpublished dependency-ready package. Never overwrite an already-published
+version; roll forward instead.
 
 For a single-crate release, publish manually in dependency order (top-level
 facades such as `eggress-cli` last):
@@ -184,6 +198,6 @@ Do not delete or retag an existing version to simulate replacement.
 - Check that the workflow uses `dtolnay/rust-toolchain@stable`
 
 ### crates.io publish fails
-- Respect the ~10-minute crates.io cooldown for new crate names (`scripts/publish-remaining.sh` handles this; override with `EGGRESS_PUBLISH_DELAY_SECONDS`)
-- Wait for index propagation between dependent publishes; re-run the dependent dry run if resolution is uncertain
-- Use `cargo publish --dry-run` to diagnose packaging issues
+- Throttling (HTTP 429) backs off with a bounded budget honoring any registry-supplied retry delay, then stops with instructions to rerun `--execute` (resume skips already-published versions)
+- Wait for index propagation between dependent publishes; the helper confirms visibility before moving to dependents
+- Use `python3 scripts/publish-crates.py --dry-run` to diagnose packaging/graph issues

@@ -2,7 +2,18 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION — 2026-09-22**
+**IMPLEMENTED — 2026-09-22**
+
+Qualification showed `cargo publish --workspace` is nightly-only on the
+pinned stable toolchain (Cargo 1.89), so Outcome B landed:
+`scripts/publish-crates.py` derives order from `cargo metadata`, supports
+`--list`/`--dry-run`/`--execute`, resumes by skipping already-published
+versions, and uses bounded reactive backoff instead of the fixed 660-second
+delay. `scripts/publish-remaining.sh` is now only a compatibility wrapper;
+`docs/release/RELEASE_PROCESS.md`, the release skill, `AGENTS.md`, and the
+architecture index agree on the one-command path. Graph/recovery/rate-limit
+behavior is covered by `tests/scripts/test_publish_crates.py` (no crates.io
+writes). No GitHub Actions crates.io publication was added.
 
 ## Baseline
 

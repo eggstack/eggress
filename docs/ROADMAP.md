@@ -244,15 +244,14 @@ fixed constraints. The Eggfetch runtime/dependency line remains closed.
 
 ## Next Phase
 
-The active registered handoff is the bounded distribution/release-maintenance campaign in
-[`plans/DISTRIBUTION_AND_RELEASE_MAINTENANCE_ROADMAP.md`](../plans/DISTRIBUTION_AND_RELEASE_MAINTENANCE_ROADMAP.md).
+The bounded distribution/release-maintenance campaign in
+[`plans/DISTRIBUTION_AND_RELEASE_MAINTENANCE_ROADMAP.md`](../plans/DISTRIBUTION_AND_RELEASE_MAINTENANCE_ROADMAP.md)
+is implemented and closed:
 
-Registered execution plans:
+1. [`plans/PYPI_WHEEL_MATRIX_EXPANSION.md`](../plans/PYPI_WHEEL_MATRIX_EXPANSION.md) — **IMPLEMENTED**. Tier A ten-family `cp39-abi3` matrix plus sdist, matrix-driven validation, native ARM smokes, musl/ARMv7 execution smokes, ordinary CPython 3.9–3.15 qualification (3.15 RC-qualified). Tier B deferred per sequencing; physical SBC qualification documented as a pending one-time procedure.
+2. [`plans/MANUAL_CRATES_IO_PUBLISHING_SIMPLIFICATION.md`](../plans/MANUAL_CRATES_IO_PUBLISHING_SIMPLIFICATION.md) — **IMPLEMENTED**. Graph-derived resumable local helper (`scripts/publish-crates.py`); crates.io publication stays local/manual. Native workspace publication is nightly-only on stable 1.89, hence Outcome B.
 
-1. [`plans/PYPI_WHEEL_MATRIX_EXPANSION.md`](../plans/PYPI_WHEEL_MATRIX_EXPANSION.md) — expand the canonical PyPI wheel matrix, qualify ordinary CPython 3.9–3.15 through the existing `cp39-abi3` contract, add ARM/SBC target evidence, and make artifact validation matrix-driven.
-2. [`plans/MANUAL_CRATES_IO_PUBLISHING_SIMPLIFICATION.md`](../plans/MANUAL_CRATES_IO_PUBLISHING_SIMPLIFICATION.md) — keep crates.io publication local/manual while replacing hand-maintained dependency tiers and unconditional fixed delays with Cargo workspace publication or a graph-derived resumable helper.
-
-This campaign is release-engineering only. Existing Rust/Python/CLI/configuration/protocol behavior and pproxy compatibility claims remain fixed constraints. Free-threaded Python and automated crates.io publication are explicitly outside the registered baseline.
+This campaign was release-engineering only. Existing Rust/Python/CLI/configuration/protocol behavior and pproxy compatibility claims remain fixed constraints. Free-threaded Python and automated crates.io publication remain explicitly out of scope.
 
 Compatibility claims remain governed by the active [compatibility matrix](parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
 and [capability manifest](parity/pproxy_capability_manifest.toml).

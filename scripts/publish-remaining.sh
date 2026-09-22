@@ -1,134 +1,37 @@
 #!/usr/bin/env bash
-# Publish all 28 eggress-* crates to crates.io in dependency order.
+# Compatibility wrapper for the graph-derived crates.io publisher.
+#
+# The hand-maintained 28-crate tier list and the fixed 660-second per-crate
+# delay were removed: `cargo publish --workspace` remains nightly-only on the
+# pinned stable toolchain (Cargo 1.89), so ordering now comes from
+# `cargo metadata` via `scripts/publish-crates.py`, with resume support and
+# reactive registry-throttle backoff instead of unconditional sleeps.
+#
+# Usage:
+#   scripts/publish-remaining.sh [--dry-run]
+#   scripts/publish-crates.py --list
+#   scripts/publish-crates.py --dry-run
+#   scripts/publish-crates.py --execute
 #
 # Prerequisites:
 #   - crates.io credentials configured (`cargo login` or $CARGO_REGISTRY_TOKEN`).
 #   - Working tree is on the published commit (clean, no uncommitted changes).
-#
-# Usage: scripts/publish-remaining.sh [--dry-run]
-#
-# Tier 1 holds leaf libraries with no internal deps: eggress-relay (before
-# eggress-core, which depends on it) plus eggress-uri; tier 2 holds crates
-# whose only internal edge points into tier 1: eggress-system-proxy (needs
-# eggress-uri) ahead of the runtime/CLI/Python facades that enable it
-# optionally or depend on it directly, plus eggress-testkit (needs
-# eggress-uri; its dev-deps on config/runtime/pproxy-compat are path-only and
-# excluded from the published manifest, so they do not constrain order).
-#
-# `eggress-outbound` (tier 8) sits after its mandatory and optional
-# same-version internal deps (`eggress-config`, `eggress-pproxy-compat`,
-# `eggress-udp`, protocol/transports) and before its dependents
-# (`eggress-server`, `eggress-embed`). `eggress-server` follows outbound, so
-# `eggress-metrics` (mandatory dep on the server) and everything downstream
-# of it (`eggress-admin`, `eggress-runtime`, facades) shift one tier later.
-#
-# Total: 28 crates. crates.io rate-limits new publishes to roughly one per 10
-# minutes, so expect ~4h of wall time plus index-propagation waits.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-cd "$REPO_ROOT"
 
-DRY_RUN=""
 if [[ "${1:-}" == "--dry-run" ]]; then
-    DRY_RUN="--dry-run"
+    exec python3 "$SCRIPT_DIR/publish-crates.py" --dry-run
 fi
 
-# Self-check: Cargo package verification must never be bypassed. Fail fast if
-# a `--no-verify` flag is ever reintroduced into an actual publish command.
-# (Anchored to command lines so mentions in comments/strings don't match.)
-if grep -Eq '^[[:space:]]*cargo publish.*--no-verify' "$SCRIPT_DIR/publish-remaining.sh"; then
-    echo "ERROR: publish helper must not pass cargo publish --no-verify;" >&2
-    echo "see docs/release/RELEASE_PROCESS.md step 2 (package verification)." >&2
+if [[ $# -gt 0 ]]; then
+    echo "Usage: $(basename "$0") [--dry-run]" >&2
+    echo "For listing or real publication use:" >&2
+    echo "  python3 scripts/publish-crates.py --list" >&2
+    echo "  python3 scripts/publish-crates.py --dry-run" >&2
+    echo "  python3 scripts/publish-crates.py --execute" >&2
     exit 1
 fi
 
-# Tiered publish order. Every required internal dep appears in an earlier tier
-# than the crate that depends on it.
-TIERS=(
-    "eggress-relay eggress-uri"
-    "eggress-system-proxy eggress-testkit"
-    "eggress-core"
-    "eggress-protocol-raw eggress-protocol-http eggress-protocol-socks eggress-protocol-websocket eggress-transport-tls eggress-transport-ssh eggress-transport-quic eggress-protocol-reverse eggress-routing eggress-protocol-shadowsocks"
-    "eggress-protocol-trojan eggress-protocol-h3 eggress-udp"
-    "eggress-config"
-    "eggress-pproxy-compat"
-    # eggress-outbound must precede eggress-server (mandatory dep) but follow
-    # its optional same-version deps (config, pproxy-compat) plus udp and the
-    # protocol/transport families, which Cargo resolves against the index at
-    # package time even when a minimal build leaves those features off.
-    "eggress-outbound"
-    "eggress-server"
-    "eggress-metrics"
-    # eggress-admin must precede eggress-runtime: runtime's optional
-    # `dep:eggress-admin` is still resolved against the index at package time.
-    "eggress-admin"
-    "eggress-runtime"
-    "eggress-embed eggress-cli"
-    "eggress-python"
-)
-
-# crates.io enforces a ~10-minute cooldown between new crate publishes.
-# Respect it to avoid HTTP 429 rate-limit responses. Override with
-# EGGRESS_PUBLISH_DELAY_SECONDS for dry-runs or local testing.
-PUBLISH_DELAY_SECONDS="${EGGRESS_PUBLISH_DELAY_SECONDS:-660}"
-
-# Wait for the crates.io index to see a freshly-published crate version.
-# Polls the index endpoint; the inter-publish delay above is the dominant
-# wait, so this is mostly a sanity check.
-wait_for_index() {
-    local crate="$1"
-    local version="$2"
-    local attempts="${3:-6}"
-    for ((i=1; i<=attempts; i++)); do
-        local resp
-        resp=$(curl -fsS -H "User-Agent: eggress-release/1.0" \
-                  "https://crates.io/api/v1/crates/${crate}/${version}" 2>/dev/null || echo "")
-        if echo "$resp" | grep -q '"version"'; then
-            return 0
-        fi
-        sleep 10
-    done
-    echo "WARN: index did not propagate for ${crate} ${version}; proceeding anyway" >&2
-    return 0
-}
-
-publish_one() {
-    local crate="$1"
-    echo ""
-    echo "=================================================================="
-    echo "Publishing $crate (delay ${PUBLISH_DELAY_SECONDS}s)"
-    echo "=================================================================="
-    # NOTE: no `--no-verify` here by policy. Both dry-run and real publish
-    # perform full Cargo package verification (`docs/release/RELEASE_PROCESS.md`
-    # step 2); a dry-run failure is a packaging defect to fix, not to bypass.
-    # A self-check below asserts this invariant on every invocation.
-    cargo publish $DRY_RUN -p "$crate"
-    if [[ -z "$DRY_RUN" ]]; then
-        local version
-        version=$(cargo read-manifest --manifest-path "crates/${crate}/Cargo.toml" 2>/dev/null \
-            | python3 -c "import sys, json; print(json.load(sys.stdin)['version'])" 2>/dev/null || grep '^version = ' Cargo.toml | head -1 | cut -d'"' -f2)
-        wait_for_index "$crate" "$version"
-        # Sleep between publishes to stay under the crates.io rate limit.
-        sleep "$PUBLISH_DELAY_SECONDS"
-    fi
-}
-
-tier=0
-for tier_crates in "${TIERS[@]}"; do
-    tier=$((tier + 1))
-    echo ""
-    echo "##################################################################"
-    echo "## Tier $tier"
-    echo "##################################################################"
-    for c in $tier_crates; do
-        publish_one "$c"
-    done
-done
-
-echo ""
-echo "=================================================================="
-echo "Publish run complete. Dry-run mode: ${DRY_RUN:-no}"
-echo "=================================================================="
+exec python3 "$SCRIPT_DIR/publish-crates.py" --execute

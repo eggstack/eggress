@@ -66,32 +66,73 @@ For every crate intended for publication, verify:
 - required `description`, `license`, `repository`, `readme`, and include/exclude metadata are present;
 - generated package contents do not contain secrets, fixtures, large evidence directories, or development-only artifacts.
 
-Use a dry run for each public crate:
+Use a workspace-wide dry run before any upload:
 
 ```bash
-cargo publish --dry-run -p <crate-name>
+./scripts/release-preflight.sh --check-versions-only
+python3 scripts/publish-crates.py --list
+python3 scripts/publish-crates.py --dry-run
 ```
 
-A dry-run failure is a packaging defect. Fix it before publishing rather than adding CI automation around it.
+`--dry-run` verifies version/pin coherence, prints the metadata-derived
+publish order, runs workspace-wide `cargo package` verification with normal
+Cargo checks, and reports crates.io state without uploading. A dry-run
+failure is a packaging defect. Fix it before publishing rather than adding
+CI automation around it.
 
-The tiered helper (`scripts/publish-remaining.sh`) performs the same
-verification on every invocation: it never passes `--no-verify`, and it
-self-checks that invariant (anchored to `cargo publish` command lines) before
-publishing anything.
+The graph-derived helper (`scripts/publish-crates.py`) performs the same
+verification on every invocation: it never passes `--no-verify` or
+`--allow-dirty` to Cargo.
 
-## 3. Publish dependency-first
+Note: `cargo publish --workspace` remains nightly-only on the pinned stable
+toolchain (Cargo 1.89), so per-crate `cargo publish -p <crate> --locked`
+invocations in metadata-derived order are the normal path. Do not reintroduce
+a hand-maintained tier list or a fixed per-crate sleep.
 
-Publish crates in dependency order. Leaf libraries must be available in the crates.io index before crates that depend on them can be published. The CLI or other top-level facade should be published last.
+## 3. Publish with one manual local command
 
-For each crate:
+Publish crates in metadata-derived dependency order. Leaf libraries must be
+available in the crates.io index before crates that depend on them can be
+published. The CLI and other top-level facades publish last; the helper
+derives this order from `cargo metadata` on every run.
+
+From a clean release checkout after the checks above:
 
 ```bash
-cargo publish -p <crate-name>
+python3 scripts/publish-crates.py --execute
 ```
 
-Wait for crates.io index propagation before publishing the next dependent crate. Re-run that dependent crate's dry run if resolution is uncertain.
+Behavior:
+
+- Verifies preflight versions and a clean tree before any upload.
+- Queries crates.io for each exact crate/version before publishing.
+- Skips already-published versions (partial-release resume); publishes each
+  unpublished crate with `cargo publish -p <crate> --locked` under normal
+  Cargo verification.
+- Confirms each version is visible before moving to dependents.
+- Handles registry throttling reactively with bounded backoff (honoring any
+  registry-supplied retry delay). There is no fixed unconditional delay
+  between publishes.
 
 Do not use `--allow-dirty` for a normal release. Do not publish from an unreviewed working tree.
+
+### Partial-publication recovery
+
+Workspace publication is not atomic. If publication stops midway, rerun the
+same command:
+
+```bash
+python3 scripts/publish-crates.py --dry-run
+python3 scripts/publish-crates.py --execute
+```
+
+The second run recomputes the graph, re-verifies versions, skips
+already-published exact versions, and continues with the first unpublished
+dependency-ready package. If there is any reason to believe an
+already-published same version came from the wrong commit, stop and roll
+forward to a new patch version instead of continuing: crates.io versions are
+immutable and are never overwritten. `scripts/publish-remaining.sh` remains
+only as a thin compatibility wrapper around the same helper.
 
 ## 4. Verify crates.io installation
 
@@ -118,8 +159,8 @@ A `v*` tag push is a release action: it triggers both
 The Python workflow:
 
 1. Hard-fails unless the tag equals the workspace version (`v<version>` where `<version>` is `[workspace.package]` `version` in the root `Cargo.toml`).
-2. Builds five abi3 wheels (Linux x86_64/aarch64, macOS x86_64/arm64, Windows x86_64) plus one sdist.
-3. Smoke-tests each artifact in a clean environment (`scripts/release_artifact_smoke.py`, which imports both `eggress` and the top-level `pproxy` namespace from the opt-in compat package).
+2. Builds ten `cp39-abi3` wheels (Linux x86_64/aarch64/armv7l GNU + musllinux x86_64/aarch64/armv7l, macOS x86_64/arm64, Windows x86_64/ARM64) plus one sdist, validated matrix-driven by `scripts/validate_release_artifacts.py`.
+3. Smoke-tests each artifact in a clean environment (`scripts/release_artifact_smoke.py`, which imports both `eggress` and the top-level `pproxy` namespace from the opt-in compat package): native per-platform smokes, musllinux execution smokes, QEMU ARMv7 execution smoke, exhaustive ordinary-CPython 3.9–3.15 compat smoke on Linux x86_64 (3.15 RC-qualified until final 3.15 is tested), and an sdist clean-install smoke.
 4. Publishes to PyPI through the protected `pypi` GitHub environment via OIDC trusted publishers. TestPyPI is available only through manual workflow dispatch with `publish_target=testpypi`.
 
 The binary workflow (approved automation for canonical CLI artifacts only):

@@ -24,9 +24,23 @@ pip install "eggress[cipher-api]"
 
 - This is the primary Python distribution and the first-class path for
   replacing or migrating from `pproxy`.
-- Supported Python versions: 3.9, 3.10, 3.11, 3.12, 3.13. Prebuilt wheels are
-  published for Linux x86_64/aarch64, macOS x86_64/arm64, and Windows x86_64
+- Supported Python versions: 3.9, 3.10, 3.11, 3.12, 3.13, 3.14, 3.15.
+  Python 3.15 is RC-qualified (newest available release candidate at the
+  planning baseline); final-release wording lands once final 3.15 is tested.
+  One `cp39-abi3` wheel per platform covers all of them — there is no
+  per-minor wheel matrix. Prebuilt wheels are published for Linux
+  x86_64/aarch64/armv7l (GNU `manylinux` + `musllinux_1_2`), macOS
+  x86_64/arm64, and Windows x86_64/ARM64
   (see `.github/workflows/publish-python.yml` for the exact matrix).
+- SBC note: compatibility is determined by architecture/libc/Python ABI, not
+  board branding. 64-bit Raspberry Pi/Le Potato-class systems running a 64-bit
+  GNU/Linux userland consume the ordinary AArch64 `manylinux` wheel; 32-bit
+  userlands consume the ARMv7 wheel; Alpine/SBC musl systems consume the
+  matching `musllinux` wheel. First-class SBC claims additionally require the
+  one-time target-class qualification in the wheel plan (board class,
+  `uname -m`, distribution, glibc/musl version, Python version, wheel
+  filename, smoke outcome) before 32-bit/64-bit Pi-class support is advertised
+  as hardware-proven rather than architecture-compatible.
 - The `eggress` wheel provides only the `eggress` package. For a bounded,
   Eggress-backed top-level `pproxy` import, additionally install the opt-in
   compatibility distribution from a repository checkout:

@@ -20,7 +20,7 @@ distributed as a platform-specific wheel.
 pip install eggress
 ```
 
-Prebuilt wheels are available for Linux x86_64/aarch64, macOS x86_64/arm64, and Windows x86_64. The wheel uses the Python stable ABI (`abi3-py39`), so one wheel per platform supports all declared Python versions (3.9–3.13).
+Prebuilt wheels are available for Linux x86_64/aarch64/armv7l (GNU + musl), macOS x86_64/arm64, and Windows x86_64/ARM64. The wheel uses the Python stable ABI (`abi3-py39`), so one wheel per platform supports all declared Python versions (3.9–3.15; 3.15 is RC-qualified until final 3.15 is tested).
 
 ### Local development
 

@@ -23,6 +23,30 @@ permissions:
   contents: read
   id-token: write
 
+# Canonical Tier A wheel matrix: ten ordinary-CPython `cp39-abi3` wheel
+# families plus one sdist (see `scripts/validate_release_artifacts.py`, which
+# is the canonical validation table and must be updated together with the
+# matrix below when an approved target is added or removed).
+#
+# Target conventions follow `maturin generate-ci` (maturin 1.14): short target
+# aliases (`x86_64`, `aarch64`, `armv7`, `x64`) with an explicit `manylinux`
+# policy per Linux entry. `musllinux_1_2` selects the musl wheel family.
+# GNU armv7l uses the newer `2_31` floor: PyPA never shipped an armv7l
+# manylinux2014 tag, so one must not be invented here.
+#
+# Tier B (i686/ppc64le/s390x/riscv64 GNU+musl) is deferred until Tier A is
+# green: each target still needs a PyPA-image build proof, a dependency-graph
+# build without feature reduction, and an executable smoke before it can join
+# the required set. Free-threaded CPython (`abi3t`/version-specific `t`
+# wheels) is explicitly separate and is not built here.
+#
+# maturin is deliberately versioned: `maturin-version` below and the pip
+# `maturin==` pin in `build-sdist` must move together within the
+# `maturin>=1.0,<2.0` range required by `crates/eggress-python/pyproject.toml`.
+
+env:
+  MATURIN_VERSION: "v1.14.1"
+
 jobs:
   validate:
     name: Validate version coherence
@@ -83,7 +107,7 @@ jobs:
           PY
 
   build-wheels:
-    name: "Build wheel (${{ matrix.os }}, ${{ matrix.target }})"
+    name: "Build wheel (${{ matrix.family }})"
     needs: validate
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -93,16 +117,40 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64
-            manylinux: 2014
-          - os: ubuntu-latest
+            manylinux: "2014"
+            family: linux-x86_64-gnu
+          - os: ubuntu-24.04-arm
             target: aarch64
-            manylinux: 2014
+            manylinux: "2014"
+            family: linux-aarch64-gnu
+          - os: ubuntu-latest
+            target: armv7
+            manylinux: "2_31"
+            family: linux-armv7l-gnu
+          - os: ubuntu-latest
+            target: x86_64
+            manylinux: musllinux_1_2
+            family: linux-x86_64-musl
+          - os: ubuntu-24.04-arm
+            target: aarch64
+            manylinux: musllinux_1_2
+            family: linux-aarch64-musl
+          - os: ubuntu-latest
+            target: armv7
+            manylinux: musllinux_1_2
+            family: linux-armv7l-musl
           - os: macos-15-intel
             target: x86_64
+            family: macos-x86_64
           - os: macos-14
             target: aarch64
+            family: macos-arm64
           - os: windows-latest
             target: x64
+            family: windows-x86_64
+          - os: windows-11-arm
+            target: aarch64
+            family: windows-arm64
     steps:
       - uses: actions/checkout@v4
 
@@ -113,23 +161,19 @@ jobs:
           python-version: "3.12"
 
       - name: Setup QEMU
-        if: runner.os == 'Linux' && matrix.target == 'aarch64'
+        if: runner.os == 'Linux' && matrix.target == 'armv7'
         uses: docker/setup-qemu-action@v3
         with:
-          platforms: arm64
+          platforms: arm
 
       - name: Build wheel
         uses: PyO3/maturin-action@v1
-        env:
-          # ring's pregenerated AArch64 assembly requires the ACLE macro when
-          # maturin-action cross-compiles with the manylinux toolchain.
-          CFLAGS_aarch64_unknown_linux_gnu: >-
-            ${{ matrix.os == 'ubuntu-latest' && matrix.target == 'aarch64' && '-D__ARM_ARCH=8' || '' }}
         with:
           command: build
-          args: --release --out dist -m crates/eggress-python/Cargo.toml
+          args: --release --locked --out dist -m crates/eggress-python/Cargo.toml
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux || 'auto' }}
+          maturin-version: ${{ env.MATURIN_VERSION }}
 
       - name: List artifacts
         shell: bash
@@ -137,7 +181,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: wheel-${{ matrix.os }}-${{ matrix.target }}
+          name: wheel-${{ matrix.family }}
           path: dist/*.whl
 
   build-sdist:
@@ -153,7 +197,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install build tools
-        run: python -m pip install --upgrade pip "maturin>=1.0,<2.0"
+        run: python -m pip install --upgrade pip "maturin==1.14.1"
 
       - name: Build sdist
         run: maturin sdist --out dist -m crates/eggress-python/Cargo.toml
@@ -181,6 +225,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           pattern: wheel-*
@@ -198,63 +244,8 @@ jobs:
           set -euo pipefail
           echo "=== All artifacts ==="
           ls -la dist/
-          python3 - <<'PY'
-          import re
-          from pathlib import Path
-
-          wheels = sorted(Path("dist").glob("*.whl"))
-          sdists = sorted(Path("dist").glob("*.tar.gz"))
-          if len(wheels) != 5:
-              raise SystemExit(f"::error::expected exactly five wheels, found {len(wheels)}")
-          if len(sdists) != 1:
-              raise SystemExit(f"::error::expected exactly one sdist, found {len(sdists)}")
-
-          version = None
-          targets = {}
-          for wheel in wheels:
-              name = wheel.name[:-4]
-              parts = name.split("-")
-              if len(parts) != 5 or parts[0] != "eggress":
-                  raise SystemExit(f"::error::unexpected wheel filename: {wheel.name}")
-              _, wheel_version, python_tag, abi_tag, platform_tag = parts
-              if version is None:
-                  version = wheel_version
-              if wheel_version != version:
-                  raise SystemExit(f"::error::wheel version mismatch: {wheel.name}")
-              if python_tag != "cp39" or abi_tag != "abi3":
-                  raise SystemExit(f"::error::wheel is not cp39-abi3: {wheel.name}")
-
-              if "manylinux" in platform_tag and platform_tag.endswith("x86_64"):
-                  target = "linux-x86_64"
-              elif "manylinux" in platform_tag and platform_tag.endswith("aarch64"):
-                  target = "linux-aarch64"
-              elif platform_tag.startswith("macosx_") and platform_tag.endswith("x86_64"):
-                  target = "macos-x86_64"
-              elif platform_tag.startswith("macosx_") and platform_tag.endswith("arm64"):
-                  target = "macos-arm64"
-              elif re.search(r"(?:^|_)win_amd64$", platform_tag):
-                  target = "windows-x86_64"
-              else:
-                  raise SystemExit(f"::error::unapproved wheel platform: {wheel.name}")
-              if target in targets:
-                  raise SystemExit(f"::error::duplicate wheel target {target}: {wheel.name}")
-              targets[target] = wheel.name
-
-          expected = {"linux-x86_64", "linux-aarch64", "macos-x86_64", "macos-arm64", "windows-x86_64"}
-          if set(targets) != expected:
-              raise SystemExit(f"::error::wheel target set mismatch: {set(targets)}")
-          if not re.fullmatch(r"eggress-[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz", sdists[0].name):
-              raise SystemExit(f"::error::unexpected sdist filename: {sdists[0].name}")
-          if version is None or sdists[0].name != f"eggress-{version}.tar.gz":
-              raise SystemExit(f"::error::sdist version does not match wheels: {sdists[0].name}")
-          if any("debug" in path.name.lower() for path in [*wheels, *sdists]):
-              raise SystemExit("::error::debug artifact found")
-
-          print("approved artifact set:")
-          for target, filename in sorted(targets.items()):
-              print(f"  {target}: {filename}")
-          print(f"  sdist: {sdists[0].name}")
-          PY
+          python -m pip install --upgrade pip "packaging>=24"
+          python3 scripts/validate_release_artifacts.py
 
       - uses: actions/upload-artifact@v4
         with:
@@ -271,8 +262,11 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
+          - os: macos-15-intel
           - os: macos-14
           - os: windows-latest
+          - os: windows-11-arm
     steps:
       - uses: actions/checkout@v4
 
@@ -299,6 +293,8 @@ jobs:
             NAME=$(basename "${whl}")
             case "${PLATFORM}" in
               linux)
+                # GNU wheels only here; musllinux has its own smoke job.
+                # ("musllinux" contains no "manylinux" substring.)
                 if echo "${NAME}" | grep -q "manylinux" && echo "${NAME}" | grep -q "${ARCH}"; then
                   WHEEL="${whl}"
                   break
@@ -316,7 +312,12 @@ jobs:
                 fi
                 ;;
               windows)
-                if echo "${NAME}" | grep -q "win"; then
+                if [[ "${ARCH}" == "arm64" ]]; then
+                  if echo "${NAME}" | grep -q "win_arm64"; then
+                    WHEEL="${whl}"
+                    break
+                  fi
+                elif echo "${NAME}" | grep -q "win_amd64"; then
                   WHEEL="${whl}"
                   break
                 fi
@@ -343,13 +344,110 @@ jobs:
             .venv-test/Scripts/python.exe -m pip install "${{ steps.find-wheel.outputs.wheel_path }}"
             .venv-test/Scripts/python.exe -m pip install --no-deps ./python-pproxy-compat
             .venv-test/Scripts/python.exe scripts/release_artifact_smoke.py
+            echo "=== target evidence ==="
+            .venv-test/Scripts/python.exe -c "import platform, sys; print('machine:', platform.machine()); print(sys.version); print('libc:', platform.libc_ver())"
+            echo "wheel: ${{ steps.find-wheel.outputs.wheel_path }}"
           else
             .venv-test/bin/python -m pip install --upgrade pip
             .venv-test/bin/python -m pip install "${{ steps.find-wheel.outputs.wheel_path }}"
             .venv-test/bin/python -m pip install --no-deps ./python-pproxy-compat
             .venv-test/bin/python scripts/release_artifact_smoke.py
+            echo "=== target evidence ==="
+            .venv-test/bin/python -c "import platform, sys; print('machine:', platform.machine()); print(sys.version); print('libc:', platform.libc_ver())"
+            echo "wheel: ${{ steps.find-wheel.outputs.wheel_path }}"
           fi
           echo "Smoke test passed"
+
+  musl-smoke:
+    name: "musllinux smoke (${{ matrix.os }})"
+    needs: collect-artifacts
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+          - os: ubuntu-24.04-arm
+            arch: aarch64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: dist/
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Find matching musl wheel
+        id: find-wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          WHEEL=$(ls dist/*musllinux*${{ matrix.arch }}*.whl | head -1)
+          if [[ -z "${WHEEL}" ]]; then
+            echo "::error::No musllinux ${{ matrix.arch }} wheel found"
+            ls dist/*.whl
+            exit 1
+          fi
+          echo "Found wheel: $(basename ${WHEEL})"
+          echo "wheel_path=${WHEEL}" >> "$GITHUB_OUTPUT"
+
+      - name: Install and smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv .venv-musl
+          .venv-musl/bin/python -m pip install --upgrade pip
+          .venv-musl/bin/python -m pip install "${{ steps.find-wheel.outputs.wheel_path }}"
+          .venv-musl/bin/python -m pip install --no-deps ./python-pproxy-compat
+          .venv-musl/bin/python scripts/release_artifact_smoke.py
+          echo "=== target evidence ==="
+          .venv-musl/bin/python -c "import platform, sys; print('machine:', platform.machine()); print(sys.version); print('libc:', platform.libc_ver())"
+          echo "wheel: ${{ steps.find-wheel.outputs.wheel_path }}"
+          echo "musllinux ${{ matrix.arch }} smoke passed"
+
+  armv7-smoke:
+    name: "ARMv7 smoke (QEMU)"
+    needs: collect-artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: dist/
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm
+
+      - name: Smoke GNU + musl armv7 wheels under QEMU
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls dist/*armv7l*.whl
+          for WHEEL in dist/*armv7l*.whl; do
+            echo "=== Smoking $(basename ${WHEEL}) ==="
+            docker run --rm --platform linux/arm/v7 \
+              -v "${PWD}:/io" -w /io python:3.12-slim bash -c "
+              set -euo pipefail
+              python -m pip install --upgrade pip
+              python -m pip install '/io/${WHEEL}'
+              python -m pip install --no-deps /io/python-pproxy-compat
+              python -c 'import platform, sys; print(\"machine:\", platform.machine()); print(sys.version); print(\"libc:\", platform.libc_ver())'
+              echo 'wheel: ${WHEEL}'
+              python /io/scripts/release_artifact_smoke.py
+            "
+          done
+          echo "ARMv7 smoke passed"
 
   compat-smoke:
     name: "Compatibility smoke (Python ${{ matrix.python-version }})"
@@ -359,7 +457,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.13"]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@v4
 
@@ -371,6 +469,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          # Python 3.15 is pre-release at the planning baseline; allow the RC
+          # lane without affecting stable-version resolution.
+          allow-prereleases: true
 
       - name: Find manylinux wheel
         id: find-wheel
@@ -441,7 +542,7 @@ jobs:
 
   publish-pypi:
     name: Publish to PyPI
-    needs: [smoke-test, compat-smoke, sdist-smoke]
+    needs: [smoke-test, musl-smoke, armv7-smoke, compat-smoke, sdist-smoke]
     if: >-
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
       || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_target == 'pypi')
@@ -466,7 +567,7 @@ jobs:
 
   publish-testpypi:
     name: Publish to TestPyPI
-    needs: [smoke-test, compat-smoke, sdist-smoke]
+    needs: [smoke-test, musl-smoke, armv7-smoke, compat-smoke, sdist-smoke]
     if: >-
       github.event_name == 'workflow_dispatch' && github.event.inputs.publish_target == 'testpypi'
     runs-on: ubuntu-latest

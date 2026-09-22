@@ -2,7 +2,21 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION — 2026-09-22**
+**IMPLEMENTED — 2026-09-22**
+
+The Tier A matrix landed: ten `cp39-abi3` families (Linux x86_64/aarch64/armv7l
+GNU + musllinux x86_64/aarch64/armv7l, macOS x86_64/arm64, Windows
+x86_64/ARM64) plus one sdist, with a data-driven build matrix, a
+`packaging`-based fail-closed validator
+(`scripts/validate_release_artifacts.py`, covered by
+`tests/scripts/test_validate_release_artifacts.py`), native AArch64/Windows
+ARM64 smokes, musl/ARMv7 execution smokes, exhaustive 3.9–3.15 compat smoke
+(3.15 RC-qualified), pinned maturin (`v1.14.1`), and `--locked` release
+builds. Classifiers and install/bindings docs now state 3.9–3.15. Tier B
+remains deferred per sequencing (each target still needs a build proof plus
+executable smoke before joining the required set); physical SBC
+target-class qualification is documented as a pending one-time procedure;
+free-threaded wheels stay explicitly separate. No API/runtime change.
 
 ## Baseline
 

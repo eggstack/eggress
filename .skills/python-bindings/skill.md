@@ -100,8 +100,8 @@ artifact (`scripts/test_wheel.sh`, `scripts/release_artifact_smoke.py`);
 never by mutating `sys.modules` in the test process.
 
 Key metadata: `py.typed` PEP 561 marker included; version pinned in lockstep
-with the workspace (see the release skill); classifiers list Python 3.9–3.13;
-`cipher-api` optional extra gates the cryptography dependency.
+with the workspace (see the release skill); classifiers list Python 3.9–3.15
+(3.15 RC-qualified); `cipher-api` optional extra gates the cryptography dependency.
 
 ## Verification checklist
 

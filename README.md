@@ -99,7 +99,7 @@ pip install ./python-pproxy-compat
 
 Never install upstream `pproxy` and `eggress-pproxy-compat` together because they provide the same import namespace; uninstall upstream `pproxy` first.
 
-Supported Python versions: 3.9, 3.10, 3.11, 3.12, 3.13. Prebuilt wheels available for Linux x86_64/aarch64, macOS x86_64/arm64, and Windows x86_64.
+Supported Python versions: 3.9, 3.10, 3.11, 3.12, 3.13, 3.14, 3.15 (3.15 RC-qualified; final-release evidence lands with final 3.15). One `cp39-abi3` wheel per platform covers all of them. Prebuilt wheels are available for Linux x86_64/aarch64/armv7l (GNU + musl), macOS x86_64/arm64, and Windows x86_64/ARM64.
 
 ## CLI usage
 

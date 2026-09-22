@@ -73,7 +73,7 @@ Grouped by purpose:
 | Interop runners | `compat_shadowsocks.sh`, `compat_udp_pproxy.sh`, `install_shadowsocks_interop.sh` |
 | Certification | `run_pproxy_certification.sh`, `run_strict_api_comparison.sh`, `run_strict_pproxy_api.py`, `run_strict_pproxy_api.sh`, `run_strict_pproxy_interop.sh` |
 | Evidence / validation | `build_strict_evidence_index.py`, `compare_observations.py`, `validate_pproxy_parity_manifest.py`, `demonstrate_regression_injections.py`, `demonstrate_regression_injections.sh` |
-| Release smoke | `release_artifact_smoke.py`, `test_wheel.sh`, `publish-remaining.sh` |
+| Release smoke | `release_artifact_smoke.py`, `test_wheel.sh`, `publish-crates.py` (+ `publish-remaining.sh` wrapper), `validate_release_artifacts.py` |
 | Release preflight / portability | `release-preflight.sh`, `install-zig.sh` |
 | Perf / soak | `perf/run_local_baseline.sh`, `perf/run_pproxy_comparison.sh`, `perf/run_soak.sh` |
 | Snapshot / probe | `snapshot_pproxy_api.py`, `pproxy_surface_probe.py`, `probe_pproxy_chain_topology.py`, `smoke_clients.py` |

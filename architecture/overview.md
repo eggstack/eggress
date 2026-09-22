@@ -357,9 +357,10 @@ summary of the discrete pieces:
   (`strict_*_probe.py`), interop runners (`compat_shadowsocks.sh`,
   `compat_udp_pproxy.sh`), certification (`run_pproxy_certification.sh`,
   `run_strict_pproxy_*`), evidence/validation
-  (`validate_pproxy_parity_manifest.py`, `compare_observations.py`,
-  regression-injection demos), release smoke (`release_artifact_smoke.py`,
-  `test_wheel.sh`, `publish-remaining.sh`), release preflight/portability
+   (`validate_pproxy_parity_manifest.py`, `compare_observations.py`,
+   regression-injection demos), release smoke (`release_artifact_smoke.py`,
+   `test_wheel.sh`, `publish-crates.py` with its `publish-remaining.sh`
+   compatibility wrapper, `validate_release_artifacts.py`), release preflight/portability
   (`release-preflight.sh`, `install-zig.sh`), perf/soak (`scripts/perf/`),
   snapshots (`snapshot_pproxy_api.py`, `pproxy_surface_probe.py`).
 - **Installers — `packaging/`.** `install.sh` (Unix) + `install.ps1`

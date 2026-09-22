@@ -15,11 +15,13 @@
 
 ## Active registered handoff
 
-- [`DISTRIBUTION_AND_RELEASE_MAINTENANCE_ROADMAP.md`](DISTRIBUTION_AND_RELEASE_MAINTENANCE_ROADMAP.md) — **READY FOR IMPLEMENTATION**. Broadens PyPI wheel/platform coverage and ordinary CPython qualification through 3.15, including ARM/SBC targets, while simplifying the still-manual crates.io release path without changing runtime/API/capability surfaces.
-  - [`PYPI_WHEEL_MATRIX_EXPANSION.md`](PYPI_WHEEL_MATRIX_EXPANSION.md) — expand and qualify the wheel matrix, ARM/SBC coverage, and Python 3.9–3.15 stable-ABI support.
-  - [`MANUAL_CRATES_IO_PUBLISHING_SIMPLIFICATION.md`](MANUAL_CRATES_IO_PUBLISHING_SIMPLIFICATION.md) — replace hand-maintained publish tiers/fixed delays with Cargo workspace metadata/native publication or a resumable graph-derived local helper; crates.io remains manual.
+None. The distribution/release-maintenance campaign below is implemented;
+its two execution plans are closed.
 
 ## Recently completed
+
+- [`PYPI_WHEEL_MATRIX_EXPANSION.md`](PYPI_WHEEL_MATRIX_EXPANSION.md) — **IMPLEMENTED**. Tier A ten-family `cp39-abi3` matrix plus sdist, matrix-driven `packaging`-based validation, native ARM smokes, musl/ARMv7 execution smokes, ordinary CPython 3.9–3.15 qualification (3.15 RC), pinned maturin, Tier B deferred per sequencing.
+- [`MANUAL_CRATES_IO_PUBLISHING_SIMPLIFICATION.md`](MANUAL_CRATES_IO_PUBLISHING_SIMPLIFICATION.md) — **IMPLEMENTED**. Graph-derived resumable local helper (`scripts/publish-crates.py`) replacing the hand-maintained tier table and fixed delays; crates.io remains manual. Native workspace publication is nightly-only on stable 1.89, hence Outcome B.
 
 - [`EGGFETCH_0_2_EVIDENCE_DOCUMENTATION_CLEANUP.md`](EGGFETCH_0_2_EVIDENCE_DOCUMENTATION_CLEANUP.md) — **IMPLEMENTED**. Reconciled the implemented corrective acceptance/evidence state and removed stale live `RUSTSEC-2025-0134` cargo-audit guidance without reopening runtime, dependency, API, capability, or parity scope.
 - [`EGGFETCH_0_2_CORRECTIVE_CLOSURE.md`](EGGFETCH_0_2_CORRECTIVE_CLOSURE.md) — **IMPLEMENTED**. Restored pre-migration outbound CONNECT request-size compatibility, removed the obsolete `RUSTSEC-2026-0009` exception under MSRV 1.89, and reconciled planning state without reopening the implemented Outcome B architecture.
