@@ -2,7 +2,7 @@
 
 ## Status
 
-**ACTIVE — PHASE 1 CLOSED — 2026-09-23**
+**RELEASE QUALIFIED — UNPUBLISHED — 2026-09-23**
 
 ## Target repository
 
@@ -361,4 +361,56 @@ This phase is complete when:
 
 ## Completion record
 
-Not yet executed.
+Selected release: `1.0.9` (lockstep workspace version).
+
+Phase 1 implementation commit: `253370450dc76c16aa1a3987591089010183d3b3`.
+Phase 1 closure commit: `874de4b6d0c2a7ec639de7b9c94bdee9c309df9b`.
+Release preparation commit: `fc47c2dba39c2a8a7b1ef31a6daa46b67fb6ad37`.
+
+Qualification evidence on the 1.0.9 tree:
+
+- `scripts/release-preflight.sh --check-versions-only`: passed; workspace,
+  Python bindings, both Python packages, and all 27 exact internal pins align.
+- `cargo metadata --locked --format-version 1`: passed.
+- `python3 scripts/publish-crates.py --list`: passed; 28 publishable crates
+  in dependency order.
+- `CARGO_BUILD_JOBS=2 python3 scripts/publish-crates.py --dry-run`: passed;
+  all packed crates verified and every 1.0.9 registry query returned
+  `missing`. No upload was performed. The helper applies temporary Cargo
+  config patches to use matching workspace sources when verifying the
+  unpublished internal graph; it does not alter packed manifests or publish
+  behavior.
+- `tests/scripts/test_publish_crates.py`: 17 passed.
+- Focused tests: core 119 passed, outbound 15 passed, embed detailed 23
+  passed, and embed public API 5 passed.
+- Outbound no-default feature slices (`base`, `toml`, `pproxy-compat`, `ssh`,
+  `ssh,pproxy-compat`, `udp`): all passed.
+- Python extension rebuilt for 1.0.9; outbound metadata suite: 43 passed,
+  11 optional skips.
+- `cargo fmt --all -- --check`, workspace Clippy with `-D warnings`, and
+  `cargo test --workspace --locked`: passed.
+- `cargo deny check`: passed. `cargo audit --ignore RUSTSEC-2023-0071`:
+  passed with the existing allowed yanked warnings for `der 0.8.0` and
+  `wnaf 0.14.0`.
+- `cargo check --manifest-path fuzz/Cargo.toml --bins`: passed; fuzz lockfile
+  was updated to workspace version 1.0.9.
+
+No compatibility tier or parity claim changed. Direct TCP metadata describes
+the established socket; chain metadata describes its TCP-backed first hop;
+non-TCP first hops may still report `None`. Existing public method signatures
+and `OutboundInfo` field types are unchanged.
+
+The release is prepared but unpublished. No tag, crates.io upload, PyPI
+publication, or GitHub Release was created. Downstream consumers must require
+`eggress-outbound` 1.0.9 or newer once it is registry-visible; 1.0.8 is
+immutable and cannot contain this correction.
+
+Maintainer handoff after separate publication authorization:
+
+```sh
+python3 scripts/publish-crates.py --list
+python3 scripts/publish-crates.py --execute
+```
+
+Any production tag must separately pass `scripts/release-preflight.sh
+--tag v1.0.9`; pushing it triggers the PyPI and binary release workflows.

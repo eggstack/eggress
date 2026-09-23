@@ -19,14 +19,14 @@ Known boundaries:
 See `docs/parity/README.md` and `crates/eggress-pproxy-compat/src/tier.rs`
 for the tier taxonomy (`docs/PPROXY_PARITY_SPEC.md` is historical provenance only).
 
-### Active maintenance — listener-free TCP socket metadata recovery
+### Completed qualification — listener-free TCP socket metadata recovery
 
 Registered handoffs, in order:
 
 1. [Outbound TCP Socket Metadata Recovery](../plans/OUTBOUND_TCP_SOCKET_METADATA_RECOVERY.md) — **IMPLEMENTED AND QUALIFIED** at `253370450dc76c16aa1a3987591089010183d3b3`. `OutboundConnector` reports actual local and peer socket addresses for direct and TCP-backed first-hop routes, removes the metadata-only second DNS lookup, and preserves every existing connection signature and boxed-stream boundary.
-2. [Outbound TCP Socket Metadata Release Qualification](../plans/OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md) — **ACTIVE**. Prepare the correction as the next immutable lockstep patch release, with version/package/release qualification only. Registry publication and any `v*` tag remain maintainer-operated and require separate explicit authorization.
+2. [Outbound TCP Socket Metadata Release Qualification](../plans/OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md) — **RELEASE QUALIFIED, UNPUBLISHED** at lockstep patch `1.0.9` (`fc47c2dba39c2a8a7b1ef31a6daa46b67fb6ad37`). All 28 crates pass package verification and report absent from crates.io; focused, full workspace, feature, Python, Clippy, dependency-policy, audit, and fuzz checks pass. Publication and any `v*` tag remain maintainer-operated and were not performed.
 
-Motivation: published 1.0.8 always returns `OutboundInfo.local_addr = None` from listener-free TCP execution and derives chain `peer_addr` through a separate endpoint lookup rather than the socket actually selected. The campaign is generic Eggress API correctness work; it does not add downstream-specific policy, resolver injection, retries, or new proxy capability.
+Motivation: published 1.0.8 always returns `OutboundInfo.local_addr = None` from listener-free TCP execution and derives chain `peer_addr` through a separate endpoint lookup rather than the socket actually selected. The campaign is generic Eggress API correctness work; it does not add downstream-specific policy, resolver injection, retries, or new proxy capability. The prepared 1.0.9 release remains unpublished until separately authorized.
 
 ## Completed Milestones
 

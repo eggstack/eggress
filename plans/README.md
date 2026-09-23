@@ -13,19 +13,10 @@
 > inventory). `EGRESS_ROADMAP.md` at root is the original roadmap, also
 > retained for provenance.
 
-## Active registered handoff
-
-Outbound TCP socket metadata recovery is active and registered by the canonical
-`docs/ROADMAP.md`:
-
-1. [`OUTBOUND_TCP_SOCKET_METADATA_RECOVERY.md`](OUTBOUND_TCP_SOCKET_METADATA_RECOVERY.md) — **IMPLEMENTED AND QUALIFIED** at `253370450dc76c16aa1a3987591089010183d3b3`. Capture actual TCP local/peer metadata before the stream is boxed, propagate first-hop metadata through `ChainExecutor`, and populate `OutboundInfo` from the socket actually used without changing existing connect signatures.
-2. [`OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md`](OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md) — **ACTIVE**. Prepare the next immutable lockstep patch release and package graph for maintainer-operated publication; no tag or registry mutation is authorized by the plan itself.
-
-This is a bounded listener-free metadata correctness campaign. Resolver injection,
-downstream authorization policy, retry/fallback changes, and new proxy capabilities
-remain out of scope.
-
 ## Recently completed
+
+- [`OUTBOUND_TCP_SOCKET_METADATA_RECOVERY.md`](OUTBOUND_TCP_SOCKET_METADATA_RECOVERY.md) — **IMPLEMENTED AND QUALIFIED** at `253370450dc76c16aa1a3987591089010183d3b3`. Direct and TCP-backed chain metadata now comes from the established socket, with unchanged public connection signatures and boxed-stream boundary.
+- [`OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md`](OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md) — **RELEASE QUALIFIED, UNPUBLISHED** at lockstep patch `1.0.9` (`fc47c2dba39c2a8a7b1ef31a6daa46b67fb6ad37`). All 28 packages verify and remain absent from crates.io; the plans do not authorize publishing or tagging.
 
 - [`PYPI_WHEEL_MATRIX_EXPANSION.md`](PYPI_WHEEL_MATRIX_EXPANSION.md) — **IMPLEMENTED**. Tier A ten-family `cp39-abi3` matrix plus sdist, matrix-driven `packaging`-based validation, native ARM smokes, musl/ARMv7 execution smokes, ordinary CPython 3.9–3.15 qualification (3.15 RC), pinned maturin, Tier B deferred per sequencing.
 - [`MANUAL_CRATES_IO_PUBLISHING_SIMPLIFICATION.md`](MANUAL_CRATES_IO_PUBLISHING_SIMPLIFICATION.md) — **IMPLEMENTED**. Graph-derived resumable local helper (`scripts/publish-crates.py`) replacing the hand-maintained tier table and fixed delays; crates.io remains manual. Native workspace publication is nightly-only on stable 1.89, hence Outcome B.

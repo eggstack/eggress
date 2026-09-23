@@ -88,8 +88,9 @@ socket; proxy chains describe hop 0, including the local socket address and
 the actual peer selected for that hop. Non-TCP first hops may have no
 `SocketAddr` metadata. These optional fields are observational and do not
 change connection success or routing behavior.
-The correction is qualified for lockstep patch `1.0.9`; registry consumers
-must use that patch or newer because immutable `1.0.8` cannot contain it.
+The correction is release-qualified for lockstep patch `1.0.9` and is not yet
+published. Registry consumers must require that patch or newer once available;
+immutable `1.0.8` cannot contain it.
 
 ### Python package
 
