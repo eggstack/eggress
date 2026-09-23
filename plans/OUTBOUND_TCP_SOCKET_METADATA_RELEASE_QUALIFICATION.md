@@ -2,7 +2,7 @@
 
 ## Status
 
-**RELEASE QUALIFIED — UNPUBLISHED — 2026-09-23**
+**REQUALIFICATION REQUIRED — BLOCKED ON POOLED TRANSPORT CORRECTIVES — 2026-09-23**
 
 ## Target repository
 
@@ -15,6 +15,27 @@ Planning baseline:
 Depends on:
 
 - `plans/OUTBOUND_TCP_SOCKET_METADATA_RECOVERY.md`
+
+## Post-qualification audit — 2026-09-23
+
+A follow-up review found two reuse-related correctness gaps after the original
+1.0.9 qualification:
+
+1. SSH and H2 reusable connection keys contain endpoint/auth/hop-index identity
+   but not the preceding chain prefix. At hop index greater than zero, a cache
+   hit can discard the newly selected prefix stream and reuse a physical
+   connection established through a different prefix. This is tracked by
+   [POOLED_TRANSPORT_ROUTE_ISOLATION_CORRECTIVE.md](POOLED_TRANSPORT_ROUTE_ISOLATION_CORRECTIVE.md).
+2. At hop 0, legitimate SSH/H2 reuse can discard the freshly opened TCP socket
+   whose addresses were captured by the new metadata path. Returning those
+   addresses would describe a discarded candidate rather than the physical
+   connection carrying the result. This is tracked by
+   [OUTBOUND_POOLED_TRANSPORT_METADATA_TRUTHFULNESS_CORRECTIVE.md](OUTBOUND_POOLED_TRANSPORT_METADATA_TRUTHFULNESS_CORRECTIVE.md).
+
+The earlier qualification evidence remains valid for the code that was tested,
+but the release disposition is superseded: **1.0.9 is not publishable until
+both corrective plans land and this release qualification is rerun on the
+final corrective SHA.** No 1.0.9 tag or registry publication has occurred.
 
 ## Objective
 
