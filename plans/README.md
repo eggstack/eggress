@@ -18,7 +18,7 @@
 Outbound TCP socket metadata recovery is active and registered by the canonical
 `docs/ROADMAP.md`:
 
-1. [`OUTBOUND_TCP_SOCKET_METADATA_RECOVERY.md`](OUTBOUND_TCP_SOCKET_METADATA_RECOVERY.md) — **READY FOR IMPLEMENTATION**. Capture actual TCP local/peer metadata before the stream is boxed, propagate first-hop metadata through `ChainExecutor`, and populate `OutboundInfo` from the socket actually used without changing existing connect signatures.
+1. [`OUTBOUND_TCP_SOCKET_METADATA_RECOVERY.md`](OUTBOUND_TCP_SOCKET_METADATA_RECOVERY.md) — **IMPLEMENTATION COMPLETE; FULL GATES PENDING**. Capture actual TCP local/peer metadata before the stream is boxed, propagate first-hop metadata through `ChainExecutor`, and populate `OutboundInfo` from the socket actually used without changing existing connect signatures.
 2. [`OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md`](OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md) — **READY AFTER PHASE 1**. Prepare the next immutable lockstep patch release and package graph for maintainer-operated publication; no tag or registry mutation is authorized by the plan itself.
 
 This is a bounded listener-free metadata correctness campaign. Resolver injection,

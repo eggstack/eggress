@@ -49,6 +49,11 @@ canonical TOML parse/validate/compile authority.
   (`kind()`/`stage()`/`hop_index()`/`protocol()`; `HopConnect` vs
   `HopHandshake`; outer deadline is `Timeout`/`Deadline`). Classify with
   `eggress-outbound::classify`, never message strings.
+- `OutboundInfo` TCP addresses describe the socket actually established:
+  direct routes describe the target, while chains describe hop 0. Capture
+  metadata before boxing and carry it alongside `BoxStream`; do not resolve a
+  host again just to populate `peer_addr`. Address metadata is observational,
+  and Unix or other non-TCP first hops may return `None`.
 - `associate_udp()` (feature `udp`) — fixed-target direct + single-hop SOCKS5
   only (IPv4/IPv6, family-corrected bind); composed/Shadowsocks in this
   surface fail with `UnsupportedFeature`.

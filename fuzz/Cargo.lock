@@ -230,7 +230,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-config"
-version = "1.0.7"
+version = "1.0.8"
 dependencies = [
  "eggress-core",
  "eggress-routing",
@@ -248,7 +248,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-core"
-version = "1.0.7"
+version = "1.0.8"
 dependencies = [
  "bytes",
  "eggress-relay",
@@ -285,7 +285,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-pproxy-compat"
-version = "1.0.7"
+version = "1.0.8"
 dependencies = [
  "eggress-config",
  "eggress-uri",
@@ -299,7 +299,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-http"
-version = "1.0.7"
+version = "1.0.8"
 dependencies = [
  "base64",
  "bytes",
@@ -319,7 +319,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-shadowsocks"
-version = "1.0.7"
+version = "1.0.8"
 dependencies = [
  "aes-gcm",
  "bytes",
@@ -339,7 +339,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-socks"
-version = "1.0.7"
+version = "1.0.8"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -351,7 +351,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-trojan"
-version = "1.0.7"
+version = "1.0.8"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -367,7 +367,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-websocket"
-version = "1.0.7"
+version = "1.0.8"
 dependencies = [
  "base64",
  "bytes",
@@ -383,14 +383,14 @@ dependencies = [
 
 [[package]]
 name = "eggress-relay"
-version = "1.0.7"
+version = "1.0.8"
 dependencies = [
  "tokio",
 ]
 
 [[package]]
 name = "eggress-routing"
-version = "1.0.7"
+version = "1.0.8"
 dependencies = [
  "arc-swap",
  "eggress-core",
@@ -409,7 +409,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-transport-tls"
-version = "1.0.7"
+version = "1.0.8"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -424,7 +424,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-udp"
-version = "1.0.7"
+version = "1.0.8"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -442,7 +442,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-uri"
-version = "1.0.7"
+version = "1.0.8"
 dependencies = [
  "serde",
  "thiserror",

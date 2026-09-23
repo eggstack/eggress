@@ -63,6 +63,13 @@ Kind, stage, hop, and protocol are diagnostic facts, not retry
 recommendations; callers own retry/backoff policy and no direct fallback
 occurs on proxy failure. Display/Debug are bounded and credential-safe.
 
+`OutboundInfo` carries observational socket metadata. Direct TCP connections
+report the actual local and peer addresses. TCP-backed chains report the
+actual socket addresses for the first hop, including in a multi-hop chain;
+the peer address comes from the established socket without another DNS
+lookup. Unix and other non-TCP first hops may return `None`. Missing metadata
+never changes successful connection behavior.
+
 ## Documentation
 
 - [Workspace README](https://github.com/eggstack/eggress/blob/main/README.md)

@@ -82,6 +82,15 @@ The listener-free SSH `OutboundConnector` correction is available beginning
 with `v1.0.7`. Downstreams pinned to older releases must keep any SSH
 fallback until they upgrade to `v1.0.7` or newer.
 
+For TCP connects, `OutboundInfo.local_addr` and `peer_addr` report addresses
+from the socket actually established. Direct routes describe the target
+socket; proxy chains describe hop 0, including the local socket address and
+the actual peer selected for that hop. Non-TCP first hops may have no
+`SocketAddr` metadata. These optional fields are observational and do not
+change connection success or routing behavior.
+The correction is qualified for lockstep patch `1.0.9`; registry consumers
+must use that patch or newer because immutable `1.0.8` cannot contain it.
+
 ### Python package
 
 ```bash

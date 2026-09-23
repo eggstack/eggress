@@ -42,6 +42,7 @@ EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interopera
 
 - Redact credentials/secret-bearing URIs before logging, diagnostics, or evidence output.
 - Box streams at protocol/transport boundaries; don't leak generic stream types through the architecture. Validate protocol/transport composition before execution; unsupported transports/roles fail closed with structured diagnostics, never silent fallback.
+- When listener-free TCP callers need socket metadata, capture it from the established `TcpStream` before boxing and carry it beside `BoxStream`; chain metadata describes the actual first-hop TCP socket. Never re-resolve a hostname only to report metadata, and keep address lookup failure observational.
 - Listener topology is not hot-reloaded; only routing/upstream/group/health state swaps atomically. Shutdown order: readiness false → listener stop → UDP drain → connection drain/cancel → admin shutdown last.
 - Compat claims use tier vocabulary (`matched` / `supported_difference` / `platform_limited` / `intentional_non_parity`); changing a claim means updating the manifest and running the oracle/differential/interop suite. Generated reports follow the manifest, never lead it.
 - Edition 2021, MSRV 1.89 (release contract — don't reopen pinning to recover older toolchains), `unsafe_code = "deny"`. Tokio + `thiserror` + `tracing`. No OpenSSL / C deps / build scripts without explicit architectural reason; keep protocol parsing bounded.

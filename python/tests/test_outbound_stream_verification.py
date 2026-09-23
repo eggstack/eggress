@@ -651,17 +651,22 @@ class TestOutboundStreamCloseSemantics:
 class TestOutboundStreamAddressMetadata:
     """Address metadata: peername, sockname, get_extra_info."""
 
-    def test_peername_on_direct(self):
+    def test_direct_socket_address_metadata(self):
         echo_addr, echo_server, echo_thread = _start_echo_server()
         try:
             conn = OutboundConnector.from_pproxy_uri(_DIRECT_URI)
             stream = conn.connect_tcp(echo_addr[0], echo_addr[1], timeout=5.0)
             try:
-                # For direct connections, peername should be set
-                # (though the Rust side may not populate it for direct)
+                expected_peer = f"{echo_addr[0]}:{echo_addr[1]}"
                 peername = stream.peername
-                # Just verify it's accessible (may be None for direct)
-                assert peername is None or isinstance(peername, str)
+                sockname = stream.sockname
+                assert peername == expected_peer
+                assert sockname is not None
+                local_host, local_port = sockname.rsplit(":", 1)
+                assert local_host == "127.0.0.1"
+                assert int(local_port) != 0
+                assert stream.get_extra_info("peername") == peername
+                assert stream.get_extra_info("sockname") == sockname
             finally:
                 stream.close()
         finally:

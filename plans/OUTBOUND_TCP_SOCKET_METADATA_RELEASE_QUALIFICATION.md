@@ -98,6 +98,13 @@ If current workspace version is 1.0.8 and 1.0.9 is unused, select 1.0.9.
 If version state has moved, select the next unused patch version instead.
 Never overwrite or attempt to replace a published version.
 
+### Selection record
+
+Selected `1.0.9`: `cargo search eggress --limit 10` reports `eggress-core`,
+`eggress-outbound`, and the workspace facade crates at latest version `1.0.8`,
+with no `1.0.9` registry release indicated. The package helper's dry-run is
+the final release graph/collision qualification; no publication is performed.
+
 Record the selected version in this plan's completion record before editing
 version files.
 

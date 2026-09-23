@@ -45,23 +45,6 @@ use super::udp::{
     map_socks5_upstream_error, resolve_udp_target, target_to_socks, wildcard_bind_for_resolved,
 };
 
-/// Resolve a proxy endpoint address (host:port) to a SocketAddr.
-///
-/// For IP addresses, returns directly. For domains, performs DNS lookup.
-/// Tuple-form lookup handles bare IPv6 literals (`::1`) without
-/// bracketed-string formatting.
-async fn resolve_endpoint_addr(
-    endpoint: &eggress_uri::EndpointSpec,
-) -> Option<std::net::SocketAddr> {
-    if let Ok(ip) = endpoint.host.parse::<std::net::IpAddr>() {
-        return Some(std::net::SocketAddr::new(ip, endpoint.port));
-    }
-    let mut addresses = tokio::net::lookup_host((endpoint.host.as_str(), endpoint.port))
-        .await
-        .ok()?;
-    addresses.next()
-}
-
 /// Listener-free outbound route owned by the connector.
 ///
 /// `Direct` executes no proxy hops; `Chain` holds the compiled native chain
@@ -415,8 +398,8 @@ impl OutboundConnector {
 
         let chain = match &self.route {
             OutboundRoute::Direct => {
-                let stream = eggress_core::connector::DirectConnector
-                    .connect_with_options(
+                let (stream, metadata) = eggress_core::connector::DirectConnector
+                    .connect_with_options_and_metadata(
                         &target,
                         &eggress_core::connector::ConnectOptions::default(),
                     )
@@ -425,8 +408,8 @@ impl OutboundConnector {
                 return Ok((
                     stream,
                     OutboundInfo {
-                        local_addr: None,
-                        peer_addr: None,
+                        local_addr: metadata.local_addr(),
+                        peer_addr: metadata.peer_addr(),
                         hop_count: 0,
                     },
                 ));
@@ -434,19 +417,15 @@ impl OutboundConnector {
             OutboundRoute::Chain { chain, .. } => chain.clone(),
         };
 
-        // Resolve the first hop endpoint address for metadata
-        let first_hop = &chain.hops[0];
-        let peer_addr = resolve_endpoint_addr(&first_hop.endpoint).await;
-
-        let stream = self
+        let (stream, metadata) = self
             .chain_executor
-            .execute(&chain.hops, &target)
+            .execute_with_metadata(&chain.hops, &target)
             .await
             .map_err(chain_failure)?;
 
         let info = OutboundInfo {
-            local_addr: None,
-            peer_addr,
+            local_addr: metadata.local_addr(),
+            peer_addr: metadata.peer_addr(),
             hop_count: chain.hops.len(),
         };
 

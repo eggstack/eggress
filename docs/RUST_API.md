@@ -82,6 +82,11 @@ Representative (not exhaustive) downstream-shaped compile contracts:
   `eggress-runtime` supervisor/state/classify signatures) and
   `protocol_representative_paths_compile` (HTTP/SOCKS via URI + `HttpDetector`/
   `ConnectRequest`);
+- `eggress-core::connector::ConnectionMetadata` and the additive
+  `DirectConnector::connect_with_options_and_metadata()` /
+  `ChainExecutor::execute_with_metadata()` methods are supporting composition
+  seams. They preserve actual first-hop TCP socket addresses without changing
+  existing connection signatures or the `BoxStream` boundary.
 - `eggress-server/tests/public_api.rs`: `NoopMetrics`, `UdpAssociationHandle`,
   `SessionReport`, `ConnectionConfig`, `ConnectionContext`, `AuthReuseCache`;
 - lower-level crates retain their existing unit/integration tests as semantic

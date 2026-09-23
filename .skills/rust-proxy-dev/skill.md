@@ -18,6 +18,7 @@ Use when implementing new proxy protocols, transport wrappers, or modifying core
 - Edition 2021, MSRV 1.89, `unsafe_code = "deny"` everywhere
 - Async runtime: Tokio. Errors: `thiserror`. CLI: `clap` derive.
 - Streams are boxed at protocol/transport boundaries (`BoxStream`) — never propagate generic stream types
+- If a listener-free TCP API reports socket metadata, capture `local_addr()` / `peer_addr()` before boxing and pass a small metadata value alongside `BoxStream`. Chain metadata belongs to the established first-hop TCP socket; do not add metadata-only DNS resolution or make metadata query failures fail a successful connect. Keep non-TCP metadata absent unless its transport already exposes truthful `SocketAddr` values.
 - No C deps, no OpenSSL, no `build.rs` files
 
 ## SSR/legacy Shadowsocks handling

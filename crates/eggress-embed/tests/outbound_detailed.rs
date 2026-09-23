@@ -332,6 +332,70 @@ async fn spawn_echo_server() -> std::net::SocketAddr {
     addr
 }
 
+async fn spawn_http_connect_tunnel_proxy() -> std::net::SocketAddr {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("HTTP CONNECT fixture bind");
+    let addr = listener.local_addr().expect("HTTP CONNECT fixture address");
+    tokio::spawn(async move {
+        let Ok((mut stream, _)) = listener.accept().await else {
+            return;
+        };
+        let mut request = Vec::new();
+        let mut buf = [0u8; 1024];
+        while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+            let Ok(n) = stream.read(&mut buf).await else {
+                return;
+            };
+            if n == 0 {
+                return;
+            }
+            request.extend_from_slice(&buf[..n]);
+        }
+        if stream
+            .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+            .await
+            .is_ok()
+        {
+            let (mut reader, mut writer) = stream.split();
+            let _ = tokio::io::copy(&mut reader, &mut writer).await;
+        }
+    });
+    addr
+}
+
+#[tokio::test]
+async fn direct_outbound_metadata_reports_actual_socket_addresses() {
+    let peer_addr = spawn_echo_server().await;
+    let connector = OutboundConnector::direct();
+    let (_stream, info) = connector
+        .connect_tcp_detailed(&peer_addr.ip().to_string(), peer_addr.port())
+        .await
+        .expect("direct connection");
+    let local_addr = info.local_addr.expect("actual local socket address");
+    assert!(local_addr.ip().is_loopback());
+    assert_ne!(local_addr.port(), 0);
+    assert_eq!(info.peer_addr, Some(peer_addr));
+    assert_eq!(info.hop_count, 0);
+}
+
+#[tokio::test]
+async fn http_chain_metadata_reports_connected_first_hop_socket() {
+    let proxy_addr = spawn_http_connect_tunnel_proxy().await;
+    let connector = OutboundConnector::from_toml(&toml_for_uri(&format!("http://{proxy_addr}")))
+        .expect("HTTP chain connector");
+    let (_stream, info) = connector
+        .connect_tcp_detailed("example.invalid", 443)
+        .await
+        .expect("CONNECT through local proxy");
+
+    let local_addr = info.local_addr.expect("actual first-hop local address");
+    assert!(local_addr.ip().is_loopback());
+    assert_ne!(local_addr.port(), 0);
+    assert_eq!(info.peer_addr, Some(proxy_addr));
+    assert_eq!(info.hop_count, 1);
+}
+
 // ---------------------------------------------------------------------------
 // Direct connector tests (require pproxy-compat for `direct://`).
 // ---------------------------------------------------------------------------

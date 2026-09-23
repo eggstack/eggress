@@ -3,7 +3,7 @@ use std::pin::Pin;
 
 use eggress_uri::{EndpointSpec, ProtocolSpec, ProxyHopSpec};
 
-use crate::connector::{ConnectOptions, DirectConnector};
+use crate::connector::{ConnectOptions, ConnectionMetadata, DirectConnector};
 use crate::{BoxStream, ConnectError, TargetAddr, TargetHost};
 
 /// A boxed future that resolves to a handshake result.
@@ -207,6 +207,18 @@ impl ChainExecutor {
         chain: &[ProxyHopSpec],
         target: &TargetAddr,
     ) -> Result<BoxStream, ChainError> {
+        self.execute_with_metadata(chain, target)
+            .await
+            .map(|(stream, _)| stream)
+    }
+
+    /// Execute a proxy chain and retain metadata from its first-hop TCP socket.
+    /// Non-TCP first-hop transports return empty socket metadata.
+    pub async fn execute_with_metadata(
+        &self,
+        chain: &[ProxyHopSpec],
+        target: &TargetAddr,
+    ) -> Result<(BoxStream, ConnectionMetadata), ChainError> {
         if chain.is_empty() {
             return Err(ChainError::EmptyChain);
         }
@@ -241,6 +253,7 @@ impl ChainExecutor {
         };
         let first_hop_addr = endpoint_to_target_addr(&first_hop.endpoint)?;
 
+        let mut metadata = ConnectionMetadata::default();
         let mut current_stream: BoxStream = if first_hop.protocols.contains(&ProtocolSpec::Http3)
             || first_hop.protocols.contains(&ProtocolSpec::Quic)
         {
@@ -290,8 +303,9 @@ impl ChainExecutor {
                     })
                 })
                 .transpose()?;
-            self.direct_connector
-                .connect_with_options(
+            let (stream, socket_metadata) = self
+                .direct_connector
+                .connect_with_options_and_metadata(
                     &first_hop_addr,
                     &ConnectOptions {
                         local_bind,
@@ -303,7 +317,9 @@ impl ChainExecutor {
                     hop_index: 0,
                     endpoint: first_hop_addr.to_string(),
                     source: e,
-                })?
+                })?;
+            metadata = socket_metadata;
+            stream
         };
 
         // Step 2: For each hop, perform the protocol handshake
@@ -379,7 +395,7 @@ impl ChainExecutor {
                 })?;
         }
 
-        Ok(current_stream)
+        Ok((current_stream, metadata))
     }
 
     /// Validate the chain configuration.
@@ -606,6 +622,34 @@ mod tests {
             }
             Ok(_) => panic!("expected EmptyChain error"),
         }
+    }
+
+    #[tokio::test]
+    async fn execute_with_metadata_keeps_first_hop_tcp_socket_for_multi_hop_chain() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let peer_addr = listener.local_addr().unwrap();
+        let accept = tokio::spawn(async move { listener.accept().await.unwrap() });
+        let (handler, _) = MockHandler::new(ProtocolSpec::Raw);
+        let executor = ChainExecutor::new(vec![Box::new(handler)]);
+        let mut first_hop = make_hop(
+            ProtocolSpec::Raw,
+            &peer_addr.ip().to_string(),
+            peer_addr.port(),
+        );
+        first_hop.local_bind = Some("127.0.0.1:0".to_string());
+        let second_hop = make_hop(ProtocolSpec::Raw, "192.0.2.10", 8080);
+        let target = make_target("example.com", 80);
+
+        let (_stream, metadata) = executor
+            .execute_with_metadata(&[first_hop, second_hop], &target)
+            .await
+            .unwrap();
+        let _ = accept.await.unwrap();
+
+        assert_eq!(metadata.peer_addr(), Some(peer_addr));
+        let local_addr = metadata.local_addr().expect("first-hop local address");
+        assert!(local_addr.ip().is_loopback());
+        assert_ne!(local_addr.port(), 0);
     }
 
     #[tokio::test]

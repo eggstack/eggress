@@ -123,6 +123,27 @@ pub trait LocalConnector {
 /// Connector that makes direct TCP connections.
 pub struct DirectConnector;
 
+/// Socket addresses observed on an established TCP connection.
+///
+/// These values describe the socket actually connected, not a separately
+/// resolved endpoint. Address lookup failures leave only the affected field
+/// absent and do not fail the connection.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ConnectionMetadata {
+    local_addr: Option<SocketAddr>,
+    peer_addr: Option<SocketAddr>,
+}
+
+impl ConnectionMetadata {
+    pub fn local_addr(&self) -> Option<SocketAddr> {
+        self.local_addr
+    }
+
+    pub fn peer_addr(&self) -> Option<SocketAddr> {
+        self.peer_addr
+    }
+}
+
 /// Connect options for one outbound socket.
 #[derive(Debug, Clone)]
 pub struct ConnectOptions {
@@ -151,6 +172,17 @@ impl DirectConnector {
         target: &TargetAddr,
         options: &ConnectOptions,
     ) -> Result<BoxStream, ConnectError> {
+        self.connect_with_options_and_metadata(target, options)
+            .await
+            .map(|(stream, _)| stream)
+    }
+
+    /// Connect and return metadata captured from the established TCP socket.
+    pub async fn connect_with_options_and_metadata(
+        &self,
+        target: &TargetAddr,
+        options: &ConnectOptions,
+    ) -> Result<(BoxStream, ConnectionMetadata), ConnectError> {
         let addrs = resolve_target(
             target,
             options.enforce_dns_rebinding_check,
@@ -164,7 +196,7 @@ impl DirectConnector {
 async fn connect_to_addrs(
     addrs: &[SocketAddr],
     local_bind: Option<SocketAddr>,
-) -> Result<BoxStream, ConnectError> {
+) -> Result<(BoxStream, ConnectionMetadata), ConnectError> {
     let mut last_error = None;
     for &addr in addrs {
         let result = if let Some(local) = local_bind {
@@ -188,7 +220,13 @@ async fn connect_to_addrs(
             TcpStream::connect(addr).await.map_err(ConnectError::Io)
         };
         match result {
-            Ok(stream) => return Ok(Box::new(stream)),
+            Ok(stream) => {
+                let metadata = ConnectionMetadata {
+                    local_addr: stream.local_addr().ok(),
+                    peer_addr: stream.peer_addr().ok(),
+                };
+                return Ok((Box::new(stream), metadata));
+            }
             Err(error) => last_error = Some(error),
         }
     }
@@ -268,6 +306,80 @@ mod tests {
         assert_eq!(&buf, b"ping");
 
         jh.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn direct_connect_metadata_reports_actual_socket_addresses() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let peer_addr = listener.local_addr().unwrap();
+        let accept = tokio::spawn(async move { listener.accept().await.unwrap() });
+        let target = TargetAddr {
+            host: TargetHost::Ip(peer_addr.ip()),
+            port: peer_addr.port(),
+        };
+
+        let (_stream, metadata) = DirectConnector
+            .connect_with_options_and_metadata(&target, &ConnectOptions::default())
+            .await
+            .unwrap();
+        let (server_stream, _) = accept.await.unwrap();
+        let local_addr = metadata.local_addr().expect("local socket address");
+        assert_eq!(metadata.peer_addr(), Some(peer_addr));
+        assert!(local_addr.ip().is_loopback());
+        assert_ne!(local_addr.port(), 0);
+        drop(server_stream);
+    }
+
+    #[tokio::test]
+    async fn direct_connect_metadata_uses_actual_local_bind_port() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let peer_addr = listener.local_addr().unwrap();
+        let accept = tokio::spawn(async move { listener.accept().await.unwrap() });
+        let target = TargetAddr {
+            host: TargetHost::Ip(peer_addr.ip()),
+            port: peer_addr.port(),
+        };
+
+        let (_, metadata) = DirectConnector
+            .connect_with_options_and_metadata(
+                &target,
+                &ConnectOptions {
+                    local_bind: Some("127.0.0.1:0".parse().unwrap()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let _ = accept.await.unwrap();
+        let local_addr = metadata.local_addr().expect("local socket address");
+        assert!(local_addr.ip().is_loopback());
+        assert_ne!(local_addr.port(), 0);
+    }
+
+    #[tokio::test]
+    async fn direct_connect_metadata_reports_ipv6_when_loopback_is_available() {
+        let listener = match tokio::net::TcpListener::bind("[::1]:0").await {
+            Ok(listener) => listener,
+            Err(error) => {
+                // Some supported hosts disable IPv6 loopback entirely.
+                eprintln!("skipping IPv6 metadata check: loopback unavailable: {error}");
+                return;
+            }
+        };
+        let peer_addr = listener.local_addr().unwrap();
+        let accept = tokio::spawn(async move { listener.accept().await.unwrap() });
+        let target = TargetAddr {
+            host: TargetHost::Ip(peer_addr.ip()),
+            port: peer_addr.port(),
+        };
+
+        let (_, metadata) = DirectConnector
+            .connect_with_options_and_metadata(&target, &ConnectOptions::default())
+            .await
+            .unwrap();
+        let _ = accept.await.unwrap();
+        assert_eq!(metadata.peer_addr(), Some(peer_addr));
+        assert!(metadata.local_addr().unwrap().ip().is_loopback());
     }
 
     #[tokio::test]

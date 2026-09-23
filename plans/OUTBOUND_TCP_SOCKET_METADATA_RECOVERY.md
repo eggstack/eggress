@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION — 2026-09-22**
+**IMPLEMENTATION COMPLETE — QUALIFIED — 2026-09-23**
 
 ## Target repository
 
@@ -559,4 +559,29 @@ This phase is complete only when:
 
 ## Completion record
 
-Not yet executed.
+Implementation is present in the working tree. Focused qualification passed:
+
+- `cargo test -p eggress-core --locked`: 119 passed;
+- `cargo test -p eggress-outbound --locked`: 15 passed;
+- `cargo test -p eggress-embed --locked --test outbound_detailed`: 23 passed;
+- `cargo test -p eggress-embed --locked --test public_api`: 5 passed;
+- outbound no-default base, `toml`, `pproxy-compat`, `ssh`,
+  `ssh,pproxy-compat`, and `udp` compile slices passed;
+- Python outbound metadata suite: 43 passed, 11 optional tests skipped.
+
+`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --
+-D warnings`, and `cargo test --workspace --locked` passed. The CLI optional
+feature build (`full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon`),
+embed `ssh`, `pproxy-compat`, and combined feature checks, required OpenSSH
+regression (3 passed), and standalone fuzz compile also passed. Python's
+outbound metadata suite passed (43 passed, 11 optional skips).
+
+Direct IPv4/IPv6 and local-bind tests verify the actual socket values. Detailed
+embed tests cover direct TCP and HTTP CONNECT chain metadata. `ChainExecutor`
+captures the first-hop socket metadata, including multi-hop identity, before
+wrapping; `resolve_endpoint_addr()` was removed, so metadata does not trigger a
+second DNS lookup. Unix and other non-TCP first hops continue to return `None`.
+Existing connection signatures and the boxed stream boundary are preserved.
+
+Phase 1 is fully qualified. Final implementation SHA will be recorded after
+the implementation commit is created.
