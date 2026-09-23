@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY AFTER OUTBOUND_TCP_SOCKET_METADATA_RECOVERY — 2026-09-22**
+**ACTIVE — PHASE 1 CLOSED — 2026-09-23**
 
 ## Target repository
 
@@ -102,8 +102,13 @@ Never overwrite or attempt to replace a published version.
 
 Selected `1.0.9`: `cargo search eggress --limit 10` reports `eggress-core`,
 `eggress-outbound`, and the workspace facade crates at latest version `1.0.8`,
-with no `1.0.9` registry release indicated. The package helper's dry-run is
-the final release graph/collision qualification; no publication is performed.
+with no `1.0.9` registry release indicated. The package helper lists all 28
+publishable crates. Its first package verification at 1.0.8 confirmed why the
+new patch is needed: `eggress-outbound` compiled against immutable
+`eggress-core 1.0.8`, which does not contain the additive metadata methods.
+The publisher dry-run verifier is being corrected to patch internal
+dependencies to the current workspace sources during verification only; no
+upload command or registry mutation is used.
 
 Record the selected version in this plan's completion record before editing
 version files.

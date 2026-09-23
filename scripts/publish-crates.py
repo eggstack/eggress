@@ -405,10 +405,11 @@ def cmd_list() -> int:
 
 def cmd_dry_run(skip_package_verify: bool = False) -> int:
     check_preflight()
-    # Dry-run intentionally does not require a clean tree: it is the
-    # verification used *before* the release commit is finalized. The
-    # execute path enforces cleanliness.
-    version, order, edges, _packages = compute_plan()
+    # Registry planning is read-only, but Cargo's package verifier requires
+    # the package sources (including locally patched workspace dependencies)
+    # to be committed. Run this after the release-preparation commit and
+    # before the execute path, which also enforces cleanliness.
+    version, order, edges, packages = compute_plan()
     print(f"workspace version: {version}")
     print("computed publish order:")
     for name in order:
@@ -417,8 +418,31 @@ def cmd_dry_run(skip_package_verify: bool = False) -> int:
         print(f"  {name}{suffix}")
     if not skip_package_verify:
         print("running workspace-wide package verification ...")
+        package_command = [
+            "cargo", "package", "--workspace", "--exclude", "eggress-bench", "--locked"
+        ]
+        # Cargo verifies each packed crate outside the workspace. Exact
+        # same-version internal dependencies would otherwise resolve from
+        # crates.io (the previous immutable release), or fail to resolve for
+        # a not-yet-published release. Patch those dependencies to the current
+        # workspace sources for verification only; the packed manifests and
+        # the command used by `cargo publish` remain unchanged.
+        for name in order:
+            package_dir = Path(packages[name]["manifest_path"]).parent
+            try:
+                package_path = package_dir.resolve().relative_to(REPO_ROOT.resolve())
+            except ValueError as exc:
+                raise PublishError(
+                    f"publishable crate {name} is outside the workspace: {package_dir}"
+                ) from exc
+            package_command.extend(
+                [
+                    "--config",
+                    f'patch.crates-io.{name}.path="{package_path.as_posix()}"',
+                ]
+            )
         proc = run(
-            ["cargo", "package", "--workspace", "--exclude", "eggress-bench", "--locked"],
+            package_command,
             capture_output=False,
         )
         if proc.returncode != 0:

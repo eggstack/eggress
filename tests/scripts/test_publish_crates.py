@@ -333,3 +333,42 @@ def test_dry_run_never_invokes_publish(monkeypatch):
     monkeypatch.setattr(pc, "run", fake_run)
     assert pc.cmd_dry_run(skip_package_verify=True) == 0
     assert all("publish" not in cmd for cmd in calls)
+
+
+def test_dry_run_patches_internal_dependencies_for_package_verification(monkeypatch):
+    calls = []
+    monkeypatch.setattr(pc, "REPO_ROOT", Path("/repo"))
+    monkeypatch.setattr(pc, "check_preflight", lambda: None)
+    monkeypatch.setattr(
+        pc,
+        "compute_plan",
+        lambda: (
+            VERSION,
+            ["eggress-uri", "eggress-core"],
+            {"eggress-uri": set(), "eggress-core": {"eggress-uri"}},
+            {
+                "eggress-uri": _pkg("eggress-uri"),
+                "eggress-core": _pkg("eggress-core"),
+            },
+        ),
+    )
+    monkeypatch.setattr(pc, "query_registry", lambda c, v: "missing")
+    monkeypatch.setattr(
+        pc, "run", lambda cmd, **kwargs: calls.append(cmd) or _Proc(returncode=0)
+    )
+
+    assert pc.cmd_dry_run() == 0
+    assert calls == [
+        [
+            "cargo",
+            "package",
+            "--workspace",
+            "--exclude",
+            "eggress-bench",
+            "--locked",
+            "--config",
+            'patch.crates-io.eggress-uri.path="crates/eggress-uri"',
+            "--config",
+            'patch.crates-io.eggress-core.path="crates/eggress-core"',
+        ]
+    ]
