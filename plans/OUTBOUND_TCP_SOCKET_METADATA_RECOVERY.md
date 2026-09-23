@@ -583,5 +583,5 @@ wrapping; `resolve_endpoint_addr()` was removed, so metadata does not trigger a
 second DNS lookup. Unix and other non-TCP first hops continue to return `None`.
 Existing connection signatures and the boxed stream boundary are preserved.
 
-Phase 1 is fully qualified. Final implementation SHA will be recorded after
-the implementation commit is created.
+Phase 1 is fully qualified. Implementation commit:
+`253370450dc76c16aa1a3987591089010183d3b3`.
