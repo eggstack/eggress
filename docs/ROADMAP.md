@@ -27,9 +27,9 @@ two pooled-transport edge cases that block the prepared 1.0.9 release.
 
 Registered handoffs, in order:
 
-1. [Pooled Transport Route Isolation Corrective](../plans/POOLED_TRANSPORT_ROUTE_ISOLATION_CORRECTIVE.md) — **READY FOR IMPLEMENTATION; RELEASE BLOCKER**. SSH/H2 reuse is safe at hop 0, but hop index alone does not identify an arbitrary preceding chain prefix. The corrective keeps hop-0 reuse and makes nested SSH/H2 consume the supplied chain stream without global physical-connection reuse.
-2. [Outbound Pooled Transport Metadata Truthfulness Corrective](../plans/OUTBOUND_POOLED_TRANSPORT_METADATA_TRUTHFULNESS_CORRECTIVE.md) — **READY AFTER ROUTE-ISOLATION CORRECTIVE; RELEASE BLOCKER**. Hop-0 SSH/H2 reuse may discard the newly opened socket whose addresses were captured before the handshake; the corrective prevents stale candidate-socket addresses from being reported as active transport metadata while preserving real metadata for direct and ordinary TCP-preserving hops.
-3. [Outbound TCP Socket Metadata Release Qualification](../plans/OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md) — **REQUALIFICATION REQUIRED**. The earlier 1.0.9 evidence remains historical evidence for the tested tree, but 1.0.9 is not publishable until both corrective plans land and the release/package qualification is rerun on the final SHA.
+1. [Pooled Transport Route Isolation Corrective](../plans/POOLED_TRANSPORT_ROUTE_ISOLATION_CORRECTIVE.md) — **IMPLEMENTED**. Hop-zero reuse remains enabled; nested SSH/H2 consumes the supplied chain stream without global physical-connection reuse.
+2. [Outbound Pooled Transport Metadata Truthfulness Corrective](../plans/OUTBOUND_POOLED_TRANSPORT_METADATA_TRUTHFULNESS_CORRECTIVE.md) — **IMPLEMENTED**. Reused hop-zero SSH/H2 no longer reports metadata from a discarded candidate socket; direct and ordinary TCP-preserving first hops retain actual metadata.
+3. [Outbound TCP Socket Metadata Release Qualification](../plans/OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md) — **READY FOR REQUALIFICATION; NOT RELEASE QUALIFIED**. Both corrective prerequisites are implemented. The prepared 1.0.9 tree remains unpublished pending final-SHA qualification.
 
 The prepared workspace remains lockstep 1.0.9 and unpublished. No `v1.0.9`
 tag, crates.io upload, PyPI release, or GitHub release has occurred.

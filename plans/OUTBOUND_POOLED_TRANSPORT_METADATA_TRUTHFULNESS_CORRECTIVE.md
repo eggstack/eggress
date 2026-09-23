@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY AFTER POOLED_TRANSPORT_ROUTE_ISOLATION_CORRECTIVE — RELEASE BLOCKER — 2026-09-23**
+**IMPLEMENTED — 2026-09-23**
 
 ## Target repository
 
@@ -392,4 +392,28 @@ This corrective is complete only when:
 
 ## Completion record
 
-Not yet executed.
+Implemented in `dfc19a0390e241f5255c8ad78dc2b50e214e537f` after route
+isolation was implemented.
+
+- `ChainExecutor` clears `ConnectionMetadata` only after a successful hop-zero
+  SSH or H2 handshake. Nested SSH/H2 keeps the metadata from the actual
+  TCP-backed hop zero because those handlers now consume the supplied stream.
+- Direct TCP and TCP-preserving chain metadata behavior is unchanged. No
+  metadata-only DNS, introspection, API signature, or `BoxStream` change was
+  introduced. Missing metadata does not affect successful connects.
+- Rust and Python-facing docs now define `Some(addr)` as belonging to the
+  transport carrying the returned stream; pooled hop-zero SSH/H2 may return
+  `None`. No Python projection code changed, so the existing direct metadata
+  tests remain applicable without rebuilding the extension.
+- Added a deterministic core regression proving hop-zero H2 clears candidate
+  addresses, while the existing HTTP chain metadata test proves ordinary
+  first-hop socket metadata remains available. `outbound_detailed` passed all
+  23 tests, including direct and HTTP chain metadata.
+- Verification passed: focused HTTP/SSH/outbound/core/embed tests, required
+  OpenSSH fixture (3 passed), outbound feature slices, `cargo fmt`, workspace
+  Clippy/tests, dependency policy, audit, fuzz compile, 1.0.9 version
+  coherence, metadata generation, and the 28-crate non-mutating publish dry
+  run. Existing policy warnings are recorded in the route-isolation
+  completion record.
+- Release qualification is unblocked but remains required before publication;
+  the 1.0.9 tree remains unpublished and untagged.

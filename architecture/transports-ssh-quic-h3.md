@@ -60,14 +60,18 @@ Single-file crate. All types and logic live in `src/lib.rs`.
   `eggress-embed::outbound::OutboundConnector` selects it for TOML chains and
   selects `new_compatibility()` only for its explicitly pproxy-compatible
   constructor.
+- The outbound chain handler reuses SSH sessions only at hop zero. Nested SSH
+  hops authenticate over the supplied prefix stream with a fresh session,
+  retained by the returned channel until it closes.
 - Both `SshAuth::Debug` (:49) and `SshSessionKey::Debug` (:68) redact
   secrets with `****`.
 
 ### Reviewer gotchas
 
 - `start_remote_tcp_forward` bypasses the session cache entirely.
-- `SshSessionKey` equality includes `hop_index` — same host, different hops
-  → separate cache entries.
+- `SshSessionKey` equality includes `hop_index`, but position does not identify
+  an arbitrary route prefix. Nested outbound hops bypass the cache instead of
+  relying on that field for cross-chain isolation.
 - Auth failure (:460) returns `AuthenticationFailed`; the handle is not
   yet in cache at that point.
 

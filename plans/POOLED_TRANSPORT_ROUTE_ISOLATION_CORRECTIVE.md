@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION — RELEASE BLOCKER — 2026-09-23**
+**IMPLEMENTED — 2026-09-23**
 
 ## Target repository
 
@@ -425,4 +425,28 @@ This plan is complete only when:
 
 ## Completion record
 
-Not yet executed.
+Implemented in `dfc19a0390e241f5255c8ad78dc2b50e214e537f`.
+
+- Hop-zero H2 retains the existing pooled connector path; nested H2 uses
+  `h2_connect_client()` and a private stream wrapper that owns and aborts its
+  connection driver on drop.
+- Hop-zero SSH retains its session cache; nested TCP and Unix SSH hops use
+  fresh sessions over the supplied chain stream. The returned stream retains
+  the authenticated session handle. Host-key policy remains selected by the
+  original cache constructor.
+- `HopHandler` and public connect/key signatures are unchanged. Corrected its
+  hop-index documentation and added route-reuse guidance to architecture,
+  embed, Rust API, and maintainer skill documentation.
+- Verification passed: `cargo fmt --all -- --check`, focused HTTP/SSH/outbound
+  tests, outbound no-default base/TOML/pproxy-compat/SSH/SSH+compat/UDP compile
+  slices, required OpenSSH embed test (3 passed), workspace Clippy, workspace
+  tests, `cargo deny check`, `cargo audit --ignore RUSTSEC-2023-0071`, and fuzz
+  compile. `cargo deny` reports existing duplicate-base64 and yanked-crate
+  warnings; audit reports existing `der` and `wnaf` yanked warnings.
+- Existing runtime regressions `chain_h2_consumes_prior_stream`,
+  `h2_chain_socks5_to_h2_to_http`, and
+  `openssh_chain_tunnels_second_ssh_hop_through_first` passed as part of the
+  workspace/required SSH runs. The implementation itself structurally selects
+  the non-pooled path for every index greater than zero.
+- The 1.0.9 version remains unchanged and unpublished. No release tag or
+  publication was created.

@@ -15,16 +15,19 @@
 
 ## Active registered handoff
 
-The prepared 1.0.9 release is blocked on two ordered pooled-transport
-correctives registered by the canonical `docs/ROADMAP.md`:
+The prepared 1.0.9 release is blocked on fresh release qualification after
+the two pooled-transport correctives registered by the canonical
+`docs/ROADMAP.md`:
 
-1. [`POOLED_TRANSPORT_ROUTE_ISOLATION_CORRECTIVE.md`](POOLED_TRANSPORT_ROUTE_ISOLATION_CORRECTIVE.md) — **READY FOR IMPLEMENTATION; RELEASE BLOCKER**. Preserve SSH/H2 reuse at hop 0, but make nested reusable hops consume the supplied chain stream rather than reusing a physical connection reached through another prefix.
-2. [`OUTBOUND_POOLED_TRANSPORT_METADATA_TRUTHFULNESS_CORRECTIVE.md`](OUTBOUND_POOLED_TRANSPORT_METADATA_TRUTHFULNESS_CORRECTIVE.md) — **READY AFTER ROUTE ISOLATION; RELEASE BLOCKER**. Prevent hop-0 pooled SSH/H2 from reporting addresses captured from a candidate socket that may have been discarded on cache reuse.
-3. [`OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md`](OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md) — **REQUALIFICATION REQUIRED** after both correctives. The workspace remains prepared at 1.0.9 but unpublished.
+1. [`POOLED_TRANSPORT_ROUTE_ISOLATION_CORRECTIVE.md`](POOLED_TRANSPORT_ROUTE_ISOLATION_CORRECTIVE.md) — **IMPLEMENTED**. Hop-zero reuse remains; nested SSH/H2 consumes the supplied chain stream without cross-execution physical reuse.
+2. [`OUTBOUND_POOLED_TRANSPORT_METADATA_TRUTHFULNESS_CORRECTIVE.md`](OUTBOUND_POOLED_TRANSPORT_METADATA_TRUTHFULNESS_CORRECTIVE.md) — **IMPLEMENTED**. Reused hop-zero SSH/H2 no longer report candidate-socket addresses as active metadata.
+3. [`OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md`](OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md) — **READY FOR REQUALIFICATION; NOT RELEASE QUALIFIED**. Both prerequisites are complete; 1.0.9 remains unpublished.
 
 No publication or release tagging is authorized by these plans.
 
 ## Recently completed
+
+- [`POOLED_TRANSPORT_ROUTE_ISOLATION_CORRECTIVE.md`](POOLED_TRANSPORT_ROUTE_ISOLATION_CORRECTIVE.md) and [`OUTBOUND_POOLED_TRANSPORT_METADATA_TRUTHFULNESS_CORRECTIVE.md`](OUTBOUND_POOLED_TRANSPORT_METADATA_TRUTHFULNESS_CORRECTIVE.md) — **IMPLEMENTED** at `dfc19a0390e241f5255c8ad78dc2b50e214e537f`. Fresh 1.0.9 release/package requalification is now unblocked and remains pending.
 
 - [`OUTBOUND_TCP_SOCKET_METADATA_RECOVERY.md`](OUTBOUND_TCP_SOCKET_METADATA_RECOVERY.md) — **IMPLEMENTED AND QUALIFIED** at `253370450dc76c16aa1a3987591089010183d3b3`. Direct and TCP-backed chain metadata now comes from the established socket, with unchanged public connection signatures and boxed-stream boundary.
 - [`OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md`](OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md) — **ORIGINAL QUALIFICATION SUPERSEDED BY POST-QUALIFICATION AUDIT**. The 1.0.9 tree was package/test qualified at `fc47c2dba39c2a8a7b1ef31a6daa46b67fb6ad37`, but publication is now blocked pending the two active pooled-transport correctives and fresh requalification.

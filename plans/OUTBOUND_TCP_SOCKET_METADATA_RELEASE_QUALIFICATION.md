@@ -2,7 +2,7 @@
 
 ## Status
 
-**REQUALIFICATION REQUIRED — BLOCKED ON POOLED TRANSPORT CORRECTIVES — 2026-09-23**
+**REQUALIFICATION REQUIRED — READY AFTER POOLED TRANSPORT CORRECTIVES — 2026-09-23**
 
 ## Target repository
 
@@ -34,8 +34,9 @@ A follow-up review found two reuse-related correctness gaps after the original
 
 The earlier qualification evidence remains valid for the code that was tested,
 but the release disposition is superseded: **1.0.9 is not publishable until
-both corrective plans land and this release qualification is rerun on the
-final corrective SHA.** No 1.0.9 tag or registry publication has occurred.
+this release qualification is rerun on the final corrective SHA.** Both
+corrective plans are implemented at `dfc19a0390e241f5255c8ad78dc2b50e214e537f`.
+No 1.0.9 tag or registry publication has occurred.
 
 ## Objective
 

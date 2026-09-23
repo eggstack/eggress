@@ -434,9 +434,10 @@ where
 
 /// Pool key identifying a unique H2 upstream connection group.
 ///
-/// Includes `hop_index` to prevent cross-chain pooling: when the same
-/// upstream endpoint appears at different positions in distinct chains,
-/// connections must not be shared because the preceding hops differ.
+/// Includes `hop_index` as one part of the pool identity. Position alone does
+/// not identify a preceding route prefix; outbound chain handlers therefore
+/// pool only hop zero and establish nested H2 connections over their supplied
+/// streams without using this global pool.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct H2PoolKey {
     pub endpoint_host: String,
