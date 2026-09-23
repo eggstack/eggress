@@ -295,6 +295,54 @@ impl SshSessionCache {
         Ok(Box::new(channel.into_stream()))
     }
 
+    /// Open a TCP channel using only the supplied route stream. This session is
+    /// never inserted into or looked up in the shared cache.
+    pub async fn open_tcp_channel_fresh(
+        &self,
+        key: SshSessionKey,
+        transport: SshStream,
+        target_host: &str,
+        target_port: u16,
+    ) -> Result<SshStream, SshTransportError> {
+        if target_port == 0 {
+            return Err(SshTransportError::TargetPort(target_port));
+        }
+        let session =
+            Arc::new(connect_fresh(key.clone(), transport, self.host_key_policy.clone()).await?);
+        let channel = session
+            .channel_open_direct_tcpip(target_host, u32::from(target_port), "127.0.0.1", 0)
+            .await
+            .map_err(|e| SshTransportError::Channel(e.to_string()))?;
+        Ok(Box::new(SessionStream {
+            inner: Box::new(channel.into_stream()),
+            _session: session,
+        }))
+    }
+
+    /// Open a Unix channel over a fresh SSH session on the supplied route.
+    pub async fn open_unix_channel_fresh(
+        &self,
+        key: SshSessionKey,
+        transport: SshStream,
+        socket_path: &str,
+    ) -> Result<SshStream, SshTransportError> {
+        if socket_path.is_empty() {
+            return Err(SshTransportError::Channel(
+                "Unix target path is empty".into(),
+            ));
+        }
+        let session =
+            Arc::new(connect_fresh(key.clone(), transport, self.host_key_policy.clone()).await?);
+        let channel = session
+            .channel_open_direct_streamlocal(socket_path)
+            .await
+            .map_err(|e| SshTransportError::Channel(e.to_string()))?;
+        Ok(Box::new(SessionStream {
+            inner: Box::new(channel.into_stream()),
+            _session: session,
+        }))
+    }
+
     /// Open a Unix-domain channel on the SSH server.
     pub async fn open_unix_channel(
         &self,
@@ -414,6 +462,52 @@ impl SshSessionCache {
     /// Remove one cached session so the next channel request reconnects.
     pub async fn invalidate(&self, key: &SshSessionKey) {
         self.sessions.lock().await.remove(key);
+    }
+}
+
+async fn connect_fresh(
+    key: SshSessionKey,
+    transport: SshStream,
+    policy: SshHostKeyPolicy,
+) -> Result<SessionHandle, SshTransportError> {
+    if matches!(&policy, SshHostKeyPolicy::InsecureCompatibility) {
+        tracing::warn!(host = %key.host, port = key.port, "SSH compatibility transport disables host-key verification");
+    }
+    connect_authenticated(key.clone(), transport, CompatClient::cached(&key, policy)).await
+}
+
+struct SessionStream {
+    inner: SshStream,
+    _session: Arc<SessionHandle>,
+}
+impl tokio::io::AsyncRead for SessionStream {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_read(cx, buf)
+    }
+}
+impl tokio::io::AsyncWrite for SessionStream {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        std::pin::Pin::new(&mut self.inner).poll_write(cx, buf)
+    }
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_flush(cx)
+    }
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_shutdown(cx)
     }
 }
 

@@ -7,17 +7,21 @@ chain-executor construction with TLS, typed failure classification, and the
 for its listener-bound sessions; `eggress-embed` re-exports this API as its
 full-service facade (`eggress_embed::outbound::*` stays source-compatible).
 
-TCP `OutboundInfo` reports addresses captured from the established socket
-before it enters the `BoxStream` boundary. Direct connections report their
-actual local and peer addresses. TCP-backed chains report the local and peer
-addresses of hop 0, including for multi-hop chains; the peer address comes
-from the socket actually connected and requires no metadata-only DNS lookup.
-Unix and other non-TCP first-hop transports may return `None`. Metadata is
-observational only: address lookup failure does not fail a successful
-connection or affect routing and retry behavior. The additive
+TCP `OutboundInfo` reports addresses only when Eggress knows they belong to
+the physical transport carrying the returned stream. Direct connections and
+ordinary TCP-preserving chains report the actual local and peer addresses of
+hop 0 without metadata-only DNS lookup. Hop-zero pooled SSH/H2 may discard the
+candidate socket, so both addresses are `None`; nested SSH/H2 is unpooled and
+preserves the first-hop metadata. Unix and other non-TCP first-hop transports
+may also return `None`. Missing metadata is observational and never fails a
+successful connection. The additive
 `DirectConnector::connect_with_options_and_metadata()` and
 `ChainExecutor::execute_with_metadata()` seams preserve existing signatures
 and the `BoxStream` boundary.
+
+Physical SSH/H2 reuse is allowed at hop 0. Nested SSH/H2 hops use the supplied
+chain stream and are not globally reused until a route-prefix-scoped reuse
+identity exists.
 
 ## Module map
 

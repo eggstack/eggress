@@ -88,9 +88,10 @@ pub trait HopHandler: Send + Sync {
     /// 2. Request connection to the specified target
     /// 3. Return the upgraded stream on success
     ///
-    /// `hop_index` is the 0-based position of this hop in the chain. Handlers
-    /// that use connection pooling (e.g., H2) must include this value in pool
-    /// keys to prevent cross-chain connection reuse.
+    /// `hop_index` is the 0-based position of this hop in the chain. Position
+    /// alone does not identify a preceding route prefix; reusable physical
+    /// transports must be restricted to hop zero unless pool identity includes
+    /// that prefix.
     fn handshake<'a>(
         &'a self,
         stream: BoxStream,
@@ -393,6 +394,15 @@ impl ChainExecutor {
                     protocol: format_protocols(&hop.protocols),
                     source: e,
                 })?;
+            // Hop-zero SSH sessions and H2 connections may come from a cache
+            // and discard this execution's candidate TCP socket. Never expose
+            // that candidate's addresses as the active transport metadata.
+            if i == 0
+                && (hop.protocols.contains(&ProtocolSpec::Ssh)
+                    || hop.protocols.contains(&ProtocolSpec::Http2))
+            {
+                metadata = ConnectionMetadata::default();
+            }
         }
 
         Ok((current_stream, metadata))
@@ -650,6 +660,27 @@ mod tests {
         let local_addr = metadata.local_addr().expect("first-hop local address");
         assert!(local_addr.ip().is_loopback());
         assert_ne!(local_addr.port(), 0);
+    }
+
+    #[tokio::test]
+    async fn execute_with_metadata_clears_reusable_hop_zero_candidate_socket() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let peer_addr = listener.local_addr().unwrap();
+        let accept = tokio::spawn(async move { listener.accept().await.unwrap() });
+        let (handler, _) = MockHandler::new(ProtocolSpec::Http2);
+        let executor = ChainExecutor::new(vec![Box::new(handler)]);
+        let hop = make_hop(
+            ProtocolSpec::Http2,
+            &peer_addr.ip().to_string(),
+            peer_addr.port(),
+        );
+        let (_stream, metadata) = executor
+            .execute_with_metadata(&[hop], &make_target("example.com", 80))
+            .await
+            .unwrap();
+        let _ = accept.await.unwrap();
+        assert_eq!(metadata.local_addr(), None);
+        assert_eq!(metadata.peer_addr(), None);
     }
 
     #[tokio::test]

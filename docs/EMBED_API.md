@@ -178,9 +178,12 @@ Contract:
   proxy-reported destination failure. Display/Debug are bounded and
   credential-safe; the outer deadline maps to `Timeout` / `Deadline`.
 - TCP `OutboundInfo.local_addr` and `peer_addr` come from the socket actually
-  connected. Direct routes describe the target socket; a chain describes its
-  first hop, even when more hops follow. Unix and other non-TCP first hops may
-  return `None`; missing address metadata does not fail a successful connect.
+  connected. Direct routes describe the target socket; a chain normally
+  describes hop 0. Hop-zero pooled SSH/H2 may return `None` because reuse can
+  discard the candidate socket. Nested SSH/H2 is unpooled and retains hop-zero
+  metadata. Unix and other non-TCP first hops may also return `None`; missing
+  metadata does not fail a successful connect. `Some(addr)` always belongs to
+  the physical transport carrying the returned stream.
   The correction is prepared for `eggress-outbound` `1.0.9` or newer;
   immutable `1.0.8` cannot provide it.
 

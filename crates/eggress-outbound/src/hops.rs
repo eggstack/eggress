@@ -498,12 +498,23 @@ impl HopHandler for SshHopHandler {
             };
             // Format once (O-03); previously each branch formatted separately.
             let target_host = target.host.to_string();
-            let result = if target.port == 0 {
-                sessions.open_unix_channel(key, stream, &target_host).await
-            } else {
-                sessions
-                    .open_tcp_channel(key, stream, &target_host, target.port)
-                    .await
+            let result = match (target.port == 0, hop_index == 0) {
+                (true, true) => sessions.open_unix_channel(key, stream, &target_host).await,
+                (false, true) => {
+                    sessions
+                        .open_tcp_channel(key, stream, &target_host, target.port)
+                        .await
+                }
+                (true, false) => {
+                    sessions
+                        .open_unix_channel_fresh(key, stream, &target_host)
+                        .await
+                }
+                (false, false) => {
+                    sessions
+                        .open_tcp_channel_fresh(key, stream, &target_host, target.port)
+                        .await
+                }
             };
             result.map_err(|error| Box::new(error) as Box<dyn std::error::Error + Send + Sync>)
         })
@@ -644,6 +655,43 @@ pub(crate) struct PooledH2Stream {
     pub(crate) _guard: eggress_protocol_http::H2PoolGuard,
 }
 
+pub(crate) struct UnpooledH2Stream {
+    inner:
+        tokio::io::Join<eggress_protocol_http::H2StreamRead, eggress_protocol_http::H2StreamWrite>,
+    driver: tokio::task::JoinHandle<Result<(), h2::Error>>,
+}
+
+impl Drop for UnpooledH2Stream {
+    fn drop(&mut self) {
+        self.driver.abort();
+    }
+}
+
+impl tokio::io::AsyncRead for UnpooledH2Stream {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_read(cx, buf)
+    }
+}
+impl tokio::io::AsyncWrite for UnpooledH2Stream {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        Pin::new(&mut self.inner).poll_write(cx, buf)
+    }
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_flush(cx)
+    }
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
+
 impl tokio::io::AsyncRead for PooledH2Stream {
     fn poll_read(
         mut self: std::pin::Pin<&mut Self>,
@@ -709,24 +757,35 @@ impl HopHandler for H2HopHandler {
             let stream: BoxStream = stream;
 
             let auth_ref = auth.as_ref().map(|(u, p)| (u.as_str(), p.as_str()));
-            let (send_stream, recv_stream, guard) =
-                eggress_protocol_http::h2_connect_client_pooled(
-                    stream,
-                    &target_clone,
-                    auth_ref,
-                    &pool_key,
-                )
-                .await
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
-
-            let h2_write = eggress_protocol_http::H2StreamWrite::new(send_stream);
-            let h2_read = eggress_protocol_http::H2StreamRead::new(recv_stream);
-
-            let pooled = PooledH2Stream {
-                inner: tokio::io::join(h2_read, h2_write),
-                _guard: guard,
-            };
-            Ok(Box::new(pooled) as BoxStream)
+            if hop_index == 0 {
+                let (send_stream, recv_stream, guard) =
+                    eggress_protocol_http::h2_connect_client_pooled(
+                        stream,
+                        &target_clone,
+                        auth_ref,
+                        &pool_key,
+                    )
+                    .await
+                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+                let inner = tokio::io::join(
+                    eggress_protocol_http::H2StreamRead::new(recv_stream),
+                    eggress_protocol_http::H2StreamWrite::new(send_stream),
+                );
+                Ok(Box::new(PooledH2Stream {
+                    inner,
+                    _guard: guard,
+                }) as BoxStream)
+            } else {
+                let (send_stream, recv_stream, driver) =
+                    eggress_protocol_http::h2_connect_client(stream, &target_clone, auth_ref)
+                        .await
+                        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+                let inner = tokio::io::join(
+                    eggress_protocol_http::H2StreamRead::new(recv_stream),
+                    eggress_protocol_http::H2StreamWrite::new(send_stream),
+                );
+                Ok(Box::new(UnpooledH2Stream { inner, driver }) as BoxStream)
+            }
         })
     }
 }

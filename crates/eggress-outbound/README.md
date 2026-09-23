@@ -63,12 +63,18 @@ Kind, stage, hop, and protocol are diagnostic facts, not retry
 recommendations; callers own retry/backoff policy and no direct fallback
 occurs on proxy failure. Display/Debug are bounded and credential-safe.
 
-`OutboundInfo` carries observational socket metadata. Direct TCP connections
-report the actual local and peer addresses. TCP-backed chains report the
-actual socket addresses for the first hop, including in a multi-hop chain;
-the peer address comes from the established socket without another DNS
-lookup. Unix and other non-TCP first hops may return `None`. Missing metadata
-never changes successful connection behavior.
+`OutboundInfo` carries observational socket metadata: `Some(addr)` means that
+address belongs to the physical transport carrying the returned stream;
+`None` means Eggress cannot prove that relationship. Direct TCP and ordinary
+TCP-preserving first hops report actual addresses without another DNS lookup.
+Hop-zero pooled SSH/H2 may return `None` because cache reuse can discard the
+candidate socket; nested SSH/H2 is unpooled and retains actual hop-zero
+metadata. Unix and other non-TCP first hops may also return `None`. Missing
+metadata never changes successful connection behavior.
+
+Physical SSH/H2 reuse is allowed at hop 0. Nested SSH/H2 hops use the supplied
+chain stream and are not globally reused until a route-prefix-scoped reuse
+identity exists.
 
 ## Documentation
 

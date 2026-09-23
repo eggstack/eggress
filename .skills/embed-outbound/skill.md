@@ -52,8 +52,13 @@ canonical TOML parse/validate/compile authority.
 - `OutboundInfo` TCP addresses describe the socket actually established:
   direct routes describe the target, while chains describe hop 0. Capture
   metadata before boxing and carry it alongside `BoxStream`; do not resolve a
-  host again just to populate `peer_addr`. Address metadata is observational,
-  and Unix or other non-TCP first hops may return `None`.
+  host again just to populate `peer_addr`. `Some(addr)` must identify the
+  physical transport carrying the returned stream. Hop-zero pooled SSH/H2 may
+  return `None`; nested SSH/H2 is unpooled and keeps hop-zero metadata. Address
+  metadata is observational, and Unix or other non-TCP first hops may return
+  `None`.
+- Reuse SSH/H2 physical connections only at hop 0. Nested SSH/H2 must consume
+  the supplied chain stream until route-prefix-scoped pool identity exists.
 - `associate_udp()` (feature `udp`) — fixed-target direct + single-hop SOCKS5
   only (IPv4/IPv6, family-corrected bind); composed/Shadowsocks in this
   surface fail with `UnsupportedFeature`.
