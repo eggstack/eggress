@@ -19,14 +19,20 @@ Known boundaries:
 See `docs/parity/README.md` and `crates/eggress-pproxy-compat/src/tier.rs`
 for the tier taxonomy (`docs/PPROXY_PARITY_SPEC.md` is historical provenance only).
 
-### Completed qualification — listener-free TCP socket metadata recovery
+### Active corrective — pooled transport route isolation and metadata truthfulness
+
+The base listener-free TCP metadata recovery is implemented at
+`253370450dc76c16aa1a3987591089010183d3b3`, but post-qualification review found
+two pooled-transport edge cases that block the prepared 1.0.9 release.
 
 Registered handoffs, in order:
 
-1. [Outbound TCP Socket Metadata Recovery](../plans/OUTBOUND_TCP_SOCKET_METADATA_RECOVERY.md) — **IMPLEMENTED AND QUALIFIED** at `253370450dc76c16aa1a3987591089010183d3b3`. `OutboundConnector` reports actual local and peer socket addresses for direct and TCP-backed first-hop routes, removes the metadata-only second DNS lookup, and preserves every existing connection signature and boxed-stream boundary.
-2. [Outbound TCP Socket Metadata Release Qualification](../plans/OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md) — **RELEASE QUALIFIED, UNPUBLISHED** at lockstep patch `1.0.9` (`fc47c2dba39c2a8a7b1ef31a6daa46b67fb6ad37`). All 28 crates pass package verification and report absent from crates.io; focused, full workspace, feature, Python, Clippy, dependency-policy, audit, and fuzz checks pass. Publication and any `v*` tag remain maintainer-operated and were not performed.
+1. [Pooled Transport Route Isolation Corrective](../plans/POOLED_TRANSPORT_ROUTE_ISOLATION_CORRECTIVE.md) — **READY FOR IMPLEMENTATION; RELEASE BLOCKER**. SSH/H2 reuse is safe at hop 0, but hop index alone does not identify an arbitrary preceding chain prefix. The corrective keeps hop-0 reuse and makes nested SSH/H2 consume the supplied chain stream without global physical-connection reuse.
+2. [Outbound Pooled Transport Metadata Truthfulness Corrective](../plans/OUTBOUND_POOLED_TRANSPORT_METADATA_TRUTHFULNESS_CORRECTIVE.md) — **READY AFTER ROUTE-ISOLATION CORRECTIVE; RELEASE BLOCKER**. Hop-0 SSH/H2 reuse may discard the newly opened socket whose addresses were captured before the handshake; the corrective prevents stale candidate-socket addresses from being reported as active transport metadata while preserving real metadata for direct and ordinary TCP-preserving hops.
+3. [Outbound TCP Socket Metadata Release Qualification](../plans/OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md) — **REQUALIFICATION REQUIRED**. The earlier 1.0.9 evidence remains historical evidence for the tested tree, but 1.0.9 is not publishable until both corrective plans land and the release/package qualification is rerun on the final SHA.
 
-Motivation: published 1.0.8 always returns `OutboundInfo.local_addr = None` from listener-free TCP execution and derives chain `peer_addr` through a separate endpoint lookup rather than the socket actually selected. The campaign is generic Eggress API correctness work; it does not add downstream-specific policy, resolver injection, retries, or new proxy capability. The prepared 1.0.9 release remains unpublished until separately authorized.
+The prepared workspace remains lockstep 1.0.9 and unpublished. No `v1.0.9`
+tag, crates.io upload, PyPI release, or GitHub release has occurred.
 
 ## Completed Milestones
 
