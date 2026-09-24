@@ -19,28 +19,29 @@ Known boundaries:
 See `docs/parity/README.md` and `crates/eggress-pproxy-compat/src/tier.rs`
 for the tier taxonomy (`docs/PPROXY_PARITY_SPEC.md` is historical provenance only).
 
-### Active corrective — pooled transport policy identity and 1.0.10 roll-forward
+### Active corrective — H2 TLS override preservation and 1.0.10 qualification
 
-The nested SSH/H2 route-isolation and metadata-truthfulness corrections landed
-in 1.0.9, but a post-release audit found remaining hop-zero reuse-policy gaps:
-the process-global H2 pool can cross executor/TLS-policy boundaries, explicit
-H2 local-bind/insecure policy can be bypassed by reuse, and hop-zero SSH reuse
-can bypass explicit local-bind policy.
+The 1.0.10 pooled-transport policy implementation landed at
+`6577fffaac71acc231457331ad3f05985826bc4e` and its Rust/Python CI is green.
+A final review found one release-blocking TLS composition defect: ALPN
+adaptation can replace a caller-supplied ClientConfig with a newly built
+system-roots config, potentially discarding custom CA, mTLS identity, or
+verifier policy. The required end-to-end custom-CA H2 trust-boundary proof is
+also still missing.
 
-`v1.0.9` is historical and must not be moved or recreated. The tag points to
-`e10dea18300f2618c4a47fa46280f1bf518e7a5f`; the GitHub Release exists and
-its tag-triggered Python and binary release workflows succeeded. Native
-crates.io state is verified separately because that publication path is manual.
+Registered handoffs, in order:
 
-Registered handoff:
+1. [H2 TLS Override ALPN Preservation and 1.0.10 Qualification Corrective](../plans/H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md) — **READY FOR IMPLEMENTATION; RELEASE BLOCKER**. Preserve caller TLS policy while adapting ALPN, fail closed for unsupported custom-override + insecure combinations, add custom-CA/trust-boundary behavioral regressions, and complete 1.0.10 package/CI qualification.
+2. [Pooled Transport Policy Identity and 1.0.10 Roll-Forward Corrective](../plans/POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md) — **IMPLEMENTED BUT NOT RELEASE-QUALIFIED**. Its pooling/local-bind/route-isolation changes remain the base of 1.0.10; final closure is delegated to the H2 TLS corrective.
 
-1. [Pooled Transport Policy Identity and 1.0.10 Roll-Forward Corrective](../plans/POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md) — **IMPLEMENTATION IN PROGRESS**. Scope Eggress chain H2 pooling to TLS policy identity, make explicit H2 local-bind/insecure and SSH local-bind connections non-poolable, complete behavioral TLS/bind/cross-route regressions, reconcile the overstated 1.0.9 evidence, audit other reusable transports, and prepare the next unused lockstep patch (expected 1.0.10) without publishing it.
+`v1.0.9` remains immutable history. The workspace is currently 1.0.10, with
+no `v1.0.10` production tag or publication authorized by these plans.
 
 Historical related records:
 
 - [Pooled Transport Route Isolation Corrective](../plans/POOLED_TRANSPORT_ROUTE_ISOLATION_CORRECTIVE.md) — **IMPLEMENTED in 1.0.9**.
 - [Outbound Pooled Transport Metadata Truthfulness Corrective](../plans/OUTBOUND_POOLED_TRANSPORT_METADATA_TRUTHFULNESS_CORRECTIVE.md) — **IMPLEMENTED in 1.0.9**.
-- [Outbound TCP Socket Metadata Release Qualification](../plans/OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md) — **HISTORICAL; 1.0.9 TAGGED/RELEASED, SUPERSEDED BY ROLL-FORWARD**.
+- [Outbound TCP Socket Metadata Release Qualification](../plans/OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md) — **HISTORICAL; 1.0.9 TAGGED/RELEASED, SUPERSEDED BY 1.0.10 ROLL-FORWARD**.
 
 ## Completed Milestones
 
