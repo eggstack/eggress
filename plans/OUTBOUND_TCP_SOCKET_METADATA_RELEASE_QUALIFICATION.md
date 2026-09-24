@@ -460,3 +460,20 @@ python3 scripts/publish-crates.py --execute
 
 Any production tag must separately pass `scripts/release-preflight.sh
 --tag v1.0.9`; pushing it triggers the PyPI and binary release workflows.
+
+## Crates.io state audit — 2026-09-24 04:32 UTC
+
+Queried the public crates.io sparse index and crates.io version API after the
+v1.0.9 GitHub release was confirmed. The public index reported these exact
+1.0.9 publications (all non-yanked):
+
+- `eggress-core 1.0.9` — `2026-09-24T03:15:12Z`.
+- `eggress-outbound 1.0.9` — `2026-09-24T03:19:52Z`.
+- `eggress-embed 1.0.9` — `2026-09-24T03:22:24Z`.
+
+This supersedes the earlier 1.0.9 release-qualification helper observation
+that every crate version was missing. That observation belonged to the
+pre-release state and is retained above as historical evidence. Separate
+queries of the sparse index found no `1.0.10` entry for these three required
+crates; the remote `v1.0.10` tag was also absent at audit time. No registry
+upload or tag creation was performed by this audit.

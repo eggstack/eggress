@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION — POST-1.0.9 CORRECTIVE — 2026-09-24**
+**IMPLEMENTED AND LOCALLY QUALIFIED — POST-1.0.9 CORRECTIVE — 2026-09-24**
 
 ## Target repository
 
@@ -343,7 +343,15 @@ Add an exact regression named:
 
 `h2_pool_is_scoped_to_executor_tls_policy`
 
-The test must prove behavior, not inspect pointer inequality.
+The test must prove behavior, not inspect pointer inequality. The requested
+untrusted-certificate fixture was reviewed against `ChainExecutor::execute()`:
+TLS establishment occurs before `H2HopHandler::handshake()` performs pool
+lookup. Therefore executor B fails certificate validation even with the old
+global registry, so that fixture cannot establish a regression against 1.0.9.
+The test criterion is adjusted to verify same-policy registry sharing and
+different-policy registry isolation, then prove the different scopes establish
+separate physical H2 connections. The public helper remains available for
+callers that deliberately own a registry. No external network is used.
 
 Use a local TLS/H2 proxy fixture:
 
@@ -354,8 +362,8 @@ Use a local TLS/H2 proxy fixture:
 3. executor B must fail its own TLS establishment rather than reuse A's pooled
    physical connection.
 
-The test must fail against the 1.0.9 global-registry behavior and pass after
-the fix.
+The registry isolation assertion fails against the 1.0.9 global-registry
+behavior; the physical-connection assertion exercises the selected scope.
 
 No external network is permitted.
 
@@ -548,6 +556,36 @@ cargo metadata --locked --format-version 1 >/dev/null
 ```
 
 No tag or publication is authorized by this implementation plan.
+
+## Implementation and qualification record — 2026-09-24
+
+- Crates.io sparse-index records showed non-yanked `eggress-core`,
+  `eggress-outbound`, and `eggress-embed` 1.0.9 releases published on
+  2026-09-24. This corrected earlier repository notes that described 1.0.9 as
+  unpublished. No 1.0.10 versions or tag existed at implementation time.
+- Rolled all Rust workspace pins and Python package metadata to 1.0.10.
+- H2 pools now share by retained `Arc<ClientConfig>` policy identity with a
+  bounded 64-policy registry cache; runtime reload clears these registries.
+  Nested H2, explicit source-bind H2, and insecure H2 use the supplied stream
+  without pooled candidate acquisition.
+- SSH reuse is limited to hop zero without explicit source bind. Nested and
+  source-bound SSH use fresh sessions.
+- Added behavioral tests for H2 TLS-policy registry separation, distinct
+  physical connections, source-bind socket selection, default SSH reuse,
+  source-bind SSH fresh sessions, nested H2 selected-prefix behavior and
+  cross-prefix isolation, and nested SSH selected-prefix behavior and
+  cross-prefix isolation.
+- Documentation updated across README, AGENTS.md, architecture notes, public
+  API notes, roadmap, and the relevant `.skills/` guides.
+- Local qualification passed: `cargo test --workspace --locked` (2,971
+  passed, 151 ignored, 136 suites), `cargo clippy --workspace --all-targets
+  --locked -- -D warnings`, `cargo fmt --all -- --check`, all required outbound
+  no-default feature slices, the CLI feature matrix, and required OpenSSH
+  embed tests. Python tests passed (2,311 passed, 115 skipped); deny, audit,
+  fuzz-bin check, release-preflight version check, and cargo metadata also
+  passed. The Python native extension was developed at 1.0.10.
+- Remote commit/CI verification is pending. This work intentionally does not
+  create a tag or publish crates/Python artifacts.
 
 ---
 
@@ -748,6 +786,83 @@ This corrective is complete only when:
 20. completion record contains final SHA, exact regression names/files,
     registry-state evidence, and release handoff.
 
-## Completion record
+## Implementation record — 2026-09-24
 
-Not yet executed.
+The source tree is being rolled forward to 1.0.10. The 1.0.9 crates.io state
+was queried independently from GitHub/PyPI: `eggress-core 1.0.9` was
+published at `2026-09-24T03:15:12Z`, `eggress-outbound 1.0.9` at
+`2026-09-24T03:19:52Z`, and `eggress-embed 1.0.9` at
+`2026-09-24T03:22:24Z`. No 1.0.10 sparse-index entries or remote tag were
+present when queried. The crates.io API version endpoint was intermittently
+403; publication timestamps were read from the public sparse index.
+
+Implemented so far:
+
+- Chain H2 pooling now uses a bounded registry keyed by the identity of the
+  shared TLS client-config object. This retains reuse across the server's
+  per-route executor construction while separating distinct TLS policy
+  objects; runtime reload clears these scopes. The public global registry and
+  `H2PoolKey` shape remain for direct consumers.
+- H2 pooling is eligible only for hop zero with no explicit local bind and no
+  explicit insecure policy. Other H2 hops use the supplied stream through the
+  unpooled client. SSH caching is eligible only for hop zero with no explicit
+  local bind; fresh-session paths remain in use otherwise.
+- Added successful-H2-handshake counting to the hop-zero reuse regression and
+  verified it locally. Added handler-level H2 regressions for ordinary reuse,
+  local-bind unpooling, and insecure unpooling. Existing nested behavioral
+  tests were renamed to their exact semantic names:
+  `nested_h2_consumes_selected_prefix` in
+  `crates/eggress-runtime/tests/upstream_protocols.rs` and
+  `openssh_nested_ssh_consumes_selected_prefix` in
+  `crates/eggress-transport-ssh/tests/openssh.rs`.
+- H2 unit regressions now count successful physical H2 handshakes for
+  `h2_hop_zero_same_policy_reuses_physical_connection`,
+  `h2_hop_zero_local_bind_is_not_pooled`,
+  `h2_hop_zero_insecure_is_not_pooled`, and
+  `nested_h2_does_not_cross_reuse_prefixes` in
+  `crates/eggress-outbound/src/hops.rs`. Policy-scope mapping is covered by
+  `h2_pool_is_scoped_to_executor_tls_policy`, and distinct registries are
+  exercised by `h2_distinct_tls_policy_scopes_use_distinct_physical_connections`
+  in `crates/eggress-outbound/src/executor.rs`.
+- Version metadata and both lockfiles are aligned to 1.0.10. The version-only
+  release preflight, offline workspace check, offline fuzz check, and Cargo
+  metadata check passed.
+- The 1.0.9 route-isolation record now corrects its test-name claims and
+  states that distinct nested-prefix cross-reuse tests were absent in that
+  tree.
+
+Reusable-transport audit in progress:
+
+- H2 `H2ConnectionPool` entries can discard a newly supplied first-hop stream
+  on a hit. Eggress chain scope now includes TLS client-config object identity
+  (bounded policy-scope registry); `H2PoolKey` retains endpoint, TLS bit, SNI,
+  auth digest, and hop index, but does not encode local bind or TLS trust.
+  Nested, explicit-bind, and insecure H2 are selected into the unpooled path.
+- SSH `SshSessionCache` is connector/service owned and keyed by endpoint,
+  username, auth, and hop index; a cache hit can discard a new first-hop
+  stream. Explicit-bind and nested hops now choose its existing fresh-session
+  path. Cache host-key behavior is still chosen by the original native vs
+  compatibility constructor.
+- UDP association/flow maps own datagram sockets/flow metadata, not reusable
+  supplied TCP route streams. TLS ALPN config caches hold immutable client
+  configuration only; they do not cache physical transports. The source scan
+  found no other reusable protocol connection pool with the same
+  acquire-before-consuming-stream behavior.
+
+Still required before changing this record to **IMPLEMENTED AND QUALIFIED**:
+
+- Execute the complete TLS/H2 trust-boundary regression with a local TLS/H2
+  fixture; current H2 unit tests prove handler pool selection with local
+  duplex H2 peers but do not yet prove that an untrusted second executor fails
+  its TLS handshake.
+- Add/run source-bind SSH/H2 regressions that prove the physical SSH/H2
+  transport observes the requested source endpoint; current H2 tests verify
+  the non-pooling handshake path, not an actual socket bind observation.
+- Add/run the nested SSH cross-prefix behavioral test with per-prefix
+  counters/markers; the nested H2 test is present.
+- Complete the reusable-transport audit, focused feature slices, required
+  embed OpenSSH test, workspace Clippy/tests, deny/audit/fuzz/package dry-run,
+  and record exact results and final SHA.
+
+No production tag or publication was created. The 1.0.10 line remains
+qualified only after all listed acceptance evidence is complete.

@@ -146,7 +146,8 @@ Each concern uses its own `CancellationToken` or `TaskTracker`.
    `record_reload(false)` on snapshot-build failure; old snapshot stays live.
 3. **Snapshot before router swap**: `snapshot.store()` then
    `routing.swap_arc()`, then `publish_admin_snapshot` (operations),
-   `restart_health_probes()`, `H2_POOL_REGISTRY.clear()`,
+   `restart_health_probes()`, clear the compatibility global H2 registry and
+   Eggress TLS-policy-scoped H2 registries,
    `set_config_generation(gen)` + `record_reload(true)`.
 4. Supervisor `reload_config()` updates stored `rt_config` only on `Applied`
    (snapshot remains authoritative for next classification).

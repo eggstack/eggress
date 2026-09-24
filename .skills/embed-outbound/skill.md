@@ -59,6 +59,11 @@ canonical TOML parse/validate/compile authority.
   `None`.
 - Reuse SSH/H2 physical connections only at hop 0. Nested SSH/H2 must consume
   the supplied chain stream until route-prefix-scoped pool identity exists.
+- Hop-zero H2 pools are shared only among executors that share the same TLS
+  client-config object; this preserves pooling across the server's per-route
+  executor construction while separating policy objects. Explicit `local_bind` disables SSH and H2 cache reuse;
+  explicit insecure H2 also disables pooling. Do not use the public global H2
+  registry from Eggress chain handlers.
 - `associate_udp()` (feature `udp`) — fixed-target direct + single-hop SOCKS5
   only (IPv4/IPv6, family-corrected bind); composed/Shadowsocks in this
   surface fail with `UnsupportedFeature`.

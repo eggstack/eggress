@@ -88,7 +88,11 @@ Representative (not exhaustive) downstream-shaped compile contracts:
   seams. They preserve truthful first-hop TCP socket addresses without
   changing existing connection signatures or the `BoxStream` boundary;
   hop-zero pooled SSH/H2 may report `None` when the candidate socket is not
-  the transport carrying the returned stream.
+  the transport carrying the returned stream. Eggress H2 pools are scoped to
+  the TLS client-config identity; the endpoint/SNI/auth `H2PoolKey` does not
+  encode trust policy. Explicit hop-zero `local_bind` disables SSH/H2 reuse,
+  explicit insecure H2 is unpooled, and nested SSH/H2 always consumes the
+  selected prior-hop stream without pooling.
 - `eggress-server/tests/public_api.rs`: `NoopMetrics`, `UdpAssociationHandle`,
   `SessionReport`, `ConnectionConfig`, `ConnectionContext`, `AuthReuseCache`;
 - lower-level crates retain their existing unit/integration tests as semantic

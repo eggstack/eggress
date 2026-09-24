@@ -1053,26 +1053,37 @@ async fn handle_h2_connect(
 }
 
 async fn start_h2_connect_proxy() -> std::net::SocketAddr {
+    start_h2_connect_proxy_counted().await.0
+}
+
+async fn start_h2_connect_proxy_counted() -> (
+    std::net::SocketAddr,
+    std::sync::Arc<std::sync::atomic::AtomicUsize>,
+) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
+    let accepts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let accept_count = accepts.clone();
     tokio::spawn(async move {
         loop {
             let (stream, _) = match listener.accept().await {
                 Ok(s) => s,
                 Err(_) => break,
             };
+            let accept_count = accept_count.clone();
             tokio::spawn(async move {
                 let conn = match h2::server::handshake(stream).await {
                     Ok(c) => c,
                     Err(_) => return,
                 };
+                accept_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 if let Err(e) = handle_h2_connect(conn).await {
                     eprintln!("h2 connect proxy error: {}", e);
                 }
             });
         }
     });
-    addr
+    (addr, accepts)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1664,7 +1675,7 @@ async fn h2_connect_relay_to_http(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn h2_chain_socks5_to_h2_to_http() {
+async fn nested_h2_consumes_selected_prefix() {
     install_crypto();
     let echo_addr = start_tcp_echo().await;
     let http_proxy_addr = start_http_connect_proxy().await;
@@ -2004,10 +2015,10 @@ upstream_group = "tcp-upstream"
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn h2_upstream_connection_reuse() {
+async fn h2_hop_zero_same_policy_reuses_physical_connection() {
     install_crypto();
     let echo_addr = start_tcp_echo().await;
-    let h2_proxy_addr = start_h2_connect_proxy().await;
+    let (h2_proxy_addr, accepted_connections) = start_h2_connect_proxy_counted().await;
 
     let config = format!(
         r#"
@@ -2090,12 +2101,96 @@ upstream_group = "tcp-upstream"
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
 
-    // If pool works, this test completes without error
-    // (we can't easily count TCP connections without instrumenting the proxy)
-
     token.cancel();
     let result = tokio::time::timeout(std::time::Duration::from_secs(5), jh).await;
     assert!(result.is_ok(), "shutdown should complete within timeout");
+    assert_eq!(
+        accepted_connections.load(std::sync::atomic::Ordering::Relaxed),
+        1,
+        "same-policy hop-zero H2 requests should share one physical connection"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn h2_hop_zero_local_bind_honors_source_socket() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    install_crypto();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy_addr = listener.local_addr().unwrap();
+    let peers = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let physical_handshakes = std::sync::Arc::new(AtomicUsize::new(0));
+    let proxy_peers = peers.clone();
+    let proxy_handshakes = physical_handshakes.clone();
+    let proxy_task = tokio::spawn(async move {
+        loop {
+            let Ok((stream, peer)) = listener.accept().await else {
+                return;
+            };
+            let proxy_peers = proxy_peers.clone();
+            let proxy_handshakes = proxy_handshakes.clone();
+            tokio::spawn(async move {
+                let Ok(mut connection) = h2::server::handshake(stream).await else {
+                    return;
+                };
+                proxy_handshakes.fetch_add(1, Ordering::Relaxed);
+                proxy_peers.lock().unwrap().push(peer);
+                while let Some(Ok((_request, mut response))) = connection.accept().await {
+                    if response
+                        .send_response(
+                            http::Response::builder().status(200).body(()).unwrap(),
+                            false,
+                        )
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            });
+        }
+    });
+
+    let executor = eggress_server::build_chain_executor(None, None);
+    let ordinary =
+        eggress_uri::parse_proxy_chain(&format!("h2://{}:{}", proxy_addr.ip(), proxy_addr.port()))
+            .unwrap();
+    let target: eggress_core::TargetAddr = "target.example:443".parse().unwrap();
+    let ordinary_stream = executor.execute(&ordinary.hops, &target).await.unwrap();
+    drop(ordinary_stream);
+
+    let mut bound_stream = None;
+    let mut requested_port = 0;
+    for _ in 0..8 {
+        let reservation = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        requested_port = reservation.local_addr().unwrap().port();
+        drop(reservation);
+        let bound = eggress_uri::parse_proxy_chain(&format!(
+            "h2://{}:{}@127.0.0.1:{}",
+            proxy_addr.ip(),
+            proxy_addr.port(),
+            requested_port
+        ))
+        .unwrap();
+        if let Ok(stream) = executor.execute(&bound.hops, &target).await {
+            bound_stream = Some(stream);
+            break;
+        }
+    }
+    let bound_stream = bound_stream.expect("a reserved loopback source port should bind");
+    drop(bound_stream);
+
+    assert_eq!(physical_handshakes.load(Ordering::Relaxed), 2);
+    assert!(
+        peers
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|peer| peer.port() == requested_port),
+        "H2 proxy must observe the explicit source port {requested_port}"
+    );
+
+    eggress_server::clear_h2_pool_registries();
+    proxy_task.abort();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

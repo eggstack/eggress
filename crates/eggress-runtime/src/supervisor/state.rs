@@ -113,6 +113,7 @@ impl RuntimeState {
 
         self.restart_health_probes();
         eggress_protocol_http::H2_POOL_REGISTRY.clear();
+        eggress_server::clear_h2_pool_registries();
 
         self.runtime_metrics.set_config_generation(generation);
         self.runtime_metrics.record_reload(true);

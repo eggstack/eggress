@@ -498,7 +498,8 @@ impl HopHandler for SshHopHandler {
             };
             // Format once (O-03); previously each branch formatted separately.
             let target_host = target.host.to_string();
-            let result = match (target.port == 0, hop_index == 0) {
+            let cached_allowed = hop_index == 0 && hop.local_bind.is_none();
+            let result = match (target.port == 0, cached_allowed) {
                 (true, true) => sessions.open_unix_channel(key, stream, &target_host).await,
                 (false, true) => {
                     sessions
@@ -539,7 +540,9 @@ impl HopHandler for UnixHopHandler {
     }
 }
 
-pub(crate) struct H2HopHandler;
+pub(crate) struct H2HopHandler {
+    pub(crate) pool_registry: std::sync::Arc<eggress_protocol_http::H2PoolRegistry>,
+}
 
 #[cfg(feature = "quic")]
 pub(crate) struct QuicHopHandler;
@@ -740,6 +743,8 @@ impl HopHandler for H2HopHandler {
     ) -> HandshakeFuture<'a> {
         let endpoint_host = hop.endpoint.host.clone();
         let endpoint_port = hop.endpoint.port;
+        let local_bind = hop.local_bind.is_some();
+        let insecure = hop.insecure;
         let auth = hop
             .credentials
             .as_ref()
@@ -757,9 +762,11 @@ impl HopHandler for H2HopHandler {
             let stream: BoxStream = stream;
 
             let auth_ref = auth.as_ref().map(|(u, p)| (u.as_str(), p.as_str()));
-            if hop_index == 0 {
+            let pool_eligible = hop_index == 0 && !local_bind && !insecure;
+            if pool_eligible {
                 let (send_stream, recv_stream, guard) =
-                    eggress_protocol_http::h2_connect_client_pooled(
+                    eggress_protocol_http::h2_connect_client_pooled_in_registry(
+                        &self.pool_registry,
                         stream,
                         &target_clone,
                         auth_ref,
@@ -806,6 +813,114 @@ mod tests {
     use super::*;
     use eggress_core::{TargetAddr, TargetHost};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    async fn h2_pair(
+        handshakes: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    ) -> (BoxStream, tokio::task::JoinHandle<()>) {
+        let (client, server) = tokio::io::duplex(16 * 1024);
+        let task = tokio::spawn(async move {
+            let Ok(mut connection) = h2::server::handshake(server).await else {
+                return;
+            };
+            handshakes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            while let Some(Ok((_request, mut response))) = connection.accept().await {
+                if response
+                    .send_response(
+                        http::Response::builder().status(200).body(()).unwrap(),
+                        false,
+                    )
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
+        (Box::new(client), task)
+    }
+
+    fn h2_hop() -> eggress_uri::ProxyHopSpec {
+        eggress_uri::parse_proxy_chain("h2://127.0.0.1:443")
+            .unwrap()
+            .hops
+            .into_iter()
+            .next()
+            .unwrap()
+    }
+
+    async fn run_h2_handshake(
+        handler: &H2HopHandler,
+        stream: BoxStream,
+        hop: &eggress_uri::ProxyHopSpec,
+        hop_index: usize,
+    ) {
+        let target: TargetAddr = "target.example:443".parse().unwrap();
+        let connected = handler
+            .handshake(stream, &target, hop, hop_index)
+            .await
+            .expect("H2 CONNECT succeeds");
+        drop(connected);
+    }
+
+    #[tokio::test]
+    async fn h2_hop_zero_same_policy_reuses_physical_connection() {
+        let handshakes = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let handler = H2HopHandler {
+            pool_registry: std::sync::Arc::new(eggress_protocol_http::H2PoolRegistry::new()),
+        };
+        let hop = h2_hop();
+        for _ in 0..2 {
+            let (stream, _server) = h2_pair(handshakes.clone()).await;
+            run_h2_handshake(&handler, stream, &hop, 0).await;
+        }
+        assert_eq!(handshakes.load(std::sync::atomic::Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn h2_hop_zero_local_bind_is_not_pooled() {
+        let handshakes = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let handler = H2HopHandler {
+            pool_registry: std::sync::Arc::new(eggress_protocol_http::H2PoolRegistry::new()),
+        };
+        let mut hop = h2_hop();
+        hop.local_bind = Some("127.0.0.1:12345".into());
+        for _ in 0..2 {
+            let (stream, _server) = h2_pair(handshakes.clone()).await;
+            run_h2_handshake(&handler, stream, &hop, 0).await;
+        }
+        assert_eq!(handshakes.load(std::sync::atomic::Ordering::Relaxed), 2);
+    }
+
+    #[tokio::test]
+    async fn h2_hop_zero_insecure_is_not_pooled() {
+        let handshakes = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let handler = H2HopHandler {
+            pool_registry: std::sync::Arc::new(eggress_protocol_http::H2PoolRegistry::new()),
+        };
+        let mut hop = h2_hop();
+        hop.insecure = true;
+        for _ in 0..2 {
+            let (stream, _server) = h2_pair(handshakes.clone()).await;
+            run_h2_handshake(&handler, stream, &hop, 0).await;
+        }
+        assert_eq!(handshakes.load(std::sync::atomic::Ordering::Relaxed), 2);
+    }
+
+    #[tokio::test]
+    async fn nested_h2_does_not_cross_reuse_prefixes() {
+        let prefix_a = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let prefix_b = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let handler = H2HopHandler {
+            pool_registry: std::sync::Arc::new(eggress_protocol_http::H2PoolRegistry::new()),
+        };
+        let hop = h2_hop();
+        let (stream_a, _server_a) = h2_pair(prefix_a.clone()).await;
+        run_h2_handshake(&handler, stream_a, &hop, 1).await;
+        let (stream_b, _server_b) = h2_pair(prefix_b.clone()).await;
+        run_h2_handshake(&handler, stream_b, &hop, 1).await;
+
+        assert_eq!(prefix_a.load(std::sync::atomic::Ordering::Relaxed), 1);
+        assert_eq!(prefix_b.load(std::sync::atomic::Ordering::Relaxed), 1);
+    }
 
     fn http_only_target() -> TargetAddr {
         TargetAddr {

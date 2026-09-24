@@ -73,8 +73,12 @@ metadata. Unix and other non-TCP first hops may also return `None`. Missing
 metadata never changes successful connection behavior.
 
 Physical SSH/H2 reuse is allowed at hop 0. Nested SSH/H2 hops use the supplied
-chain stream and are not globally reused until a route-prefix-scoped reuse
-identity exists.
+chain stream and are unpooled. Hop-zero SSH/H2 reuse is policy-scoped:
+explicit `local_bind` disables reuse, explicit insecure H2 is unpooled, and
+Eggress H2 registries are bounded and scoped to the identity of the TLS
+client-config object. The public `H2PoolKey` omits TLS trust policy and is not
+the complete identity by itself. `OutboundInfo::Some(addr)` still identifies
+the physical transport carrying the stream.
 
 ## Documentation
 

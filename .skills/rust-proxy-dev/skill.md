@@ -20,6 +20,11 @@ Use when implementing new proxy protocols, transport wrappers, or modifying core
 - Streams are boxed at protocol/transport boundaries (`BoxStream`) — never propagate generic stream types
 - If a listener-free TCP API reports socket metadata, capture `local_addr()` / `peer_addr()` before boxing and pass a small metadata value alongside `BoxStream`. `Some(addr)` must belong to the physical transport carrying the returned stream; pooled hop-zero SSH/H2 may require `None`. Nested SSH/H2 is unpooled and retains first-hop metadata. Do not add metadata-only DNS resolution or make metadata query failures fail a successful connect. Keep non-TCP metadata absent unless its transport already exposes truthful `SocketAddr` values.
 - Physical SSH/H2 reuse is allowed at hop 0. Nested SSH/H2 must use the supplied chain stream until a route-prefix-scoped reuse identity exists.
+- Pool/cache lifetime is part of physical connection identity. Eggress H2
+  pooling uses a bounded TLS client-config identity scope (including trust
+  overrides); `H2PoolKey`
+  alone is not a complete TLS policy identity. Explicit hop-zero `local_bind`
+  disables SSH/H2 reuse, and explicit insecure H2 remains unpooled.
 - No C deps, no OpenSSL, no `build.rs` files
 
 ## SSR/legacy Shadowsocks handling

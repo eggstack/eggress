@@ -34,7 +34,7 @@ crates.io state is verified separately because that publication path is manual.
 
 Registered handoff:
 
-1. [Pooled Transport Policy Identity and 1.0.10 Roll-Forward Corrective](../plans/POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md) — **READY FOR IMPLEMENTATION**. Scope Eggress chain H2 pooling to the executor/service TLS-policy lifetime, make explicit H2 local-bind/insecure and SSH local-bind connections non-poolable, add real behavioral cross-route regressions, reconcile the overstated 1.0.9 evidence, audit other reusable transports, and prepare the next unused lockstep patch (expected 1.0.10) without publishing it.
+1. [Pooled Transport Policy Identity and 1.0.10 Roll-Forward Corrective](../plans/POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md) — **IMPLEMENTATION IN PROGRESS**. Scope Eggress chain H2 pooling to TLS policy identity, make explicit H2 local-bind/insecure and SSH local-bind connections non-poolable, complete behavioral TLS/bind/cross-route regressions, reconcile the overstated 1.0.9 evidence, audit other reusable transports, and prepare the next unused lockstep patch (expected 1.0.10) without publishing it.
 
 Historical related records:
 

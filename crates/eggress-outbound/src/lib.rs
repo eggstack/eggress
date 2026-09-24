@@ -33,7 +33,8 @@ pub use connector::OUTBOUND_MAX_DATAGRAM_SIZE;
 pub use connector::{OutboundConnector, OutboundInfo};
 pub use error::OutboundError;
 pub use executor::{
-    build_chain_executor, build_chain_executor_with_options, OutboundExecutorOptions,
+    build_chain_executor, build_chain_executor_with_options, clear_h2_pool_registries,
+    OutboundExecutorOptions,
 };
 /// Shared target conversion used by outbound handshakes and listener
 /// session code (`#[doc(hidden)]` shared seam, not end-user API).

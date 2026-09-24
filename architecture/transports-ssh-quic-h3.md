@@ -63,6 +63,8 @@ Single-file crate. All types and logic live in `src/lib.rs`.
 - The outbound chain handler reuses SSH sessions only at hop zero. Nested SSH
   hops authenticate over the supplied prefix stream with a fresh session,
   retained by the returned channel until it closes.
+- An explicit hop-zero `local_bind` uses a fresh SSH session so a cached
+  transport cannot bypass its source-address policy.
 - Both `SshAuth::Debug` (:49) and `SshSessionKey::Debug` (:68) redact
   secrets with `****`.
 

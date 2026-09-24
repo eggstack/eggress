@@ -19,9 +19,15 @@ successful connection. The additive
 `ChainExecutor::execute_with_metadata()` seams preserve existing signatures
 and the `BoxStream` boundary.
 
-Physical SSH/H2 reuse is allowed at hop 0. Nested SSH/H2 hops use the supplied
-chain stream and are not globally reused until a route-prefix-scoped reuse
-identity exists.
+Physical SSH/H2 reuse is allowed only at hop 0 and within the established
+policy scope. Nested hops use the supplied chain stream and are unpooled.
+Eggress chain H2 registries are shared by the identity of the TLS client
+configuration (bounded to 64 retained policy scopes), so per-connection server
+executors preserve reuse for one TLS/trust policy without sharing connections
+with another. `H2PoolKey` is not itself a complete TLS policy identity.
+Explicit `local_bind` disables hop-zero SSH/H2 reuse, and explicit insecure H2
+is unpooled. Pooled SSH/H2 may return `None` metadata; `Some(addr)` continues
+to identify the physical transport carrying the stream.
 
 ## Module map
 

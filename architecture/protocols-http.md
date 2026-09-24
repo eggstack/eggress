@@ -187,7 +187,12 @@ headers removed per RFC 7230 s6.1 (:384).
 (:314-318), only `chunked` supported (:322-326). Response TE takes
 precedence over CL per RFC 7230 s3.3.3 (:558-559).
 
-**H2 pool isolation**: `H2PoolKey` hashes creds via SHA-256 (:463-469).
+**H2 pool isolation**: `H2PoolKey` hashes creds via SHA-256 (:463-469), but
+does not encode TLS trust policy. The compatibility global registry remains
+available to direct consumers; Eggress chain handlers use a bounded registry
+scope keyed by the identity of the shared TLS client-config object. Explicit
+local-bind/insecure H2 and nested H2 consume their supplied stream without
+pooling.
 Key includes `hop_index` for cross-chain isolation. Idle connections reaped
 at `idle_timeout / 2`.
 

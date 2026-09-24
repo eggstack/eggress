@@ -180,12 +180,15 @@ Contract:
 - TCP `OutboundInfo.local_addr` and `peer_addr` come from the socket actually
   connected. Direct routes describe the target socket; a chain normally
   describes hop 0. Hop-zero pooled SSH/H2 may return `None` because reuse can
-  discard the candidate socket. Nested SSH/H2 is unpooled and retains hop-zero
-  metadata. Unix and other non-TCP first hops may also return `None`; missing
+  discard the candidate socket. H2 pools are scoped to the TLS client-config
+  identity, while `H2PoolKey` alone omits trust policy. Explicit hop-zero
+  `local_bind` disables SSH/H2 reuse, explicit insecure H2 is unpooled, and
+  nested SSH/H2 is unpooled and retains hop-zero metadata. Unix and other
+  non-TCP first hops may also return `None`; missing
   metadata does not fail a successful connect. `Some(addr)` always belongs to
   the physical transport carrying the returned stream.
-  The correction is prepared for `eggress-outbound` `1.0.9` or newer;
-  immutable `1.0.8` cannot provide it.
+  The socket metadata correction shipped in immutable `v1.0.9`; the pooled
+  transport policy corrective is being qualified for `1.0.10`.
 
 ### Listener-free UDP (`associate_udp`)
 

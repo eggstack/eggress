@@ -396,7 +396,7 @@ async fn openssh_supports_concurrent_channels_over_one_cached_session() {
 }
 
 #[tokio::test]
-async fn openssh_chain_tunnels_second_ssh_hop_through_first() {
+async fn openssh_nested_ssh_consumes_selected_prefix() {
     let Some(first) = OpenSsh::start().await else {
         return;
     };

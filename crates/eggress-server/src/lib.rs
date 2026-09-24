@@ -5,6 +5,8 @@ mod auth;
 /// Shared typed outbound classifier (single authority in
 /// `eggress-outbound`; re-exported here for source compatibility).
 pub use eggress_outbound::classify;
+#[doc(hidden)]
+pub use eggress_outbound::clear_h2_pool_registries;
 pub mod error;
 pub mod execute;
 pub mod listener;

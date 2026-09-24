@@ -11,6 +11,9 @@
 
 use std::sync::Arc;
 
+use std::collections::{HashMap, VecDeque};
+use std::sync::{LazyLock, Mutex};
+
 use eggress_core::chain::{ChainExecutor, HopHandler};
 
 #[cfg(feature = "pproxy-legacy")]
@@ -21,6 +24,65 @@ use crate::hops::{
     H2HopHandler, HttpHopHandler, HttpOnlyHopHandler, RawHopHandler, Socks4HopHandler,
     Socks5HopHandler, UnixHopHandler,
 };
+
+/// Runtime builds a ChainExecutor per listener connection, so bind H2 pools
+/// to the identity of the shared TLS policy object. Retaining that Arc also
+/// prevents pointer reuse from making a later, different trust policy collide.
+/// The bounded cache preserves pooling across requests while separating
+/// independent TLS configurations.
+static H2_POOLS_BY_TLS_POLICY: LazyLock<Mutex<H2PoolScopes>> =
+    LazyLock::new(|| Mutex::new(H2PoolScopes::default()));
+
+#[derive(Default)]
+struct H2PoolScopes {
+    pools: HashMap<
+        usize,
+        (
+            Arc<rustls::ClientConfig>,
+            Arc<eggress_protocol_http::H2PoolRegistry>,
+        ),
+    >,
+    order: VecDeque<usize>,
+}
+
+fn h2_pool_registry_for_tls_policy(
+    tls_config: Option<&Arc<rustls::ClientConfig>>,
+) -> Arc<eggress_protocol_http::H2PoolRegistry> {
+    let Some(tls_config) = tls_config else {
+        return Arc::new(eggress_protocol_http::H2PoolRegistry::new());
+    };
+    let policy_id = Arc::as_ptr(tls_config) as usize;
+    let mut scopes = H2_POOLS_BY_TLS_POLICY
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    if let Some((_, registry)) = scopes.pools.get(&policy_id) {
+        return registry.clone();
+    }
+    if scopes.order.len() >= 64 {
+        if let Some(oldest) = scopes.order.pop_front() {
+            scopes.pools.remove(&oldest);
+        }
+    }
+    let registry = Arc::new(eggress_protocol_http::H2PoolRegistry::new());
+    scopes
+        .pools
+        .insert(policy_id, (tls_config.clone(), registry.clone()));
+    scopes.order.push_back(policy_id);
+    registry
+}
+
+/// Clear Eggress chain H2 pool scopes, for example after runtime reload.
+#[doc(hidden)]
+pub fn clear_h2_pool_registries() {
+    let mut scopes = H2_POOLS_BY_TLS_POLICY
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    for (_, registry) in scopes.pools.values() {
+        registry.clear();
+    }
+    scopes.pools.clear();
+    scopes.order.clear();
+}
 #[cfg(feature = "quic")]
 use crate::hops::{H3HopHandler, QuicHopHandler};
 #[cfg(feature = "extended")]
@@ -203,7 +265,12 @@ fn build_chain_executor_inner(
     if let Some(sessions) = ssh_sessions {
         handlers.push(Box::new(SshHopHandler { sessions }));
     }
-    handlers.push(Box::new(H2HopHandler));
+    // Resolve the shared TLS-policy scope. Listener execution creates an
+    // executor per route, so this preserves reuse between those executors
+    // while keeping distinct ClientConfig objects in separate registries.
+    handlers.push(Box::new(H2HopHandler {
+        pool_registry: h2_pool_registry_for_tls_policy(shared_tls_config.as_ref()),
+    }));
 
     #[cfg(feature = "quic")]
     {
@@ -337,6 +404,7 @@ fn build_chain_executor_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use eggress_core::TargetAddr;
 
     #[test]
     fn default_executor_configs_share_process_cached_tls_state() {
@@ -364,5 +432,105 @@ mod tests {
         let configured = executor.shared_tls_config().unwrap();
         assert!(Arc::ptr_eq(configured, &custom));
         assert!(!Arc::ptr_eq(configured, &default));
+    }
+
+    #[test]
+    fn h2_pool_is_scoped_to_executor_tls_policy() {
+        let trusted_policy = eggress_transport_tls::default_client_config().unwrap();
+        let other_policy = eggress_transport_tls::TlsClientConfigBuilder::new()
+            .with_system_roots()
+            .unwrap()
+            .build()
+            .unwrap();
+        let first_executor_scope = h2_pool_registry_for_tls_policy(Some(&trusted_policy));
+        let same_policy_scope = h2_pool_registry_for_tls_policy(Some(&trusted_policy.clone()));
+        let other_policy_scope = h2_pool_registry_for_tls_policy(Some(&other_policy));
+        assert!(Arc::ptr_eq(&first_executor_scope, &same_policy_scope));
+        assert!(!Arc::ptr_eq(&first_executor_scope, &other_policy_scope));
+    }
+
+    #[tokio::test]
+    async fn h2_distinct_tls_policy_scopes_use_distinct_physical_connections() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let handshakes = Arc::new(AtomicUsize::new(0));
+        let (first_client, first_server) = tokio::io::duplex(16 * 1024);
+        let first_count = handshakes.clone();
+        tokio::spawn(async move {
+            let Ok(mut connection) = h2::server::handshake(first_server).await else {
+                return;
+            };
+            first_count.fetch_add(1, Ordering::Relaxed);
+            while let Some(Ok((_request, mut response))) = connection.accept().await {
+                if response
+                    .send_response(
+                        http::Response::builder().status(200).body(()).unwrap(),
+                        false,
+                    )
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
+
+        let first_tls = eggress_transport_tls::default_client_config().unwrap();
+        let second_tls = eggress_transport_tls::TlsClientConfigBuilder::new()
+            .with_system_roots()
+            .unwrap()
+            .build()
+            .unwrap();
+        let first_registry = h2_pool_registry_for_tls_policy(Some(&first_tls));
+        let second_registry = h2_pool_registry_for_tls_policy(Some(&second_tls));
+        let pool_key = eggress_protocol_http::H2PoolKey::new(
+            "127.0.0.1",
+            443,
+            true,
+            Some("proxy.example"),
+            None,
+        );
+        let target: TargetAddr = "target.example:443".parse().unwrap();
+        let (_send, _recv, guard) = eggress_protocol_http::h2_connect_client_pooled_in_registry(
+            &first_registry,
+            first_client,
+            &target,
+            None,
+            &pool_key,
+        )
+        .await
+        .unwrap();
+        drop(guard);
+
+        let (second_client, second_server) = tokio::io::duplex(16 * 1024);
+        let second_count = handshakes.clone();
+        tokio::spawn(async move {
+            let Ok(mut connection) = h2::server::handshake(second_server).await else {
+                return;
+            };
+            second_count.fetch_add(1, Ordering::Relaxed);
+            while let Some(Ok((_request, mut response))) = connection.accept().await {
+                if response
+                    .send_response(
+                        http::Response::builder().status(200).body(()).unwrap(),
+                        false,
+                    )
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
+        let (_send, _recv, guard) = eggress_protocol_http::h2_connect_client_pooled_in_registry(
+            &second_registry,
+            second_client,
+            &target,
+            None,
+            &pool_key,
+        )
+        .await
+        .unwrap();
+        drop(guard);
+
+        assert_eq!(handshakes.load(Ordering::Relaxed), 2);
     }
 }

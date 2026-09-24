@@ -450,3 +450,24 @@ Implemented in `dfc19a0390e241f5255c8ad78dc2b50e214e537f`.
   the non-pooled path for every index greater than zero.
 - The 1.0.9 version remains unchanged and unpublished. No release tag or
   publication was created.
+
+## Post-release evidence correction — 2026-09-24
+
+The 1.0.9 release-state statement above is superseded: `v1.0.9` points to
+`e10dea18300f2618c4a47fa46280f1bf518e7a5f`, its GitHub Release exists, and
+the tag-triggered Python/binary release workflows succeeded. The crates.io
+state is separate; the public sparse index reports `eggress-core 1.0.9` at
+03:15:12Z, `eggress-outbound 1.0.9` at 03:19:52Z, and `eggress-embed 1.0.9`
+at 03:22:24Z on 2026-09-24.
+
+The completion record's exact three test names were inaccurate. The real H2
+chain regression was `h2_chain_socks5_to_h2_to_http` (now named
+`nested_h2_consumes_selected_prefix` in
+`crates/eggress-runtime/tests/upstream_protocols.rs`), and the real OpenSSH
+chain regression was `openssh_chain_tunnels_second_ssh_hop_through_first`
+(now named `openssh_nested_ssh_consumes_selected_prefix` in
+`crates/eggress-transport-ssh/tests/openssh.rs`). The separate test
+`chain_h2_consumes_prior_stream` was a hop-zero test and did not prove nested
+prefix consumption. No test in this 1.0.9 tree proves cross-reuse isolation
+between two nested H2/SSH prefixes; that gap is carried into the 1.0.10
+corrective plan rather than being represented as completed evidence.

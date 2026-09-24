@@ -432,12 +432,12 @@ where
 
 // ===== H2 Connection Pool =====
 
-/// Pool key identifying a unique H2 upstream connection group.
+/// Protocol-visible part of an H2 upstream pool identity.
 ///
-/// Includes `hop_index` as one part of the pool identity. Position alone does
-/// not identify a preceding route prefix; outbound chain handlers therefore
-/// pool only hop zero and establish nested H2 connections over their supplied
-/// streams without using this global pool.
+/// This key deliberately keeps its public shape and does not include TLS
+/// trust/client policy or local socket binding. Callers must scope the owning
+/// `H2PoolRegistry` to those connection policies. Hop index is not a route
+/// prefix identity, so nested chain handlers must not pool through this key.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct H2PoolKey {
     pub endpoint_host: String,
@@ -463,7 +463,7 @@ impl H2PoolKey {
         Self::with_hop_index(host, port, use_tls, server_name, auth, 0)
     }
 
-    /// Create a pool key with an explicit hop index for cross-chain isolation.
+    /// Create a pool key with an explicit hop index.
     pub fn with_hop_index(
         host: &str,
         port: u16,
@@ -744,7 +744,8 @@ pub struct H2PoolStats {
     pub idle_timeout_secs: u64,
 }
 
-/// Global H2 connection pool registry, keyed by (endpoint_host, endpoint_port, use_tls, server_name, auth_hash).
+/// H2 pool registry. The registry's owner defines the TLS/trust policy scope;
+/// `H2PoolKey` identifies only the protocol-visible pool dimensions.
 pub struct H2PoolRegistry {
     // Registry access only creates or looks up pools synchronously; no guard
     // may be held across an async operation.
@@ -873,8 +874,25 @@ pub async fn h2_connect_client_pooled<S>(
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
-    H2_POOL_REGISTRY.prune_idle_pools();
-    let pool = H2_POOL_REGISTRY.get_or_create(pool_key);
+    h2_connect_client_pooled_in_registry(&H2_POOL_REGISTRY, stream, target, auth, pool_key).await
+}
+
+/// Perform an H2 CONNECT handshake using a caller-owned pool registry.
+///
+/// The registry owner must have a lifetime and scope that represent the TLS
+/// and trust policy used to establish its physical connections.
+pub async fn h2_connect_client_pooled_in_registry<S>(
+    registry: &H2PoolRegistry,
+    stream: S,
+    target: &TargetAddr,
+    auth: Option<(&str, &str)>,
+    pool_key: &H2PoolKey,
+) -> Result<(h2::SendStream<Bytes>, h2::RecvStream, H2PoolGuard), H2ConnectError>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    registry.prune_idle_pools();
+    let pool = registry.get_or_create(pool_key);
 
     // Try to acquire an existing connection from the pool
     if let Some(result) = try_pooled_connection(&pool, target, auth).await {

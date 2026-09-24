@@ -114,7 +114,8 @@ Protocol-specific tests live alongside the implementation:
 
 `crates/eggress-transport-ssh/tests/openssh.rs` uses a temporary local OpenSSH
 server and is the required evidence for the optional `ssh` feature. It covers
-public-key auth, direct TCP echo, concurrent cached channels, chained SSH hops,
+public-key auth, direct TCP echo, concurrent cached channels, chained SSH hops
+(`openssh_nested_ssh_consumes_selected_prefix`),
 remote Unix sockets, remote TCP forwarding, invalid-password redaction, and
 explicit reconnect. Password-success coverage is enabled only when
 `EGRESS_SSH_TEST_PASSWORD` is set to the fixture user's password; never commit
@@ -138,6 +139,15 @@ EGRESS_REQUIRE_OPENSSH_TESTS=1 cargo test -p eggress-embed --locked \
 CI installs `openssh-server` before this gate. Without the required-mode
 environment variable, a machine genuinely lacking `sshd` or `ssh-keygen` may
 skip the fixture; any later setup or readiness failure remains fatal.
+
+The H2 route fixture in `crates/eggress-runtime/tests/upstream_protocols.rs`
+includes `nested_h2_consumes_selected_prefix` and
+`h2_hop_zero_same_policy_reuses_physical_connection`. Executor unit tests in
+`crates/eggress-outbound/src/hops.rs` count successful H2 handshakes for
+`h2_hop_zero_local_bind_is_not_pooled`,
+`h2_hop_zero_insecure_is_not_pooled`, and
+`nested_h2_does_not_cross_reuse_prefixes`; run them with
+`cargo test -p eggress-outbound --lib`.
 
 ### UDP-specific tests
 - `crates/eggress-udp/tests/socks5_upstream.rs` — upstream relay scenarios
