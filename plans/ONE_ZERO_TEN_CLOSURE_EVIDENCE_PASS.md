@@ -2,7 +2,7 @@
 
 ## Status
 
-**IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED — 2026-09-24**
+**IMPLEMENTED — QUALIFICATION EVIDENCE CORRECTIVE REQUIRED — 2026-09-24**
 
 ## Target repository
 
@@ -16,6 +16,21 @@ Depends on:
 
 - `plans/H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md`
 - `plans/POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md`
+
+## Post-closure evidence correction — 2026-09-24
+
+A final review found that the physical H2 isolation regression counts TLS
+accepts before server-side H2 handshake establishment. Because the pooled H2
+client checks for an existing entry before calling h2::client::handshake on the
+supplied TLS stream, a candidate TLS stream can be accepted and then discarded
+on a pool hit. Qualification is therefore reopened only for the stronger
+physical-H2 proof and final CI.
+
+Closure is delegated to
+[H2_PHYSICAL_SESSION_EVIDENCE_CORRECTIVE.md](H2_PHYSICAL_SESSION_EVIDENCE_CORRECTIVE.md).
+
+All other closure evidence remains valid unless the corrective uncovers a new
+defect.
 
 ## Purpose
 
