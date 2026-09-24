@@ -15,15 +15,14 @@
 
 ## Active registered handoff
 
-The prepared 1.0.9 release is blocked on fresh release qualification after
-the two pooled-transport correctives registered by the canonical
-`docs/ROADMAP.md`:
+The canonical roadmap now has one active post-1.0.9 corrective:
 
-1. [`POOLED_TRANSPORT_ROUTE_ISOLATION_CORRECTIVE.md`](POOLED_TRANSPORT_ROUTE_ISOLATION_CORRECTIVE.md) — **IMPLEMENTED**. Hop-zero reuse remains; nested SSH/H2 consumes the supplied chain stream without cross-execution physical reuse.
-2. [`OUTBOUND_POOLED_TRANSPORT_METADATA_TRUTHFULNESS_CORRECTIVE.md`](OUTBOUND_POOLED_TRANSPORT_METADATA_TRUTHFULNESS_CORRECTIVE.md) — **IMPLEMENTED**. Reused hop-zero SSH/H2 no longer report candidate-socket addresses as active metadata.
-3. [`OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md`](OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md) — **READY FOR REQUALIFICATION; NOT RELEASE QUALIFIED**. Both prerequisites are complete; 1.0.9 remains unpublished.
+1. [`POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md`](POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md) — **READY FOR IMPLEMENTATION**. Close hop-zero H2 executor/TLS-policy scope, H2 local-bind/insecure pooling, and SSH local-bind reuse gaps; replace overstated route-isolation evidence with real behavioral regressions; audit equivalent reusable-transport keys; reconcile the actual 1.0.9 release state; and prepare the next unused lockstep patch (expected 1.0.10) without publishing it.
 
-No publication or release tagging is authorized by these plans.
+`v1.0.9` already exists at `e10dea18300f2618c4a47fa46280f1bf518e7a5f`.
+The GitHub Release and tag-triggered Python/binary release workflows succeeded.
+Do not move/recreate that tag. Native crates.io state must be verified
+independently because the crate publisher is manual.
 
 ## Recently completed
 
