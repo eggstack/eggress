@@ -2,7 +2,7 @@
 
 ## Status
 
-**IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED — 2026-09-24**
+**IMPLEMENTED — PHYSICAL-H2 EVIDENCE PENDING — 2026-09-24**
 
 ## Target repository
 
@@ -31,6 +31,14 @@ which owns the supported publisher dry-run, the stronger physical H2
 policy-isolation regression, wording corrections, and canonical closeout.
 
 No `v1.0.10` tag or publication is required to complete qualification.
+
+## Physical-H2 evidence follow-up — 2026-09-24
+
+The TLS policy-preservation implementation remains complete. Final release
+qualification is reopened only because the two-valid-policy isolation fixture
+counted successful TLS accepts rather than successful server-side H2
+handshakes. The stronger proof is delegated to
+[H2_PHYSICAL_SESSION_EVIDENCE_CORRECTIVE.md](H2_PHYSICAL_SESSION_EVIDENCE_CORRECTIVE.md).
 
 ## Purpose
 
