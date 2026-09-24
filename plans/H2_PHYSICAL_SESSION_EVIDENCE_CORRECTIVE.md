@@ -2,7 +2,7 @@
 
 ## Status
 
-READY FOR IMPLEMENTATION — FINAL 1.0.10 EVIDENCE CORRECTIVE — 2026-09-24
+IMPLEMENTED AND QUALIFIED — 2026-09-24
 
 ## Target repository
 
@@ -277,4 +277,70 @@ This corrective is complete only when:
 
 ## Completion record
 
-Not yet executed.
+Executed 2026-09-24. Implementation commit
+`c5826b3dc6184bf6cc5fa215f926f281a71c7131` on `main`
+(code + dependent-plan wording corrections).
+
+1. ✅ Local TLS/H2 fixture separately counts TLS accepts and
+   successful H2 handshakes (`TlsH2ServerCounters` with
+   `tls_accepts` / `h2_handshakes` in
+   `crates/eggress-outbound/src/executor.rs` test module).
+2. ✅ H2 counter increments only after `h2::server::handshake`
+   succeeds (never on TCP/TLS accept, executor success, or
+   registry checks).
+3. ✅ Executor A's H2 connection remains alive during executor B's
+   connect (`_stream_a` held; bounded wait for first H2 handshake
+   before B connects).
+4. ✅ Executor B completes its logical H2 CONNECT successfully.
+5. ✅ Server observes at least two TLS accepts.
+6. ✅ Server observes exactly two successful H2 handshakes
+   (`h2_handshakes == 2`; assertion text: "distinct valid TLS
+   policy identities must establish distinct physical H2
+   sessions").
+7. ✅ Mutation sensitivity proven by test-only control
+   `h2_shared_registry_reuses_one_physical_session_test_control`
+   (no production API change): deliberately shared
+   `Arc<ClientConfig>` → 2 TLS accepts but 1 H2 handshake,
+   while distinct registries → 2 and 2.
+8. ✅ Prior custom-CA/trust/insecure/bind/nested regressions remain
+   green (`cargo test -p eggress-outbound --locked`: 27 passed;
+   `--features insecure-tls`: 28 passed;
+   `cargo test -p eggress-transport-tls --locked`: 23 passed).
+9. ✅ Full gates: `cargo fmt --all -- --check` clean;
+   `cargo clippy --workspace --all-targets --locked -- -D warnings`
+   clean; `cargo test --workspace --locked`: 2981 passed, 151
+   ignored (136 suites); `cargo deny check` ok;
+   `cargo audit --ignore RUSTSEC-2023-0071` clean (2 yanked
+   warnings only); `cargo check --manifest-path fuzz/Cargo.toml
+   --bins` ok; all six outbound no-default feature slices compile;
+   `EGRESS_REQUIRE_OPENSSH_TESTS=1 cargo test -p eggress-embed
+   --locked --no-default-features --features ssh,pproxy-compat
+   --test ssh`: 6 passed.
+10. ✅ Supported 28-crate package dry-run passes again on the
+    committed clean tree:
+    `CARGO_BUILD_JOBS=2 python3 scripts/publish-crates.py
+    --dry-run`, exit 0; workspace version `1.0.10`; all 28 crates
+    `1.0.10`-missing on crates.io; final output
+    `dry-run OK: no uploads performed`. (No `--allow-dirty`,
+    no `--skip-package-verify`, no `--execute`.)
+11. ✅ All 1.0.10 crates absent from crates.io at final
+    qualification (28 `missing`).
+12. ✅ New code SHA `c5826b3` has green Rust CI (run
+    `36032622797`, `success`).
+13. ✅ Python smoke: `python-test.yml` is path-scoped; this change
+    touches no Python-smoke paths (`eggress-outbound`/plans only),
+    so no new run triggered; prior green `36006795043` on
+    `99e8cf5` stands for the unchanged Python surface.
+14. ✅ Evidence records in `ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md`
+    and the H2 TLS corrective explicitly supersede TLS-accept-only
+    proof (correction sections appended 2026-09-24).
+15. ✅ Roadmap and plan registry identify no active 1.0.10 blocker
+    after closure (see `docs/ROADMAP.md`, `plans/README.md`).
+16. ✅ 1.0.10 untagged (`git tag --list 'v1.0.10'` empty) and
+    unpublished.
+17. ✅ Release publication remains separately authorized; no
+    `v1.0.10`, crates.io, PyPI, GitHub Release, or binary action
+    taken.
+
+Final evidence states physical H2 isolation is proven by successful
+H2 handshake counts, not TLS accept counts.

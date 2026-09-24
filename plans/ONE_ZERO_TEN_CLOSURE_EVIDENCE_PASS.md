@@ -2,7 +2,7 @@
 
 ## Status
 
-**IMPLEMENTED — QUALIFICATION EVIDENCE CORRECTIVE REQUIRED — 2026-09-24**
+**IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED — 2026-09-24**
 
 ## Target repository
 
@@ -636,3 +636,12 @@ Corrected proof (see
 
 The older TLS-accept-only record is retained above for provenance but
 is marked insufficient as a physical-session proof.
+
+## Qualification restored — 2026-09-24
+
+`H2_PHYSICAL_SESSION_EVIDENCE_CORRECTIVE.md` is now
+`IMPLEMENTED AND QUALIFIED` (implementation `c5826b3`; Rust CI
+`36032622797` success; supported 28-crate dry-run exit 0, all
+`1.0.10`-missing; no `v1.0.10` tag/publication). This plan returns to
+`IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED`. No active
+1.0.10 evidence blocker remains.

@@ -15,18 +15,14 @@
 
 ## Active registered handoff
 
-The canonical roadmap has one final 1.0.10 evidence corrective:
-
-1. [H2_PHYSICAL_SESSION_EVIDENCE_CORRECTIVE.md](H2_PHYSICAL_SESSION_EVIDENCE_CORRECTIVE.md) — **READY FOR IMPLEMENTATION**. Strengthen the two-valid-policy H2 isolation regression so it counts successful server-side H2 handshakes rather than TLS accepts, demonstrate mutation sensitivity, rerun package qualification and final CI, and restore qualified state only if the stronger proof passes.
-2. [ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md](ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md) — **IMPLEMENTED; QUALIFICATION EVIDENCE REOPENED**.
-3. [H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md](H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md) — **IMPLEMENTED; PHYSICAL-H2 EVIDENCE PENDING**.
-
-The existing supported 28-crate dry-run and prior CI remain valid historical
-evidence. The workspace is 1.0.10 and no v1.0.10 tag/publication exists.
+None. The 1.0.10 line is qualified, prepared, and unpublished; no active
+evidence blocker remains.
 
 ## Recently completed
 
-- [`ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md`](ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md) — **IMPLEMENTED AND QUALIFIED** at `7b532b9037c41838bc0a96970ba5967aea67e1c5` (Rust CI `36015875160` success; supported `publish-crates.py --dry-run` exit 0 on the clean 1.0.10 tree, all 28 crates `1.0.10`-missing; no `v1.0.10` tag or publication). Pooled transport policy identity correction complete; H2 TLS override ALPN correction complete; workspace 1.0.10 qualified, prepared but unpublished.
+- [`H2_PHYSICAL_SESSION_EVIDENCE_CORRECTIVE.md`](H2_PHYSICAL_SESSION_EVIDENCE_CORRECTIVE.md) — **IMPLEMENTED AND QUALIFIED** at `c5826b3dc6184bf6cc5fa215f926f281a71c7131` (Rust CI `36032622797` success; supported `publish-crates.py --dry-run` exit 0 on the clean 1.0.10 tree, all 28 crates `1.0.10`-missing; physical H2 isolation proven by `h2_handshakes == 2` with shared-registry control; no `v1.0.10` tag or publication).
+
+- [`ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md`](ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md) — **IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED** (qualification restored 2026-09-24 after the physical-H2 corrective; prior `7b532b9` / Rust CI `36015875160` record retained for provenance). Pooled transport policy identity correction complete; H2 TLS override ALPN correction complete; workspace 1.0.10 qualified, prepared but unpublished.
 
 - [`H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md`](H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md) — **IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED**. New `client_config_with_alpn` helper in `eggress-transport-tls`; outbound TLS wrapper closure now uses it for `tls_override` and fails closed on `tls_override + insecure=true`. Regressions: `custom_ca_tls_override_survives_h2_alpn_adaptation`, `h2_pool_does_not_cross_tls_trust_policy` (fail-closed trust boundary), `h2_pool_does_not_cross_distinct_tls_config_instances` (two-valid-policy physical isolation), `mtls_identity_survives_h2_alpn_adaptation`, `tls_override_plus_insecure_fails_closed`, `tls_override_plus_insecure_fails_closed_with_insecure_tls_feature` (gated). Full evidence in the plan's "Closure record — 2026-09-24" section. Publication/tagging is a separate maintainer authorization.
 

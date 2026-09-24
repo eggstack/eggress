@@ -19,26 +19,25 @@ Known boundaries:
 See `docs/parity/README.md` and `crates/eggress-pproxy-compat/src/tier.rs`
 for the tier taxonomy (`docs/PPROXY_PARITY_SPEC.md` is historical provenance only).
 
-### Active corrective — H2 physical session evidence
+### 1.0.10 qualification — complete, prepared, unpublished
 
-The 1.0.10 runtime/TLS implementation, package dry-run, and existing CI remain
-valid, but final qualification is reopened for one narrow evidence defect:
-the two-valid-policy H2 isolation regression currently counts successful TLS
-accepts before server-side H2 handshake establishment. A pooled-connection hit
-can discard that TLS stream before H2 handshake, so TLS accept count alone
-does not prove two physical H2 sessions.
+The 1.0.10 runtime/TLS implementation, package dry-run, and CI are
+qualified. The final evidence corrective has landed: the two-valid-policy
+H2 isolation regression now counts successful server-side H2 handshakes
+after `h2::server::handshake` (two TLS accepts plus exactly two H2
+handshakes), with mutation sensitivity proven by the shared-registry
+control. No active 1.0.10 blocker remains.
 
-Registered handoff:
+Recently completed:
 
-1. [H2 Physical Session Evidence Corrective](../plans/H2_PHYSICAL_SESSION_EVIDENCE_CORRECTIVE.md) — **READY FOR IMPLEMENTATION; FINAL EVIDENCE CORRECTIVE**. Count successful server-side H2 handshakes after h2::server::handshake, require two handshakes for two distinct valid TLS policy identities, demonstrate mutation sensitivity, rerun the supported package dry-run and final CI, then restore qualified status only if the stronger proof passes.
-2. [1.0.10 Closure and Evidence Reconciliation Pass](../plans/ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md) — **IMPLEMENTED; QUALIFICATION EVIDENCE REOPENED**.
-3. [H2 TLS Override ALPN Preservation and 1.0.10 Qualification Corrective](../plans/H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md) — **IMPLEMENTED; PHYSICAL-H2 EVIDENCE PENDING**.
-4. [Pooled Transport Policy Identity and 1.0.10 Roll-Forward Corrective](../plans/POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md) — **IMPLEMENTED**.
+1. [H2 Physical Session Evidence Corrective](../plans/H2_PHYSICAL_SESSION_EVIDENCE_CORRECTIVE.md) — **IMPLEMENTED AND QUALIFIED**. Physical H2 isolation proven by handshake counts; supported 28-crate dry-run green; Rust CI `36032622797` success on `c5826b3`.
+2. [1.0.10 Closure and Evidence Reconciliation Pass](../plans/ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md) — **IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED**.
+3. [H2 TLS Override ALPN Preservation and 1.0.10 Qualification Corrective](../plans/H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md) — **IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED**.
+4. [Pooled Transport Policy Identity and 1.0.10 Roll-Forward Corrective](../plans/POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md) — **IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED**.
 
-Existing valid evidence remains intact: supported 28-crate package dry-run,
-custom-CA ALPN preservation, bind/insecure/nested isolation, and prior green CI.
-The workspace remains 1.0.10. No v1.0.10 tag or publication is authorized by
-these plans.
+The workspace remains 1.0.10, prepared but unpublished. No v1.0.10 tag or
+publication is authorized by these plans; publication/tagging remains a
+separate maintainer-authorized release action.
 
 ## Completed Milestones
 
