@@ -19,23 +19,22 @@ Known boundaries:
 See `docs/parity/README.md` and `crates/eggress-pproxy-compat/src/tier.rs`
 for the tier taxonomy (`docs/PPROXY_PARITY_SPEC.md` is historical provenance only).
 
-### Active corrective — H2 TLS override preservation and 1.0.10 qualification
+### Active corrective — 1.0.10 closure and evidence reconciliation
 
-The 1.0.10 pooled-transport policy implementation landed at
-`6577fffaac71acc231457331ad3f05985826bc4e` and its Rust/Python CI is green.
-A final review found one release-blocking TLS composition defect: ALPN
-adaptation can replace a caller-supplied ClientConfig with a newly built
-system-roots config, potentially discarding custom CA, mTLS identity, or
-verifier policy. The required end-to-end custom-CA H2 trust-boundary proof is
-also still missing.
+The 1.0.10 runtime/TLS implementation is on
+`99e8cf57860ce5aac689c09053d2090922e376eb`. Rust CI run
+`36006795053` and Python smoke run `36006795043` are green. The remaining
+work is qualification/evidence closure rather than an architecture redesign.
 
 Registered handoffs, in order:
 
-1. [H2 TLS Override ALPN Preservation and 1.0.10 Qualification Corrective](../plans/H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md) — **IMPLEMENTED; RELEASE-QUALIFICATION PENDING**. ALPN adaptation now uses `eggress_transport_tls::client_config_with_alpn` (clones the existing `ClientConfig` via `ClientConfig::clone()` and only mutates `alpn_protocols`); `tls_override + insecure=true` is rejected explicitly; new custom-CA H2 ALPN and trust-boundary regressions are in `crates/eggress-outbound/src/executor.rs`. Full release qualification (CI green, package publish dry-run, `v1.0.10` tag) is the next gate.
-2. [Pooled Transport Policy Identity and 1.0.10 Roll-Forward Corrective](../plans/POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md) — **IMPLEMENTED BUT NOT RELEASE-QUALIFIED**. Its pooling/local-bind/route-isolation changes remain the base of 1.0.10; final closure is delegated to the H2 TLS corrective.
+1. [1.0.10 Closure and Evidence Reconciliation Pass](../plans/ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md) — **READY FOR IMPLEMENTATION; FINAL QUALIFICATION PASS**. Add a real TLS+H2 two-valid-policy physical-connection isolation regression, narrow the existing certificate-failure test claim, correct custom-override/insecure guidance, run the supported clean-tree `publish-crates.py --dry-run`, and reconcile all 1.0.10 status records.
+2. [H2 TLS Override ALPN Preservation and 1.0.10 Qualification Corrective](../plans/H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md) — **IMPLEMENTED; CLOSURE EVIDENCE PENDING**. The ALPN-preservation code and custom-CA/fail-closed regressions are implemented; final qualification is delegated to the closure pass.
+3. [Pooled Transport Policy Identity and 1.0.10 Roll-Forward Corrective](../plans/POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md) — **IMPLEMENTED; CLOSURE EVIDENCE PENDING**. Pool scoping, bind isolation, route isolation, and the 1.0.10 version roll-forward are implemented.
 
-`v1.0.9` remains immutable history. The workspace is currently 1.0.10, with
-no `v1.0.10` production tag or publication authorized by these plans.
+`v1.0.9` remains immutable history. The workspace is 1.0.10. No
+`v1.0.10` tag or publication is authorized by these plans; tagging is a
+release action, not a qualification prerequisite.
 
 Historical related records:
 
