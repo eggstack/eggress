@@ -22,6 +22,16 @@ Related historical records:
 - `plans/OUTBOUND_POOLED_TRANSPORT_METADATA_TRUTHFULNESS_CORRECTIVE.md`
 - `plans/OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md`
 
+## Closure handoff — 2026-09-24
+
+The runtime/TLS correction is implemented and remote CI is green. Final
+qualification/evidence reconciliation is delegated to
+[`ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md`](ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md),
+which owns the supported publisher dry-run, the stronger physical H2
+policy-isolation regression, wording corrections, and canonical closeout.
+
+No `v1.0.10` tag or publication is required to complete qualification.
+
 ## Purpose
 
 Close the final H2 TLS-policy defect discovered during review of the 1.0.10
