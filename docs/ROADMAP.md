@@ -19,34 +19,26 @@ Known boundaries:
 See `docs/parity/README.md` and `crates/eggress-pproxy-compat/src/tier.rs`
 for the tier taxonomy (`docs/PPROXY_PARITY_SPEC.md` is historical provenance only).
 
-### 1.0.10 pooled-transport / H2 TLS corrective — qualified, unpublished
+### Active corrective — H2 physical session evidence
 
-- Pooled transport policy identity correction: complete.
-- H2 TLS override ALPN correction: complete.
-- Workspace 1.0.10: qualified (closure commit
-  `7b532b9037c41838bc0a96970ba5967aea67e1c5`; Rust CI `36015875160`
-  success; supported `publish-crates.py --dry-run` exit 0 on the clean
-  tree with all 28 crates `1.0.10`-missing on crates.io).
-- 1.0.10: prepared but unpublished; no `v1.0.10` tag exists.
-- Publication/tagging remains separately maintainer-authorized (a tag
-  fires PyPI + binary release workflows and is a release action, not a
-  qualification step).
+The 1.0.10 runtime/TLS implementation, package dry-run, and existing CI remain
+valid, but final qualification is reopened for one narrow evidence defect:
+the two-valid-policy H2 isolation regression currently counts successful TLS
+accepts before server-side H2 handshake establishment. A pooled-connection hit
+can discard that TLS stream before H2 handshake, so TLS accept count alone
+does not prove two physical H2 sessions.
 
-Closed handoffs (historical record retained in `plans/`):
+Registered handoff:
 
-1. [1.0.10 Closure and Evidence Reconciliation Pass](../plans/ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md) — **IMPLEMENTED AND QUALIFIED**.
-2. [H2 TLS Override ALPN Preservation and 1.0.10 Qualification Corrective](../plans/H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md) — **IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED**.
-3. [Pooled Transport Policy Identity and 1.0.10 Roll-Forward Corrective](../plans/POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md) — **IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED**.
+1. [H2 Physical Session Evidence Corrective](../plans/H2_PHYSICAL_SESSION_EVIDENCE_CORRECTIVE.md) — **READY FOR IMPLEMENTATION; FINAL EVIDENCE CORRECTIVE**. Count successful server-side H2 handshakes after h2::server::handshake, require two handshakes for two distinct valid TLS policy identities, demonstrate mutation sensitivity, rerun the supported package dry-run and final CI, then restore qualified status only if the stronger proof passes.
+2. [1.0.10 Closure and Evidence Reconciliation Pass](../plans/ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md) — **IMPLEMENTED; QUALIFICATION EVIDENCE REOPENED**.
+3. [H2 TLS Override ALPN Preservation and 1.0.10 Qualification Corrective](../plans/H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md) — **IMPLEMENTED; PHYSICAL-H2 EVIDENCE PENDING**.
+4. [Pooled Transport Policy Identity and 1.0.10 Roll-Forward Corrective](../plans/POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md) — **IMPLEMENTED**.
 
-`v1.0.9` remains immutable history. The workspace is 1.0.10. No
-`v1.0.10` tag or publication is authorized by these plans; tagging is a
-release action, not a qualification prerequisite.
-
-Historical related records:
-
-- [Pooled Transport Route Isolation Corrective](../plans/POOLED_TRANSPORT_ROUTE_ISOLATION_CORRECTIVE.md) — **IMPLEMENTED in 1.0.9**.
-- [Outbound Pooled Transport Metadata Truthfulness Corrective](../plans/OUTBOUND_POOLED_TRANSPORT_METADATA_TRUTHFULNESS_CORRECTIVE.md) — **IMPLEMENTED in 1.0.9**.
-- [Outbound TCP Socket Metadata Release Qualification](../plans/OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md) — **HISTORICAL; 1.0.9 TAGGED/RELEASED, SUPERSEDED BY 1.0.10 ROLL-FORWARD**.
+Existing valid evidence remains intact: supported 28-crate package dry-run,
+custom-CA ALPN preservation, bind/insecure/nested isolation, and prior green CI.
+The workspace remains 1.0.10. No v1.0.10 tag or publication is authorized by
+these plans.
 
 ## Completed Milestones
 
