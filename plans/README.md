@@ -15,14 +15,17 @@
 
 ## Active registered handoff
 
-The canonical roadmap has one release-blocking corrective on the prepared
-1.0.10 line:
+The canonical roadmap has one final qualification/evidence pass on the
+prepared 1.0.10 line:
 
-1. [`H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md`](H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md) — **IMPLEMENTED; RELEASE-QUALIFICATION PENDING**. ALPN adaptation now uses `eggress_transport_tls::client_config_with_alpn` (clones the existing `rustls::ClientConfig` via `ClientConfig::clone()` and only mutates `alpn_protocols`); `tls_override + insecure=true` is rejected explicitly; new custom-CA H2 ALPN and trust-boundary regressions are in `crates/eggress-outbound/src/executor.rs`. Full release qualification (CI green on the final SHA, package publish dry-run, `v1.0.10` tag/publish) is the next gate.
-2. [`POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md`](POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md) — **IMPLEMENTED BUT NOT RELEASE-QUALIFIED**. Pool scoping, bind isolation, route isolation, and 1.0.10 version roll-forward are implemented; release closure now depends on the TLS corrective above.
+1. [`ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md`](ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md) — **READY FOR IMPLEMENTATION**. Add a real TLS+H2 two-valid-policy physical pool-isolation regression, correct the scope of the certificate-failure trust test, fix custom-override/insecure wording, run the supported clean-tree publisher dry-run, and reconcile all status/evidence records.
+2. [`H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md`](H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md) — **IMPLEMENTED; CLOSURE EVIDENCE PENDING**.
+3. [`POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md`](POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md) — **IMPLEMENTED; CLOSURE EVIDENCE PENDING**.
 
-The workspace is 1.0.10. No `v1.0.10` tag or publication is authorized by
-these plans.
+The implementation SHA `99e8cf57860ce5aac689c09053d2090922e376eb`
+has green Rust CI (`36006795053`) and Python smoke (`36006795043`).
+The workspace remains 1.0.10 with no `v1.0.10` tag or publication. A tag is
+a separately authorized release action, not a qualification gate.
 
 ## Recently completed
 
