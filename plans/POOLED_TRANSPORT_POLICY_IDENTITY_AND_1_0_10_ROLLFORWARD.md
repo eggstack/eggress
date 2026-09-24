@@ -2,7 +2,7 @@
 
 ## Status
 
-**CORRECTIVE REQUIRED — BLOCKED ON H2 TLS OVERRIDE ALPN PRESERVATION — 2026-09-24**
+**IMPLEMENTED — FINAL CLOSURE EVIDENCE PENDING — 2026-09-24**
 
 ## Target repository
 
@@ -56,6 +56,13 @@ record — 2026-09-24` section appended to
 [`H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md`](H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md)
 for the current status, the new policy-preserving ALPN helper, the custom-CA
 trust-boundary regressions, and the still-required completion checks.
+
+## Final closure handoff — 2026-09-24
+
+The delegated H2 TLS override correction has landed at
+`99e8cf57860ce5aac689c09053d2090922e376eb` and its Rust/Python CI is green.
+Remaining qualification/evidence work is owned by
+[`ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md`](ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md).
 
 ## Purpose
 
