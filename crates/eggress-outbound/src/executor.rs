@@ -601,11 +601,61 @@ mod tests {
         assert_eq!(handshakes.load(Ordering::Relaxed), 2);
     }
 
+    /// Server-side counters that separately prove physical H2 isolation.
+    ///
+    /// `tls_accepts` increments only after `tls_accept` succeeds;
+    /// `h2_handshakes` increments only after `h2::server::handshake`
+    /// succeeds. The H2 counter therefore never increments on TCP accept,
+    /// TLS accept, executor success, or registry identity checks — only
+    /// when a physical H2 session actually exists. A pooled-connection hit
+    /// discards the candidate TLS stream before H2 handshake, so TLS
+    /// accepts alone cannot prove two physical H2 sessions.
+    struct TlsH2ServerCounters {
+        tls_accepts: std::sync::atomic::AtomicUsize,
+        h2_handshakes: std::sync::atomic::AtomicUsize,
+    }
+
+    impl TlsH2ServerCounters {
+        fn new() -> Self {
+            Self {
+                tls_accepts: std::sync::atomic::AtomicUsize::new(0),
+                h2_handshakes: std::sync::atomic::AtomicUsize::new(0),
+            }
+        }
+    }
+
+    /// Bounded polling helper: wait until `counter` reaches `expected`
+    /// (exact or at-least) or time out. Avoids arbitrary sleeps while
+    /// letting the server-side handshake task settle.
+    async fn wait_for_counter(
+        counter: &std::sync::atomic::AtomicUsize,
+        expected: usize,
+        at_least: bool,
+    ) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let value = counter.load(std::sync::atomic::Ordering::Relaxed);
+            let done = if at_least {
+                value >= expected
+            } else {
+                value == expected
+            };
+            if done {
+                return;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "timed out waiting for counter: got {value}, wanted {expected}"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }
+
     fn start_local_tls_h2_server(
         cert_pem: String,
         key_pem: String,
         h2_alpn: bool,
-        accept_log: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        counters: std::sync::Arc<TlsH2ServerCounters>,
     ) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
         use eggress_transport_tls::TlsServerConfigBuilder;
 
@@ -624,14 +674,14 @@ mod tests {
         listener.set_nonblocking(true).unwrap();
         let listener = tokio::net::TcpListener::from_std(listener).unwrap();
 
-        let accept_log_inner = accept_log.clone();
+        let counters_inner = counters.clone();
         let handle = tokio::spawn(async move {
             loop {
                 let (stream, _) = match listener.accept().await {
                     Ok(s) => s,
                     Err(_) => return,
                 };
-                let accept_log = accept_log_inner.clone();
+                let counters = counters_inner.clone();
                 let server_config = server_config.clone();
                 tokio::spawn(async move {
                     let boxed: eggress_core::BoxStream = Box::new(stream);
@@ -639,10 +689,15 @@ mod tests {
                         Ok(s) => s,
                         Err(_) => return,
                     };
-                    accept_log.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    counters
+                        .tls_accepts
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     let Ok(mut connection) = h2::server::handshake(tls).await else {
                         return;
                     };
+                    counters
+                        .h2_handshakes
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     while let Some(Ok((_request, mut response))) = connection.accept().await {
                         if response
                             .send_response(
@@ -681,12 +736,12 @@ mod tests {
         // the custom CA trust.
         eggress_transport_tls::install_default_crypto_provider();
         let (server_cert_pem, server_key_pem) = generate_cert_and_key(&["127.0.0.1"]);
-        let accepted = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counters = std::sync::Arc::new(TlsH2ServerCounters::new());
         let (addr, _server_handle) = start_local_tls_h2_server(
             server_cert_pem.clone(),
             server_key_pem,
             true,
-            accepted.clone(),
+            counters.clone(),
         );
 
         // Client config explicitly trusts the server cert as a custom CA
@@ -713,7 +768,10 @@ mod tests {
         .expect("custom-CA H2 ALPN adaptation must succeed");
         let _ = metadata;
         assert!(
-            accepted.load(std::sync::atomic::Ordering::Relaxed) >= 1,
+            counters
+                .tls_accepts
+                .load(std::sync::atomic::Ordering::Relaxed)
+                >= 1,
             "the trusted server must have completed a TLS handshake"
         );
         // Caller override is preserved untouched (different Arc, same policy).
@@ -738,12 +796,12 @@ mod tests {
         // for the two-valid-policy physical-isolation proof.
         eggress_transport_tls::install_default_crypto_provider();
         let (server_cert_pem, server_key_pem) = generate_cert_and_key(&["127.0.0.1"]);
-        let accepted = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counters = std::sync::Arc::new(TlsH2ServerCounters::new());
         let (addr, _server_handle) = start_local_tls_h2_server(
             server_cert_pem.clone(),
             server_key_pem,
             true,
-            accepted.clone(),
+            counters.clone(),
         );
 
         // Executor A trusts the server cert via a custom CA store.
@@ -798,7 +856,10 @@ mod tests {
         // `h2_pool_does_not_cross_distinct_tls_config_instances`, where
         // both policies are valid and reuse would otherwise be observable.
         assert!(
-            accepted.load(std::sync::atomic::Ordering::Relaxed) >= 1,
+            counters
+                .tls_accepts
+                .load(std::sync::atomic::Ordering::Relaxed)
+                >= 1,
             "executor A must have completed its own TLS handshake"
         );
     }
@@ -807,26 +868,29 @@ mod tests {
     async fn h2_pool_does_not_cross_distinct_tls_config_instances() {
         // Physical H2 pool-isolation regression: same endpoint + same SNI +
         // same auth + both TLS policies valid + distinct caller
-        // `ClientConfig` identity => two physical H2 connections.
+        // `ClientConfig` identity => two physical H2 sessions.
         //
         // Both executors trust the same local test CA, so either one could
         // complete TLS on its own. Executor A's first physical H2
         // connection is kept alive while executor B connects, so a shared
-        // pool would visibly reuse it (server would observe one accepted
-        // TLS/H2 connection). Distinct `ClientConfig` object identities
-        // own distinct H2 pool registries, so the server must observe two.
-        // This proves the registry-scope boundary without relying on a TLS
-        // failure before pool lookup (contrast
+        // pool would visibly reuse it: the server would observe two TLS
+        // accepts but only one H2 handshake, because the pooled client
+        // path discards the candidate TLS stream before calling
+        // `h2::client::handshake` on a pool hit. Distinct `ClientConfig`
+        // object identities own distinct H2 pool registries, so the server
+        // must observe two TLS accepts AND two successful H2 handshakes.
+        // The decisive assertion is `h2_handshakes == 2`; TLS accepts
+        // alone are insufficient proof. Contrast
         // `h2_pool_does_not_cross_tls_trust_policy`, which proves only the
-        // fail-closed trust boundary).
+        // fail-closed trust boundary.
         eggress_transport_tls::install_default_crypto_provider();
         let (server_cert_pem, server_key_pem) = generate_cert_and_key(&["127.0.0.1"]);
-        let accepted = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counters = std::sync::Arc::new(TlsH2ServerCounters::new());
         let (addr, _server_handle) = start_local_tls_h2_server(
             server_cert_pem.clone(),
             server_key_pem,
             true,
-            accepted.clone(),
+            counters.clone(),
         );
 
         // Two distinct `Arc<ClientConfig>` instances trusting the same CA.
@@ -856,8 +920,9 @@ mod tests {
         let chain = eggress_uri::parse_proxy_chain(&format!("h2+tls://{}", addr)).unwrap();
         let target: TargetAddr = "target.example:443".parse().unwrap();
 
-        // Executor A establishes the first physical TLS/H2 connection and
-        // keeps it alive so pool reuse would be observable.
+        // Executor A establishes the first physical TLS/H2 session and
+        // keeps its returned logical stream alive so pool reuse would be
+        // observable.
         let _stream_a = tokio::time::timeout(
             std::time::Duration::from_secs(5),
             executor_a.execute(&chain.hops, &target),
@@ -865,10 +930,14 @@ mod tests {
         .await
         .expect("executor A must complete within timeout")
         .expect("executor A must succeed with its valid TLS policy");
+        // Wait boundedly for the first physical H2 handshake before
+        // executor B connects, so reuse (or isolation) is deterministic.
+        wait_for_counter(&counters.h2_handshakes, 1, true).await;
 
         // Executor B targets the same endpoint/SNI/auth with its own valid
-        // policy. It must establish a second physical connection rather
-        // than reuse executor A's pooled connection.
+        // policy. It must establish a second physical session rather
+        // than reuse executor A's pooled connection. Both logical
+        // streams stay alive for the assertion window.
         let _stream_b = tokio::time::timeout(
             std::time::Duration::from_secs(5),
             executor_b.execute(&chain.hops, &target),
@@ -877,10 +946,99 @@ mod tests {
         .expect("executor B must complete within timeout")
         .expect("executor B must succeed with its own valid TLS policy");
 
+        // Wait boundedly for server counters to settle, then assert the
+        // physical-session proof: at least two TLS accepts (both policies
+        // performed TLS) and exactly two successful H2 handshakes.
+        wait_for_counter(&counters.tls_accepts, 2, true).await;
+        wait_for_counter(&counters.h2_handshakes, 2, true).await;
+        assert!(
+            counters
+                .tls_accepts
+                .load(std::sync::atomic::Ordering::Relaxed)
+                >= 2,
+            "both valid TLS policies must have completed TLS"
+        );
         assert_eq!(
-            accepted.load(std::sync::atomic::Ordering::Relaxed),
+            counters
+                .h2_handshakes
+                .load(std::sync::atomic::Ordering::Relaxed),
             2,
-            "two distinct valid TLS policy identities must use two physical H2 connections"
+            "distinct valid TLS policy identities must establish distinct physical H2 sessions"
+        );
+    }
+
+    #[tokio::test]
+    async fn h2_shared_registry_reuses_one_physical_session_test_control() {
+        // Test-only mutation-sensitivity control (no production API change):
+        // when both executors deliberately share the same `Arc<ClientConfig>`
+        // — and therefore the same policy-scoped H2 pool registry — the
+        // server must observe two TLS accepts but exactly one successful H2
+        // handshake, because executor B reuses executor A's pooled physical
+        // session and discards its candidate TLS stream before H2 handshake.
+        // This proves the strengthened regression above is sensitive: it
+        // distinguishes pool reuse (1 H2 handshake) from isolation (2).
+        eggress_transport_tls::install_default_crypto_provider();
+        let (server_cert_pem, server_key_pem) = generate_cert_and_key(&["127.0.0.1"]);
+        let counters = std::sync::Arc::new(TlsH2ServerCounters::new());
+        let (addr, _server_handle) = start_local_tls_h2_server(
+            server_cert_pem.clone(),
+            server_key_pem,
+            true,
+            counters.clone(),
+        );
+
+        // Deliberately shared policy identity: one Arc cloned into both
+        // executors, so `h2_pool_registry_for_tls_policy` returns the same
+        // registry for both.
+        let shared_override = eggress_transport_tls::TlsClientConfigBuilder::new()
+            .with_custom_ca_pem(server_cert_pem.as_bytes())
+            .unwrap()
+            .build()
+            .unwrap();
+        let executor_a = build_chain_executor_with_options(
+            OutboundExecutorOptions::new().with_tls_override(shared_override.clone()),
+        );
+        let executor_b = build_chain_executor_with_options(
+            OutboundExecutorOptions::new().with_tls_override(shared_override),
+        );
+
+        let chain = eggress_uri::parse_proxy_chain(&format!("h2+tls://{}", addr)).unwrap();
+        let target: TargetAddr = "target.example:443".parse().unwrap();
+
+        let _stream_a = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            executor_a.execute(&chain.hops, &target),
+        )
+        .await
+        .expect("executor A must complete within timeout")
+        .expect("executor A must succeed with the shared TLS policy");
+        wait_for_counter(&counters.h2_handshakes, 1, true).await;
+
+        let _stream_b = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            executor_b.execute(&chain.hops, &target),
+        )
+        .await
+        .expect("executor B must complete within timeout")
+        .expect("executor B must succeed via the shared pooled session");
+
+        wait_for_counter(&counters.tls_accepts, 2, true).await;
+        // Give the server a bounded window to (not) perform a second H2
+        // handshake; reuse must not create one.
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert!(
+            counters
+                .tls_accepts
+                .load(std::sync::atomic::Ordering::Relaxed)
+                >= 2,
+            "both executors must have completed TLS even when sharing one H2 session"
+        );
+        assert_eq!(
+            counters
+                .h2_handshakes
+                .load(std::sync::atomic::Ordering::Relaxed),
+            1,
+            "deliberately shared registry must reuse one physical H2 session"
         );
     }
 
@@ -894,12 +1052,12 @@ mod tests {
         let (client_cert_pem, client_key_pem) = generate_cert_and_key(&["127.0.0.1"]);
         let (server_cert_pem, server_key_pem) =
             generate_cert_and_key(&["127.0.0.1", "proxy.example"]);
-        let accepted = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counters = std::sync::Arc::new(TlsH2ServerCounters::new());
         let (addr, _server_handle) = start_local_tls_h2_server(
             server_cert_pem.clone(),
             server_key_pem,
             true,
-            accepted.clone(),
+            counters.clone(),
         );
         // NOTE: The shared `TlsServerConfigBuilder::with_require_client_cert`
         // helper is not yet wired into `start_local_tls_h2_server`, so this
@@ -929,7 +1087,10 @@ mod tests {
         .expect("mTLS H2 ALPN adaptation must complete within 5s")
         .expect("mTLS H2 ALPN adaptation must succeed");
         assert!(
-            accepted.load(std::sync::atomic::Ordering::Relaxed) >= 1,
+            counters
+                .tls_accepts
+                .load(std::sync::atomic::Ordering::Relaxed)
+                >= 1,
             "the server must have completed a TLS handshake with the mTLS client"
         );
         assert!(
@@ -950,12 +1111,12 @@ mod tests {
         // caller's trust policy is never silently substituted.
         eggress_transport_tls::install_default_crypto_provider();
         let (server_cert_pem, server_key_pem) = generate_cert_and_key(&["127.0.0.1"]);
-        let accepted = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counters = std::sync::Arc::new(TlsH2ServerCounters::new());
         let (addr, _server_handle) = start_local_tls_h2_server(
             server_cert_pem.clone(),
             server_key_pem,
             true,
-            accepted.clone(),
+            counters.clone(),
         );
         let trusted_override = eggress_transport_tls::TlsClientConfigBuilder::new()
             .with_custom_ca_pem(server_cert_pem.as_bytes())
@@ -989,7 +1150,9 @@ mod tests {
             "error must reference `insecure` to be a useful configuration diagnostic, got: {err}"
         );
         assert_eq!(
-            accepted.load(std::sync::atomic::Ordering::Relaxed),
+            counters
+                .tls_accepts
+                .load(std::sync::atomic::Ordering::Relaxed),
             0,
             "no TLS handshake must be attempted when the override+insecure combination is rejected"
         );
@@ -1004,12 +1167,12 @@ mod tests {
         // combination explicitly.
         eggress_transport_tls::install_default_crypto_provider();
         let (server_cert_pem, server_key_pem) = generate_cert_and_key(&["127.0.0.1"]);
-        let accepted = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counters = std::sync::Arc::new(TlsH2ServerCounters::new());
         let (addr, _server_handle) = start_local_tls_h2_server(
             server_cert_pem.clone(),
             server_key_pem,
             true,
-            accepted.clone(),
+            counters.clone(),
         );
         let trusted_override = eggress_transport_tls::TlsClientConfigBuilder::new()
             .with_custom_ca_pem(server_cert_pem.as_bytes())
@@ -1036,7 +1199,9 @@ mod tests {
             "wrapper error must name both `tls_override` and `insecure`, got: {err}"
         );
         assert_eq!(
-            accepted.load(std::sync::atomic::Ordering::Relaxed),
+            counters
+                .tls_accepts
+                .load(std::sync::atomic::Ordering::Relaxed),
             0,
             "no TLS handshake must be attempted when the wrapper rejects the override+insecure combination"
         );

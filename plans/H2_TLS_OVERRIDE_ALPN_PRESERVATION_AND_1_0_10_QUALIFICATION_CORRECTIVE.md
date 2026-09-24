@@ -868,3 +868,28 @@ evidence). Corrections appended, not silently deleted:
   crates.io/PyPI/GitHub release mutation occurred.
 
 Final status: `IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED`.
+
+## Physical-H2 evidence correction — 2026-09-24
+
+The closure record above cites
+`h2_pool_does_not_cross_distinct_tls_config_instances` as proving
+"two physical TLS/H2 connections" via "exactly 2 accepted
+handshakes". That statement is superseded to the extent it relied on
+TLS accepts alone: the fixture incremented after `tls_accept` but
+before `h2::server::handshake`, so a cross-policy pool hit could
+accept a second TLS connection, increment to two, discard that stream,
+and still reuse one H2 session.
+
+Corrected proof (see
+`H2_PHYSICAL_SESSION_EVIDENCE_CORRECTIVE.md`):
+
+- the server observed two successful TLS accepts;
+- the server observed two successful H2 handshakes;
+- the H2 counter increments only after `h2::server::handshake`
+  succeeds;
+- both logical H2 CONNECTs succeeded;
+- `h2_shared_registry_reuses_one_physical_session_test_control`
+  proves mutation sensitivity.
+
+The older TLS-accept-only wording is retained above for provenance but
+is marked insufficient as a physical-session proof.

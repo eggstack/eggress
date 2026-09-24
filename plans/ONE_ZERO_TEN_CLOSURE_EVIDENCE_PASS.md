@@ -612,3 +612,27 @@ wording) followed by the evidence-reconciliation commit on `main`.
 Final state: 1.0.10 source tree qualified; crates.io 1.0.10
 unpublished; `v1.0.10` absent; PyPI/GitHub binary release not
 triggered.
+
+## Physical-H2 evidence correction — 2026-09-24
+
+The completion record above (item 1) states the server observes
+"exactly 2 accepted handshakes". That wording is superseded: the
+fixture at that time incremented its counter after `tls_accept`
+succeeded but before `h2::server::handshake` succeeded, so two TLS
+accepts alone did not prove two physical H2 sessions — a pooled hit
+discards the candidate TLS stream before H2 handshake.
+
+Corrected proof (see
+`H2_PHYSICAL_SESSION_EVIDENCE_CORRECTIVE.md`):
+
+- the server observed two successful TLS accepts;
+- the server observed two successful H2 handshakes;
+- the H2 counter increments only after `h2::server::handshake`
+  succeeds;
+- both logical H2 CONNECTs succeeded;
+- `h2_shared_registry_reuses_one_physical_session_test_control`
+  proves mutation sensitivity (shared registry → 1 H2 handshake;
+  distinct registries → 2).
+
+The older TLS-accept-only record is retained above for provenance but
+is marked insufficient as a physical-session proof.
