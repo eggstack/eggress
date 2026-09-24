@@ -38,10 +38,12 @@ identity, custom verifier, and every other `rustls::ClientConfig` field are
 preserved by `ClientConfig::clone()`. The outbound TLS wrapper never
 rebuilds a fresh system-roots `ClientConfig` for an existing override, so
 custom TLS policies survive H2 ALPN adaptation. A caller-supplied
-`tls_override` combined with a per-hop `insecure=true` request is rejected
-explicitly (no silent substitution of Eggress's default insecure verifier);
-callers that need that combination must supply an explicit insecure override
-or remove `insecure=true`.
+ `tls_override` combined with a per-hop `insecure=true` request is rejected
+ explicitly (no silent substitution of Eggress's default insecure verifier);
+ callers that intentionally own an insecure `ClientConfig` must pass that
+ config as `tls_override` without also requesting the Eggress per-hop
+ insecure mode, otherwise remove `tls_override` and use Eggress's
+ feature-gated insecure policy. There is no separate insecure-override field.
 
 ## Module map
 
@@ -177,7 +179,7 @@ pproxy syntax.
 | HttpOnly rewrite + stream | `src/hops.rs` (`mod tests`, moved from server) |
 | `from_chain` / `direct` / TOML / pproxy construction + redaction | `src/connector.rs` (`mod tests`) |
 | UDP echo/relay/lifecycle | `src/connector.rs` (`mod tests`, features `udp,pproxy-compat`) |
-| H2 policy scoping + custom-CA trust-boundary regressions | `src/executor.rs` (`mod tests`): `h2_pool_is_scoped_to_executor_tls_policy`, `h2_distinct_tls_policy_scopes_use_distinct_physical_connections`, `custom_ca_tls_override_survives_h2_alpn_adaptation`, `h2_pool_does_not_cross_tls_trust_policy`, `mtls_identity_survives_h2_alpn_adaptation`, `tls_override_plus_insecure_fails_closed` (+ `tls_override_plus_insecure_fails_closed_with_insecure_tls_feature` gated on `insecure-tls`) |
+| H2 policy scoping + custom-CA trust-boundary regressions | `src/executor.rs` (`mod tests`): `h2_pool_is_scoped_to_executor_tls_policy`, `h2_distinct_tls_policy_scopes_use_distinct_physical_connections`, `custom_ca_tls_override_survives_h2_alpn_adaptation`, `h2_pool_does_not_cross_tls_trust_policy` (fail-closed trust boundary only; pool separation is proved by `h2_pool_does_not_cross_distinct_tls_config_instances`), `h2_pool_does_not_cross_distinct_tls_config_instances`, `mtls_identity_survives_h2_alpn_adaptation`, `tls_override_plus_insecure_fails_closed` (+ `tls_override_plus_insecure_fails_closed_with_insecure_tls_feature` gated on `insecure-tls`) |
 | ALPN adapter structural regressions | `eggress-transport-tls/src/client.rs` (`mod tests`): `client_config_with_alpn_returns_same_arc_when_alpn_unchanged`, `client_config_with_alpn_clones_when_alpn_differs`, `client_config_with_alpn_preserves_trust_policy`, `client_config_with_alpn_preserves_mtls_identity` |
 | Typed `connect_tcp_detailed` matrix, legacy compat | `eggress-embed/tests/outbound_detailed.rs` (via re-export facade) |
 | SSH session reuse/host-key/OpenSSH fixture | `eggress-embed/tests/ssh.rs` (via re-export facade) |

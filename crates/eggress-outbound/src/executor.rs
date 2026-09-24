@@ -114,6 +114,16 @@ impl OutboundExecutorOptions {
     }
 
     /// Set the TLS client-config override.
+    ///
+    /// The override is the complete caller-owned TLS policy: ALPN adaptation
+    /// clones it via `client_config_with_alpn` and preserves trust roots,
+    /// custom CA stores, mTLS identity, and custom verifiers. A
+    /// caller-supplied override cannot be combined with per-hop
+    /// `insecure=true`; if the caller intentionally owns an insecure
+    /// `ClientConfig`, pass that config as the override without requesting
+    /// the Eggress per-hop insecure mode, otherwise remove the override and
+    /// use Eggress's feature-gated insecure policy. There is no separate
+    /// insecure-override field.
     pub fn with_tls_override(mut self, config: Arc<rustls::ClientConfig>) -> Self {
         self.tls_override = Some(config);
         self
@@ -385,15 +395,18 @@ fn build_chain_executor_inner(
                             // When the caller supplied `tls_override`,
                             // substituting an Eggress insecure config
                             // would silently drop the caller's trust
-                            // policy. Fail closed until Eggress grows an
-                            // additive caller-supplied insecure override;
-                            // until then, the caller must remove
-                            // `insecure=true` or build their own
-                            // insecure verifier and wrap it in a
-                            // custom `tls_override`.
+                            // policy. Fail closed: a caller-supplied
+                            // `tls_override` cannot be combined with
+                            // per-hop `insecure=true`. If the caller
+                            // intentionally owns an insecure
+                            // `ClientConfig`, pass that config as
+                            // `tls_override` and do not also request the
+                            // Eggress per-hop insecure mode. Otherwise
+                            // remove `tls_override` and use Eggress's
+                            // feature-gated insecure policy.
                             if caller_supplied_override {
                                 return Err(Box::<dyn std::error::Error + Send + Sync>::from(
-                                    "caller-supplied tls_override cannot be combined with insecure=true; supply an explicit insecure override or remove insecure=true",
+                                    "caller-supplied tls_override cannot be combined with per-hop insecure=true; pass an insecure ClientConfig as tls_override without insecure=true, or remove tls_override and use Eggress's feature-gated insecure policy",
                                 ));
                             }
                             build_insecure_alpn_config(alpn.clone())?
@@ -712,13 +725,17 @@ mod tests {
 
     #[tokio::test]
     async fn h2_pool_does_not_cross_tls_trust_policy() {
-        // Two TLS policies share endpoint/SNI/auth but trust different CAs.
-        // The executor that trusts the server's self-signed cert must
-        // establish its own TLS handshake successfully; the executor that
-        // does NOT trust that cert must fail its own TLS handshake rather
-        // than reuse the trusted executor's pooled physical connection.
-        // The trust-boundary invariant is enforced by the executor-scoped
-        // H2 pool registry introduced by the 1.0.10 corrective.
+        // Trust-boundary regression (narrow claim): two TLS policies share
+        // endpoint/SNI/auth but trust different CAs. The executor that
+        // trusts the server's self-signed cert performs and completes its
+        // own TLS handshake successfully; the executor that does NOT trust
+        // that cert performs and fails its own TLS verification instead of
+        // succeeding through a foreign policy path. In conjunction with the
+        // executor-scoped H2 pool registries, this guards the fail-closed
+        // trust boundary. By itself it does NOT prove H2 pool-lookup
+        // separation, because TLS wrapping occurs before the H2 handler is
+        // entered; see `h2_pool_does_not_cross_distinct_tls_config_instances`
+        // for the two-valid-policy physical-isolation proof.
         eggress_transport_tls::install_default_crypto_provider();
         let (server_cert_pem, server_key_pem) = generate_cert_and_key(&["127.0.0.1"]);
         let accepted = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -775,14 +792,95 @@ mod tests {
         );
 
         // The trusted server observed at least one accepted handshake
-        // (executor A). The critical invariant is that executor B's
-        // failure is a TLS verification error, not a pool hit. Each
-        // executor owns its pool registry, so executor B cannot see
-        // executor A's pooled physical H2 connection even when they
-        // share endpoint/SNI/auth fields.
+        // (executor A). The critical invariant is that executor B performs
+        // and fails its own TLS verification instead of succeeding through
+        // a foreign policy path. Pool separation itself is proved by
+        // `h2_pool_does_not_cross_distinct_tls_config_instances`, where
+        // both policies are valid and reuse would otherwise be observable.
         assert!(
             accepted.load(std::sync::atomic::Ordering::Relaxed) >= 1,
             "executor A must have completed its own TLS handshake"
+        );
+    }
+
+    #[tokio::test]
+    async fn h2_pool_does_not_cross_distinct_tls_config_instances() {
+        // Physical H2 pool-isolation regression: same endpoint + same SNI +
+        // same auth + both TLS policies valid + distinct caller
+        // `ClientConfig` identity => two physical H2 connections.
+        //
+        // Both executors trust the same local test CA, so either one could
+        // complete TLS on its own. Executor A's first physical H2
+        // connection is kept alive while executor B connects, so a shared
+        // pool would visibly reuse it (server would observe one accepted
+        // TLS/H2 connection). Distinct `ClientConfig` object identities
+        // own distinct H2 pool registries, so the server must observe two.
+        // This proves the registry-scope boundary without relying on a TLS
+        // failure before pool lookup (contrast
+        // `h2_pool_does_not_cross_tls_trust_policy`, which proves only the
+        // fail-closed trust boundary).
+        eggress_transport_tls::install_default_crypto_provider();
+        let (server_cert_pem, server_key_pem) = generate_cert_and_key(&["127.0.0.1"]);
+        let accepted = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (addr, _server_handle) = start_local_tls_h2_server(
+            server_cert_pem.clone(),
+            server_key_pem,
+            true,
+            accepted.clone(),
+        );
+
+        // Two distinct `Arc<ClientConfig>` instances trusting the same CA.
+        // They must not be the same Arc: pool scoping is keyed by the
+        // caller config object identity.
+        let override_a = eggress_transport_tls::TlsClientConfigBuilder::new()
+            .with_custom_ca_pem(server_cert_pem.as_bytes())
+            .unwrap()
+            .build()
+            .unwrap();
+        let override_b = eggress_transport_tls::TlsClientConfigBuilder::new()
+            .with_custom_ca_pem(server_cert_pem.as_bytes())
+            .unwrap()
+            .build()
+            .unwrap();
+        assert!(
+            !std::sync::Arc::ptr_eq(&override_a, &override_b),
+            "the two valid TLS policies must be distinct ClientConfig objects"
+        );
+        let executor_a = build_chain_executor_with_options(
+            OutboundExecutorOptions::new().with_tls_override(override_a),
+        );
+        let executor_b = build_chain_executor_with_options(
+            OutboundExecutorOptions::new().with_tls_override(override_b),
+        );
+
+        let chain = eggress_uri::parse_proxy_chain(&format!("h2+tls://{}", addr)).unwrap();
+        let target: TargetAddr = "target.example:443".parse().unwrap();
+
+        // Executor A establishes the first physical TLS/H2 connection and
+        // keeps it alive so pool reuse would be observable.
+        let _stream_a = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            executor_a.execute(&chain.hops, &target),
+        )
+        .await
+        .expect("executor A must complete within timeout")
+        .expect("executor A must succeed with its valid TLS policy");
+
+        // Executor B targets the same endpoint/SNI/auth with its own valid
+        // policy. It must establish a second physical connection rather
+        // than reuse executor A's pooled connection.
+        let _stream_b = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            executor_b.execute(&chain.hops, &target),
+        )
+        .await
+        .expect("executor B must complete within timeout")
+        .expect("executor B must succeed with its own valid TLS policy");
+
+        assert_eq!(
+            accepted.load(std::sync::atomic::Ordering::Relaxed),
+            2,
+            "two distinct valid TLS policy identities must use two physical H2 connections"
         );
     }
 

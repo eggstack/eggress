@@ -194,8 +194,11 @@ Contract:
   custom verifier, and every other `ClientConfig` field are preserved.
   A caller-supplied `tls_override` combined with per-hop `insecure=true`
   is rejected explicitly (no silent substitution of Eggress's default
-  insecure verifier); callers that need that combination must supply an
-  explicit insecure override or remove `insecure=true`.
+  insecure verifier); callers that intentionally own an insecure
+  `ClientConfig` must pass that config as `tls_override` without also
+  requesting the Eggress per-hop insecure mode, otherwise remove
+  `tls_override` and use Eggress's feature-gated insecure policy. There
+  is no separate insecure-override field.
   The socket metadata correction shipped in immutable `v1.0.9`; the pooled
   transport policy corrective is being qualified for `1.0.10`.
 

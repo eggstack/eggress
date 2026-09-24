@@ -104,7 +104,11 @@ Representative (not exhaustive) downstream-shaped compile contracts:
   adaptation. Callers must never rebuild a fresh system-roots configuration
   as a fallback when an override is already present; a caller-supplied
   `tls_override` combined with per-hop `insecure=true` is rejected
-  explicitly.
+  explicitly (no silent substitution). Callers that intentionally own an
+  insecure `ClientConfig` must pass that config as `tls_override` without
+  the per-hop insecure mode; otherwise remove the override and use
+  Eggress's feature-gated insecure policy. There is no separate
+  insecure-override field.
 - `eggress-server/tests/public_api.rs`: `NoopMetrics`, `UdpAssociationHandle`,
   `SessionReport`, `ConnectionConfig`, `ConnectionContext`, `AuthReuseCache`;
 - lower-level crates retain their existing unit/integration tests as semantic

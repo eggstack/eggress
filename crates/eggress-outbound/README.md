@@ -90,9 +90,11 @@ preserved by `ClientConfig::clone()`. The outbound TLS wrapper never rebuilds
 a fresh system-roots `ClientConfig` for an existing override, so custom TLS
 policies survive H2 ALPN adaptation. A caller-supplied `tls_override`
 combined with a per-hop `insecure=true` request is rejected explicitly (no
-silent substitution of Eggress's default insecure verifier); callers that
-need that combination must supply an explicit insecure override or remove
-`insecure=true`.
+ silent substitution of Eggress's default insecure verifier); callers that
+ intentionally own an insecure `ClientConfig` must pass that config as
+ `tls_override` without also requesting the Eggress per-hop insecure mode,
+ otherwise remove `tls_override` and use Eggress's feature-gated insecure
+ policy. There is no separate insecure-override field.
 
 ## Documentation
 
