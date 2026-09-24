@@ -13,6 +13,17 @@
 > inventory). `EGRESS_ROADMAP.md` at root is the original roadmap, also
 > retained for provenance.
 
+## Active registered handoff
+
+The canonical roadmap has one final 1.0.10 evidence corrective:
+
+1. [H2_PHYSICAL_SESSION_EVIDENCE_CORRECTIVE.md](H2_PHYSICAL_SESSION_EVIDENCE_CORRECTIVE.md) — **READY FOR IMPLEMENTATION**. Strengthen the two-valid-policy H2 isolation regression so it counts successful server-side H2 handshakes rather than TLS accepts, demonstrate mutation sensitivity, rerun package qualification and final CI, and restore qualified state only if the stronger proof passes.
+2. [ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md](ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md) — **IMPLEMENTED; QUALIFICATION EVIDENCE REOPENED**.
+3. [H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md](H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md) — **IMPLEMENTED; PHYSICAL-H2 EVIDENCE PENDING**.
+
+The existing supported 28-crate dry-run and prior CI remain valid historical
+evidence. The workspace is 1.0.10 and no v1.0.10 tag/publication exists.
+
 ## Recently completed
 
 - [`ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md`](ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md) — **IMPLEMENTED AND QUALIFIED** at `7b532b9037c41838bc0a96970ba5967aea67e1c5` (Rust CI `36015875160` success; supported `publish-crates.py --dry-run` exit 0 on the clean 1.0.10 tree, all 28 crates `1.0.10`-missing; no `v1.0.10` tag or publication). Pooled transport policy identity correction complete; H2 TLS override ALPN correction complete; workspace 1.0.10 qualified, prepared but unpublished.
