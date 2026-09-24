@@ -2,7 +2,7 @@
 
 ## Status
 
-**REQUALIFICATION REQUIRED — READY AFTER POOLED TRANSPORT CORRECTIVES — 2026-09-23**
+**HISTORICAL — v1.0.9 TAGGED/RELEASED; SUPERSEDED BY 1.0.10 ROLL-FORWARD — 2026-09-24**
 
 ## Target repository
 
@@ -37,6 +37,30 @@ but the release disposition is superseded: **1.0.9 is not publishable until
 this release qualification is rerun on the final corrective SHA.** Both
 corrective plans are implemented at `dfc19a0390e241f5255c8ad78dc2b50e214e537f`.
 No 1.0.9 tag or registry publication has occurred.
+
+## Post-release state correction — 2026-09-24
+
+The earlier “unpublished / requalification required” status is no longer the
+current release state for all release surfaces.
+
+After the corrective plans were closed, annotated tag `v1.0.9` was created at
+`e10dea18300f2618c4a47fa46280f1bf518e7a5f`. GitHub Release
+`eggress v1.0.9` was published, and the tag-triggered Python publication and
+CLI binary release workflows both completed successfully. Ordinary CI on that
+commit also completed successfully.
+
+Native crates.io publication remains a separate manual path in this repository
+and must be verified independently; this historical plan must not infer its
+state from the Git tag, GitHub Release, PyPI workflow, or package dry-run.
+
+A later audit found remaining hop-zero reusable-transport policy-identity gaps
+(H2 executor/TLS scope, H2 local-bind/insecure policy, SSH local-bind policy)
+and evidence-record defects. Those cannot be repaired in immutable/tagged
+1.0.9. The active roll-forward handoff is
+[`POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md`](POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md).
+
+Do not move or recreate `v1.0.9`. Any corrected release must use the next
+unused patch version, expected 1.0.10.
 
 ## Objective
 
