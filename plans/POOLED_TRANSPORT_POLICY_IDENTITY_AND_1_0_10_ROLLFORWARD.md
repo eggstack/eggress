@@ -2,7 +2,7 @@
 
 ## Status
 
-**IMPLEMENTED AND LOCALLY QUALIFIED — POST-1.0.9 CORRECTIVE — 2026-09-24**
+**CORRECTIVE REQUIRED — BLOCKED ON H2 TLS OVERRIDE ALPN PRESERVATION — 2026-09-24**
 
 ## Target repository
 
@@ -31,6 +31,23 @@ Related historical plans:
 - `plans/POOLED_TRANSPORT_ROUTE_ISOLATION_CORRECTIVE.md`
 - `plans/OUTBOUND_POOLED_TRANSPORT_METADATA_TRUTHFULNESS_CORRECTIVE.md`
 - `plans/OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md`
+
+## Post-implementation review correction — 2026-09-24
+
+Review of the 1.0.10 implementation found one remaining release-blocking TLS
+policy defect: when H2 or another wrapper needs a different ALPN list, the
+current outbound TLS wrapper can rebuild a fresh system-roots ClientConfig
+instead of cloning the caller-supplied override. That can discard custom CA,
+mTLS identity, or verifier policy. The end-to-end custom-CA trust-boundary
+regression required by this plan is also not yet present.
+
+Closure is delegated to
+[`H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md`](H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md).
+
+The local/remote green evidence recorded below remains valid for the tested
+tree, but 1.0.10 is not release-qualified until the delegated corrective lands,
+the trust-boundary regression passes, package dry-run is explicitly recorded,
+and final CI is green.
 
 ## Purpose
 
