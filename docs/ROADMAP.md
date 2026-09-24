@@ -19,20 +19,28 @@ Known boundaries:
 See `docs/parity/README.md` and `crates/eggress-pproxy-compat/src/tier.rs`
 for the tier taxonomy (`docs/PPROXY_PARITY_SPEC.md` is historical provenance only).
 
-### Active corrective — pooled transport route isolation and metadata truthfulness
+### Active corrective — pooled transport policy identity and 1.0.10 roll-forward
 
-The base listener-free TCP metadata recovery is implemented at
-`253370450dc76c16aa1a3987591089010183d3b3`, but post-qualification review found
-two pooled-transport edge cases that block the prepared 1.0.9 release.
+The nested SSH/H2 route-isolation and metadata-truthfulness corrections landed
+in 1.0.9, but a post-release audit found remaining hop-zero reuse-policy gaps:
+the process-global H2 pool can cross executor/TLS-policy boundaries, explicit
+H2 local-bind/insecure policy can be bypassed by reuse, and hop-zero SSH reuse
+can bypass explicit local-bind policy.
 
-Registered handoffs, in order:
+`v1.0.9` is historical and must not be moved or recreated. The tag points to
+`e10dea18300f2618c4a47fa46280f1bf518e7a5f`; the GitHub Release exists and
+its tag-triggered Python and binary release workflows succeeded. Native
+crates.io state is verified separately because that publication path is manual.
 
-1. [Pooled Transport Route Isolation Corrective](../plans/POOLED_TRANSPORT_ROUTE_ISOLATION_CORRECTIVE.md) — **IMPLEMENTED**. Hop-zero reuse remains enabled; nested SSH/H2 consumes the supplied chain stream without global physical-connection reuse.
-2. [Outbound Pooled Transport Metadata Truthfulness Corrective](../plans/OUTBOUND_POOLED_TRANSPORT_METADATA_TRUTHFULNESS_CORRECTIVE.md) — **IMPLEMENTED**. Reused hop-zero SSH/H2 no longer reports metadata from a discarded candidate socket; direct and ordinary TCP-preserving first hops retain actual metadata.
-3. [Outbound TCP Socket Metadata Release Qualification](../plans/OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md) — **READY FOR REQUALIFICATION; NOT RELEASE QUALIFIED**. Both corrective prerequisites are implemented. The prepared 1.0.9 tree remains unpublished pending final-SHA qualification.
+Registered handoff:
 
-The prepared workspace remains lockstep 1.0.9 and unpublished. No `v1.0.9`
-tag, crates.io upload, PyPI release, or GitHub release has occurred.
+1. [Pooled Transport Policy Identity and 1.0.10 Roll-Forward Corrective](../plans/POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md) — **READY FOR IMPLEMENTATION**. Scope Eggress chain H2 pooling to the executor/service TLS-policy lifetime, make explicit H2 local-bind/insecure and SSH local-bind connections non-poolable, add real behavioral cross-route regressions, reconcile the overstated 1.0.9 evidence, audit other reusable transports, and prepare the next unused lockstep patch (expected 1.0.10) without publishing it.
+
+Historical related records:
+
+- [Pooled Transport Route Isolation Corrective](../plans/POOLED_TRANSPORT_ROUTE_ISOLATION_CORRECTIVE.md) — **IMPLEMENTED in 1.0.9**.
+- [Outbound Pooled Transport Metadata Truthfulness Corrective](../plans/OUTBOUND_POOLED_TRANSPORT_METADATA_TRUTHFULNESS_CORRECTIVE.md) — **IMPLEMENTED in 1.0.9**.
+- [Outbound TCP Socket Metadata Release Qualification](../plans/OUTBOUND_TCP_SOCKET_METADATA_RELEASE_QUALIFICATION.md) — **HISTORICAL; 1.0.9 TAGGED/RELEASED, SUPERSEDED BY ROLL-FORWARD**.
 
 ## Completed Milestones
 
