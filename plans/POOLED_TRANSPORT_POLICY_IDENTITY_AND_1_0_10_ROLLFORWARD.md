@@ -49,6 +49,14 @@ tree, but 1.0.10 is not release-qualified until the delegated corrective lands,
 the trust-boundary regression passes, package dry-run is explicitly recorded,
 and final CI is green.
 
+## Implementation handoff — 2026-09-24
+
+Implementation of the delegated corrective has begun; see the `Completion
+record — 2026-09-24` section appended to
+[`H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md`](H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md)
+for the current status, the new policy-preserving ALPN helper, the custom-CA
+trust-boundary regressions, and the still-required completion checks.
+
 ## Purpose
 
 Close the remaining hop-zero reusable-transport policy-isolation gaps that were

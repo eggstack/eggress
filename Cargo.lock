@@ -1100,6 +1100,7 @@ dependencies = [
  "h2",
  "http",
  "libc",
+ "rcgen",
  "rustls",
  "subtle",
  "tempfile",

@@ -30,6 +30,12 @@ The only TLS implementation in the workspace (no OpenSSL anywhere). Wraps
 | `with_insecure()` | Accepts any server cert. **Gated**: `#[cfg(any(test, feature = "insecure-tls"))]` |
 | `build()` | Returns `Arc<ClientConfig>`. Insecure mode uses `InsecureVerifier`; if feature not enabled, returns `TlsError::Handshake` |
 
+### ALPN-preserving adapter
+
+| Function | Notes |
+|---|---|
+| `client_config_with_alpn(&Arc<ClientConfig>, Option<Vec<Vec<u8>>>) -> Arc<ClientConfig>` | Returns the same `Arc` when no ALPN change is needed (no allocation). Otherwise clones the underlying `ClientConfig` via `ClientConfig::clone()` and only mutates `alpn_protocols`. Every other field — trust roots, custom CA store, mTLS client identity, custom verifier — is preserved by `ClientConfig::clone()` and is therefore retained across the adaptation. This is the single authority for ALPN adaptation of an existing `ClientConfig`; callers must never rebuild a fresh system-roots configuration as a fallback when an override is already present. |
+
 ### Server (`TlsServerConfigBuilder`)
 
 | Method | Notes |
@@ -95,6 +101,23 @@ caches.
 2. ALPN protocols are set on the resulting config.
 3. The config is wrapped in `Arc` and returned.
 
+### ALPN adaptation of an existing `ClientConfig`
+
+`client_config_with_alpn(&Arc<ClientConfig>, Option<Vec<Vec<u8>>>) -> Arc<ClientConfig>`
+returns the same `Arc` when no ALPN change is needed (no allocation), and
+otherwise clones the underlying `rustls::ClientConfig` via
+`ClientConfig::clone()` and only mutates `alpn_protocols`. Every other
+field — trust roots, custom CA store, mTLS client identity, custom verifier,
+signature schemes, resumption — is preserved by `ClientConfig::clone()` and
+is therefore retained across the adaptation.
+
+This is the single internal authority for adapting an existing
+`rustls::ClientConfig` to a new ALPN list. Callers must never build a fresh
+system-roots configuration as a fallback when a caller-supplied `Arc<ClientConfig>`
+is already present, because doing so discards the caller's trust/identity
+policy. The outbound TLS wrapper (`crates/eggress-outbound/src/executor.rs`)
+uses this helper to apply H2 ALPN to an executor's shared `tls_override`.
+
 ### Server config construction
 
 1. `TlsServerConfigBuilder::build()` checks that `key_der` is `Some` and `cert_chain` is non-empty.
@@ -127,6 +150,7 @@ Both `tls_connect` and `tls_accept` use `tokio-rustls`:
 - **Ring provider only.** The crypto provider is hardcoded to ring. No alternative providers are supported.
 - **No session resumption.** The builder does not configure session tickets or session caching.
 - **mTLS is explicit.** Server `require_client_cert` without client CA fails at `build`; client cert without key fails at `build`. Reverse `pproxy_compat` + TLS is rejected at config compile (wire must stay plaintext).
+- **ALPN adaptation preserves caller policy.** `client_config_with_alpn` clones the underlying `rustls::ClientConfig` via `ClientConfig::clone()` and only mutates `alpn_protocols`. Custom CA stores, mTLS client identity, custom verifiers, and other caller-supplied `ClientConfig` state are preserved by `ClientConfig::clone()` and survive the adaptation. Callers must never rebuild a fresh system-roots configuration as a fallback when an override is already present; the outbound TLS wrapper in `eggress-outbound` enforces this invariant.
 
 ## Concurrency and lifecycle
 
@@ -149,6 +173,10 @@ Both `tls_connect` and `tls_accept` use `tokio-rustls`:
 | `insecure_connects_to_self_signed_server` | End-to-end: self-signed cert + insecure client = successful TLS echo |
 | `default_verified_configs_are_shared_and_h2_is_distinct` | Process-shared default verified configs; H2 config is distinct (`client.rs:420`) |
 | `default_insecure_configs_are_shared_and_isolated_from_verified` | Shared insecure defaults isolated from verified ones; requires `--features insecure-tls` (`client.rs:437`) |
+| `client_config_with_alpn_returns_same_arc_when_alpn_unchanged` | No-allocation fast path: same `Arc` returned when ALPN matches or is `None` |
+| `client_config_with_alpn_clones_when_alpn_differs` | Differing ALPN list produces a new `Arc`; original ALPN list on the input `Arc` is preserved |
+| `client_config_with_alpn_preserves_trust_policy` | Custom-CA-backed `ClientConfig` clones its trust store across ALPN adaptation via `ClientConfig::clone()` |
+| `client_config_with_alpn_preserves_mtls_identity` | mTLS client identity is structurally preserved by `ClientConfig::clone()` through ALPN adaptation |
 
 ### Unit tests (`server.rs`)
 

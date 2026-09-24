@@ -25,6 +25,16 @@ Use when implementing new proxy protocols, transport wrappers, or modifying core
   overrides); `H2PoolKey`
   alone is not a complete TLS policy identity. Explicit hop-zero `local_bind`
   disables SSH/H2 reuse, and explicit insecure H2 remains unpooled.
+- ALPN adaptation of an existing `Arc<rustls::ClientConfig>` must use
+  `eggress_transport_tls::client_config_with_alpn`, which clones the
+  underlying `rustls::ClientConfig` via `ClientConfig::clone()` and only
+  mutates `alpn_protocols`. Trust roots, custom CA stores, mTLS client
+  identity, custom verifier, and every other `rustls::ClientConfig` field
+  are preserved by `ClientConfig::clone()` and survive the adaptation. The
+  outbound TLS wrapper must never rebuild a fresh system-roots
+  `ClientConfig` as a fallback when an override is already present. A
+  caller-supplied `tls_override` combined with per-hop `insecure=true` is
+  rejected explicitly (no silent substitution).
 - No C deps, no OpenSSL, no `build.rs` files
 
 ## SSR/legacy Shadowsocks handling

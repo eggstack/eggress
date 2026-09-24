@@ -38,7 +38,7 @@ quic = [
     "dep:eggress-transport-quic",
     "dep:eggress-protocol-h3",
 ]
-insecure-tls = ["eggress-transport-tls/insecure-tls"]
+insecure-tls = ["eggress-core/insecure-tls", "eggress-transport-tls/insecure-tls"]
 
 [dependencies]
 eggress-core.workspace = true
@@ -75,6 +75,7 @@ tempfile.workspace = true
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "net", "io-util", "test-util", "time"] }
 futures-util.workspace = true
 tokio-tungstenite.workspace = true
+rcgen = "0.13"
 
 [lints]
 workspace = true

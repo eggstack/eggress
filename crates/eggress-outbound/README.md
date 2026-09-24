@@ -80,6 +80,20 @@ client-config object. The public `H2PoolKey` omits TLS trust policy and is not
 the complete identity by itself. `OutboundInfo::Some(addr)` still identifies
 the physical transport carrying the stream.
 
+ALPN adaptation of a caller-supplied `Arc<rustls::ClientConfig>` (e.g. when a
+hop's `h2` protocol adds the H2 ALPN list to a configured override) clones
+the existing `ClientConfig` and only mutates `alpn_protocols`. The
+`eggress_transport_tls::client_config_with_alpn` helper is the single
+authority for that adaptation: trust roots, custom CA stores, mTLS client
+identity, custom verifier, and every other `rustls::ClientConfig` field are
+preserved by `ClientConfig::clone()`. The outbound TLS wrapper never rebuilds
+a fresh system-roots `ClientConfig` for an existing override, so custom TLS
+policies survive H2 ALPN adaptation. A caller-supplied `tls_override`
+combined with a per-hop `insecure=true` request is rejected explicitly (no
+silent substitution of Eggress's default insecure verifier); callers that
+need that combination must supply an explicit insecure override or remove
+`insecure=true`.
+
 ## Documentation
 
 - [Workspace README](https://github.com/eggstack/eggress/blob/main/README.md)

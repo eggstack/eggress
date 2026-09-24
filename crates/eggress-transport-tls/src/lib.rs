@@ -4,7 +4,10 @@ pub mod roots;
 pub mod server;
 pub mod transport;
 
-pub use client::{default_client_config, default_h2_client_config, TlsClientConfigBuilder};
+pub use client::{
+    client_config_with_alpn, default_client_config, default_h2_client_config,
+    TlsClientConfigBuilder,
+};
 #[cfg(feature = "insecure-tls")]
 pub use client::{default_insecure_client_config, default_insecure_h2_client_config};
 pub use error::TlsError;

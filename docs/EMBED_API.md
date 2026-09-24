@@ -187,6 +187,15 @@ Contract:
   non-TCP first hops may also return `None`; missing
   metadata does not fail a successful connect. `Some(addr)` always belongs to
   the physical transport carrying the returned stream.
+  ALPN adaptation of a caller-supplied `Arc<rustls::ClientConfig>` (e.g.
+  when an H2 hop adds the H2 ALPN list to a configured override) clones the
+  existing `ClientConfig` via `ClientConfig::clone()` and only mutates
+  `alpn_protocols`; trust roots, custom CA stores, mTLS client identity,
+  custom verifier, and every other `ClientConfig` field are preserved.
+  A caller-supplied `tls_override` combined with per-hop `insecure=true`
+  is rejected explicitly (no silent substitution of Eggress's default
+  insecure verifier); callers that need that combination must supply an
+  explicit insecure override or remove `insecure=true`.
   The socket metadata correction shipped in immutable `v1.0.9`; the pooled
   transport policy corrective is being qualified for `1.0.10`.
 

@@ -93,6 +93,18 @@ Representative (not exhaustive) downstream-shaped compile contracts:
   encode trust policy. Explicit hop-zero `local_bind` disables SSH/H2 reuse,
   explicit insecure H2 is unpooled, and nested SSH/H2 always consumes the
   selected prior-hop stream without pooling.
+- `eggress_transport_tls::client_config_with_alpn` is the single internal
+  authority for ALPN adaptation of an existing `Arc<rustls::ClientConfig>`.
+  It clones the underlying `rustls::ClientConfig` via `ClientConfig::clone()`
+  and only mutates `alpn_protocols`; trust roots, custom CA stores, mTLS
+  client identity, custom verifier, and every other `ClientConfig` field are
+  preserved by `ClientConfig::clone()` and survive the adaptation. The
+  outbound TLS wrapper uses this helper when an H2 hop adds the H2 ALPN list
+  to a configured override, so custom TLS policies survive H2 ALPN
+  adaptation. Callers must never rebuild a fresh system-roots configuration
+  as a fallback when an override is already present; a caller-supplied
+  `tls_override` combined with per-hop `insecure=true` is rejected
+  explicitly.
 - `eggress-server/tests/public_api.rs`: `NoopMetrics`, `UdpAssociationHandle`,
   `SessionReport`, `ConnectionConfig`, `ConnectionContext`, `AuthReuseCache`;
 - lower-level crates retain their existing unit/integration tests as semantic

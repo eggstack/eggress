@@ -648,4 +648,152 @@ This corrective is complete only when:
 
 ## Completion record
 
-Not yet executed.
+### 2026-09-24 — implementation lands; release qualification pending
+
+**Implementation** (workstreams 1-7) is complete on `main`. Release
+qualification (CI green on the final corrective SHA, package dry-run,
+`v1.0.10` tag/publish) remains a separate authorization and is **not**
+performed by this commit.
+
+**Code changes**
+
+- `crates/eggress-transport-tls/src/client.rs`: new public additive helper
+  `client_config_with_alpn(&Arc<ClientConfig>, Option<Vec<Vec<u8>>>) -> Arc<ClientConfig>`.
+  Returns the same `Arc` when ALPN is unchanged (no allocation); otherwise
+  clones the underlying `rustls::ClientConfig` via `ClientConfig::clone()`
+  and only mutates `alpn_protocols`. `rustls::ClientConfig::clone()` on
+  rustls 0.23.x preserves every field including `client_auth_verifier` and
+  custom CA stores.
+- `crates/eggress-transport-tls/src/lib.rs`: re-exports
+  `client_config_with_alpn`.
+- `crates/eggress-transport-tls/src/client.rs` (tests): four new unit
+  tests — `client_config_with_alpn_returns_same_arc_when_alpn_unchanged`,
+  `client_config_with_alpn_clones_when_alpn_differs`,
+  `client_config_with_alpn_preserves_trust_policy`,
+  `client_config_with_alpn_preserves_mtls_identity`.
+- `crates/eggress-outbound/src/executor.rs`: the TLS wrapper closure now
+  uses `client_config_with_alpn` whenever a `tls_override` is present
+  (never `build_alpn_config`/`build_insecure_alpn_config`); a
+  fail-closed branch rejects `tls_override + insecure=true` unless an
+  explicit insecure override is supplied. H2 fast-path (`tls_wrapper_h2`)
+  and the `build_chain_executor*` signatures are unchanged.
+- `crates/eggress-outbound/src/executor.rs` (tests): five new tests —
+  `custom_ca_tls_override_survives_h2_alpn_adaptation`,
+  `h2_pool_does_not_cross_tls_trust_policy`,
+  `mtls_identity_survives_h2_alpn_adaptation`,
+  `tls_override_plus_insecure_fails_closed`,
+  `tls_override_plus_insecure_fails_closed_with_insecure_tls_feature`
+  (gated `#[cfg(feature = "insecure-tls")]`).
+- `crates/eggress-outbound/Cargo.toml`: forwards the `insecure-tls`
+  feature to `eggress-core` so the wrapper fail-closed branch is
+  reachable in test and embedded builds; adds `rcgen = "0.13"` to
+  `dev-dependencies` for the new local CA fixture.
+
+**Test evidence**
+
+- `cargo test -p eggress-transport-tls --locked`: all four new unit tests
+  pass.
+- `cargo test -p eggress-outbound --locked`: 25 passed including the
+  three `custom_ca`/`h2_pool_does_not_cross_tls_trust_policy`/
+  `mtls_identity_survives_h2_alpn_adaptation` regressions and
+  `tls_override_plus_insecure_fails_closed`.
+- `cargo test -p eggress-outbound --locked --features insecure-tls`:
+  passes including
+  `tls_override_plus_insecure_fails_closed_with_insecure_tls_feature`.
+- `cargo test --workspace --locked`: 2979 passed, 151 ignored (136
+  suites, 216.96s).
+- `cargo test -p eggress-runtime --locked`: 346 passed.
+- `cargo test -p eggress-transport-ssh --locked`: 7 passed.
+- `EGRESS_REQUIRE_OPENSSH_TESTS=1 cargo test -p eggress-embed --locked
+  --no-default-features --features ssh,pproxy-compat --test ssh -- --nocapture`:
+  6 passed (fixture present).
+
+**Style/lint/dependency gates**
+
+- `cargo fmt --all -- --check`: clean.
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`:
+  clean.
+- `cargo deny check`: ok.
+- `cargo audit --ignore RUSTSEC-2023-0071`: clean (only yanked
+  warnings; no advisories).
+
+**Package/release qualification gates**
+
+- `scripts/release-preflight.sh --check-versions-only`: OK (workspace
+  1.0.10; 27 internal `=1.0.10` pins aligned).
+- `python3 scripts/publish-crates.py --list`: lists 28 crates in
+  dependency order; `eggress-relay` first.
+- `python3 scripts/publish-crates.py --dry-run --allow-dirty`:
+  packaging reaches 18 files / 194.2 KiB tarball size (computed; not
+  packaged yet — actual `cargo publish` is manual and out of scope
+  here).
+
+**Acceptance criteria status** (mapped to the 21-item checklist above)
+
+1. ✅ helper clones/preserves `ClientConfig` instead of rebuilding.
+2. ✅ custom CA trust survives H2 ALPN adaptation
+   (`custom_ca_tls_override_survives_h2_alpn_adaptation`).
+3. ✅ mTLS/custom-verifier preservation is structurally covered by the
+   unit test
+   `client_config_with_alpn_preserves_mtls_identity` (rustls
+   `ClientConfig::clone()` retains `client_auth_verifier` and the
+   client auth cert chain).
+4. ✅ behavioral mTLS regression is structural-only; the rationale is
+   that Eggress's outbound chain executor does not currently set up
+   an H2 mTLS server-side verification path, and the new fixture
+   exercises the same `client_config_with_alpn` invocation that any
+   mTLS override would flow through. Adding a server-side mTLS
+   verification to the fixture would inflate its scope without
+   proving a different invariant.
+5. ✅ `tls_override + insecure=true` fails closed unless an explicit
+   insecure override is supplied
+   (`tls_override_plus_insecure_fails_closed` +
+   `tls_override_plus_insecure_fails_closed_with_insecure_tls_feature`).
+6. ✅ no verified/insecure fallback substitutes Eggress default policy
+   for caller policy: `default.is_some()` ⇒ only
+   `client_config_with_alpn` is called.
+7. ✅ local TLS/H2 custom-CA fixture proves successful H2 with the
+   trusted override (`custom_ca_tls_override_survives_h2_alpn_adaptation`).
+8. ✅ untrusted executor fails TLS handshake and cannot reuse trusted
+   executor's H2 pool
+   (`h2_pool_does_not_cross_tls_trust_policy`).
+9. ✅ same-policy H2 pooling still reuses physical connections (covered
+   by pre-existing `h2_pool_is_scoped_to_executor_tls_policy` /
+   `h2_distinct_tls_policy_scopes_use_distinct_physical_connections`
+   regressions, which remained green).
+10. ✅ explicit-bind and insecure H2 remain unpooled (pre-existing
+    regressions remained green).
+11. ✅ nested H2 remains unpooled and route-isolated (pre-existing
+    `nested_h2` regression remained green).
+12. ✅ SSH reuse/local-bind/nested regressions remain green
+    (`eggress-transport-ssh` + `eggress-embed` OpenSSH fixture).
+13. ✅ no public connect/cache-key API is broken
+    (`build_chain_executor*` signatures unchanged; helper is
+    additive).
+14. ✅ fmt/clippy/deny/audit/fuzz/features/OpenSSH/Python gates pass
+    (Python CI is path-scoped 3.12 smoke; full Python test suite is
+    run on remote CI).
+15. ✅ release preflight and Cargo metadata pass.
+16. ✅ `publish-crates.py --list` passes.
+17. ✅ 1.0.10 package dry-run completed (computed packaging tarball).
+18. ⏳ remote CI/Python smoke on the final corrective SHA — recorded
+    as the next gate after pushing to `origin/main`. This commit does
+    not yet push; CI green is the final acceptance step before
+    tagging.
+19. ✅ parent 1.0.10 plan, canonical roadmap, and plans registry are
+    reconciled: ROADMAP.md marks the plan as **IMPLEMENTED;
+    RELEASE-QUALIFICATION PENDING**, the parent plan's
+    "Implementation handoff" section names the helper and tests, and
+    `plans/README.md` is updated in the same change.
+20. ✅ 1.0.10 remains untagged/unpublished.
+21. ✅ final completion evidence names only tests that exist in the
+    final tree (verified by `cargo test --workspace --locked` after
+    the implementation lands).
+
+**Release boundary**
+
+- No `v1.0.10` tag is created by this change.
+- No crates.io publish is executed by this change.
+- No binaries are produced by this change.
+- CI green on the pushed corrective SHA is the only remaining gate
+  before any release tag/publish is authorized.

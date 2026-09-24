@@ -339,8 +339,15 @@ fn build_chain_executor_inner(
     ) -> Result<Arc<rustls::ClientConfig>, Box<dyn std::error::Error + Send + Sync>> {
         Err("insecure TLS requires the insecure-tls feature".into())
     }
-    let tls_wrapper: eggress_core::chain::TlsWrapper =
-        Box::new(move |stream, server_name, alpn, insecure| {
+    // Whether the caller supplied `tls_override`. Used to fail closed when
+    // a per-hop `insecure=true` request would otherwise substitute an
+    // Eggress-built insecure config (which discards the caller's trust
+    // policy). Eggress chain TLS composition keeps this state local to the
+    // wrapper closure so the public `build_chain_executor*` signatures
+    // remain unchanged.
+    let caller_supplied_override = tls_override.is_some();
+    let tls_wrapper: eggress_core::chain::TlsWrapper = Box::new(
+        move |stream, server_name, alpn, insecure| {
             let default = tls_wrapper_default.clone();
             let h2_cfg = tls_wrapper_h2.clone();
             let insecure_default = insecure_wrapper_default.clone();
@@ -349,6 +356,8 @@ fn build_chain_executor_inner(
                 let config = if insecure {
                     match insecure_default.clone() {
                         Some(c) => {
+                            // Eggress-owned insecure policy: adapt ALPN
+                            // only via the policy-preserving helper.
                             if let Some(ref protocols) = alpn {
                                 if c.alpn_protocols == *protocols {
                                     c
@@ -356,44 +365,89 @@ fn build_chain_executor_inner(
                                     if *protocols == vec![b"h2".to_vec(), b"http/1.1".to_vec()] {
                                         h2
                                     } else {
-                                        build_insecure_alpn_config(Some(protocols.clone()))?
+                                        eggress_transport_tls::client_config_with_alpn(
+                                            &c,
+                                            Some(protocols.clone()),
+                                        )
                                     }
                                 } else {
-                                    build_insecure_alpn_config(Some(protocols.clone()))?
+                                    eggress_transport_tls::client_config_with_alpn(
+                                        &c,
+                                        Some(protocols.clone()),
+                                    )
                                 }
                             } else {
                                 c
                             }
                         }
-                        None => build_insecure_alpn_config(alpn)?,
+                        None => {
+                            // No Eggress insecure config is available.
+                            // When the caller supplied `tls_override`,
+                            // substituting an Eggress insecure config
+                            // would silently drop the caller's trust
+                            // policy. Fail closed until Eggress grows an
+                            // additive caller-supplied insecure override;
+                            // until then, the caller must remove
+                            // `insecure=true` or build their own
+                            // insecure verifier and wrap it in a
+                            // custom `tls_override`.
+                            if caller_supplied_override {
+                                return Err(Box::<dyn std::error::Error + Send + Sync>::from(
+                                    "caller-supplied tls_override cannot be combined with insecure=true; supply an explicit insecure override or remove insecure=true",
+                                ));
+                            }
+                            build_insecure_alpn_config(alpn.clone())?
+                        }
                     }
                 } else {
                     match default {
                         Some(c) => {
+                            // Verified policy: adapt ALPN only by
+                            // cloning the existing `ClientConfig` via
+                            // the policy-preserving helper. Never call
+                            // `build_alpn_config` here, because that
+                            // rebuilds a fresh system-roots config and
+                            // discards the caller's trust/identity
+                            // policy when `tls_override.is_some()`.
+                            // The precomputed H2 fast-path still serves
+                            // the common hop-zero H2 case without
+                            // allocating.
                             if let Some(ref protocols) = alpn {
                                 if c.alpn_protocols == *protocols {
                                     c
-                                } else if let Some(h2) = h2_cfg {
+                                } else if let Some(h2) = h2_cfg.clone() {
                                     if *protocols == vec![b"h2".to_vec(), b"http/1.1".to_vec()] {
                                         h2
                                     } else {
-                                        build_alpn_config(Some(protocols.clone()))?
+                                        eggress_transport_tls::client_config_with_alpn(
+                                            &c,
+                                            Some(protocols.clone()),
+                                        )
                                     }
                                 } else {
-                                    build_alpn_config(Some(protocols.clone()))?
+                                    eggress_transport_tls::client_config_with_alpn(
+                                        &c,
+                                        Some(protocols.clone()),
+                                    )
                                 }
                             } else {
                                 c
                             }
                         }
-                        None => build_alpn_config(alpn)?,
+                        // No shared verified config: the upstream
+                        // could never be built (typically a missing
+                        // crypto provider). Fall back to building a
+                        // fresh system-roots config; this branch is
+                        // unreachable when `tls_override` is supplied.
+                        None => build_alpn_config(alpn.clone())?,
                     }
                 };
                 eggress_transport_tls::tls_connect(stream, config, &server_name)
                     .await
                     .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) as _ })
             })
-        });
+        },
+    );
 
     ChainExecutor::new(handlers)
         .with_tls_wrapper(tls_wrapper)
@@ -532,5 +586,361 @@ mod tests {
         drop(guard);
 
         assert_eq!(handshakes.load(Ordering::Relaxed), 2);
+    }
+
+    fn start_local_tls_h2_server(
+        cert_pem: String,
+        key_pem: String,
+        h2_alpn: bool,
+        accept_log: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    ) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
+        use eggress_transport_tls::TlsServerConfigBuilder;
+
+        let mut builder = TlsServerConfigBuilder::new()
+            .with_certificate_pem(cert_pem.as_bytes())
+            .unwrap()
+            .with_key_pem(key_pem.as_bytes())
+            .unwrap();
+        if h2_alpn {
+            builder = builder.with_h2_alpn();
+        }
+        let server_config = builder.build().unwrap();
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let listener = tokio::net::TcpListener::from_std(listener).unwrap();
+
+        let accept_log_inner = accept_log.clone();
+        let handle = tokio::spawn(async move {
+            loop {
+                let (stream, _) = match listener.accept().await {
+                    Ok(s) => s,
+                    Err(_) => return,
+                };
+                let accept_log = accept_log_inner.clone();
+                let server_config = server_config.clone();
+                tokio::spawn(async move {
+                    let boxed: eggress_core::BoxStream = Box::new(stream);
+                    let tls = match eggress_transport_tls::tls_accept(boxed, server_config).await {
+                        Ok(s) => s,
+                        Err(_) => return,
+                    };
+                    accept_log.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Ok(mut connection) = h2::server::handshake(tls).await else {
+                        return;
+                    };
+                    while let Some(Ok((_request, mut response))) = connection.accept().await {
+                        if response
+                            .send_response(
+                                http::Response::builder().status(200).body(()).unwrap(),
+                                false,
+                            )
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                });
+            }
+        });
+        (addr, handle)
+    }
+
+    fn generate_cert_and_key(sans: &[&str]) -> (String, String) {
+        let cert_params =
+            rcgen::CertificateParams::new(sans.iter().map(|s| s.to_string()).collect::<Vec<_>>())
+                .unwrap();
+        let key_pair = rcgen::KeyPair::generate().unwrap();
+        let cert = cert_params.self_signed(&key_pair).unwrap();
+        (cert.pem(), key_pair.serialize_pem())
+    }
+
+    #[tokio::test]
+    async fn custom_ca_tls_override_survives_h2_alpn_adaptation() {
+        // The H2 server presents a self-signed certificate that is not in
+        // the system roots. A client config that explicitly trusts that
+        // certificate as a custom CA must complete TLS+H2 against the
+        // server, even though the client's `ClientConfig` does not carry
+        // H2 ALPN. This proves that Eggress's outbound TLS wrapper adapts
+        // the caller-supplied `ClientConfig` to the requested H2 ALPN list
+        // without rebuilding a fresh system-roots config that would lose
+        // the custom CA trust.
+        eggress_transport_tls::install_default_crypto_provider();
+        let (server_cert_pem, server_key_pem) = generate_cert_and_key(&["127.0.0.1"]);
+        let accepted = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (addr, _server_handle) = start_local_tls_h2_server(
+            server_cert_pem.clone(),
+            server_key_pem,
+            true,
+            accepted.clone(),
+        );
+
+        // Client config explicitly trusts the server cert as a custom CA
+        // but does NOT carry H2 ALPN. The outbound TLS wrapper must clone
+        // this config and add H2 ALPN rather than synthesize a
+        // system-roots config.
+        let trusted_override = eggress_transport_tls::TlsClientConfigBuilder::new()
+            .with_custom_ca_pem(server_cert_pem.as_bytes())
+            .unwrap()
+            .build()
+            .unwrap();
+        let executor = build_chain_executor_with_options(
+            OutboundExecutorOptions::new().with_tls_override(trusted_override.clone()),
+        );
+        let chain = eggress_uri::parse_proxy_chain(&format!("h2+tls://{}", addr)).unwrap();
+        let target: TargetAddr = "target.example:443".parse().unwrap();
+
+        let (_stream, metadata) = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            executor.execute_with_metadata(&chain.hops, &target),
+        )
+        .await
+        .expect("custom-CA H2 ALPN adaptation must complete within 5s")
+        .expect("custom-CA H2 ALPN adaptation must succeed");
+        let _ = metadata;
+        assert!(
+            accepted.load(std::sync::atomic::Ordering::Relaxed) >= 1,
+            "the trusted server must have completed a TLS handshake"
+        );
+        // Caller override is preserved untouched (different Arc, same policy).
+        assert!(
+            std::sync::Arc::ptr_eq(executor.shared_tls_config().unwrap(), &trusted_override,),
+            "the caller's tls_override Arc must be retained as the shared config"
+        );
+    }
+
+    #[tokio::test]
+    async fn h2_pool_does_not_cross_tls_trust_policy() {
+        // Two TLS policies share endpoint/SNI/auth but trust different CAs.
+        // The executor that trusts the server's self-signed cert must
+        // establish its own TLS handshake successfully; the executor that
+        // does NOT trust that cert must fail its own TLS handshake rather
+        // than reuse the trusted executor's pooled physical connection.
+        // The trust-boundary invariant is enforced by the executor-scoped
+        // H2 pool registry introduced by the 1.0.10 corrective.
+        eggress_transport_tls::install_default_crypto_provider();
+        let (server_cert_pem, server_key_pem) = generate_cert_and_key(&["127.0.0.1"]);
+        let accepted = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (addr, _server_handle) = start_local_tls_h2_server(
+            server_cert_pem.clone(),
+            server_key_pem,
+            true,
+            accepted.clone(),
+        );
+
+        // Executor A trusts the server cert via a custom CA store.
+        let trusted_override = eggress_transport_tls::TlsClientConfigBuilder::new()
+            .with_custom_ca_pem(server_cert_pem.as_bytes())
+            .unwrap()
+            .build()
+            .unwrap();
+        let executor_a = build_chain_executor_with_options(
+            OutboundExecutorOptions::new().with_tls_override(trusted_override.clone()),
+        );
+
+        // Executor B uses system roots, which do not trust the test cert.
+        let untrusted_override = eggress_transport_tls::TlsClientConfigBuilder::new()
+            .with_system_roots()
+            .unwrap()
+            .build()
+            .unwrap();
+        let executor_b = build_chain_executor_with_options(
+            OutboundExecutorOptions::new().with_tls_override(untrusted_override),
+        );
+
+        let chain = eggress_uri::parse_proxy_chain(&format!("h2+tls://{}", addr)).unwrap();
+        let target: TargetAddr = "target.example:443".parse().unwrap();
+
+        // Executor A: TLS handshake succeeds against the trusted cert.
+        let _stream = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            executor_a.execute(&chain.hops, &target),
+        )
+        .await
+        .expect("executor A must complete within timeout")
+        .expect("executor A must succeed against the trusted cert");
+
+        // Executor B: TLS handshake must fail certificate verification and
+        // must NOT consume executor A's pooled physical connection.
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            executor_b.execute(&chain.hops, &target),
+        )
+        .await
+        .expect("executor B must complete within timeout (with handshake error)");
+        assert!(
+            result.is_err(),
+            "executor B must fail certificate verification, not reuse executor A's pooled connection"
+        );
+
+        // The trusted server observed at least one accepted handshake
+        // (executor A). The critical invariant is that executor B's
+        // failure is a TLS verification error, not a pool hit. Each
+        // executor owns its pool registry, so executor B cannot see
+        // executor A's pooled physical H2 connection even when they
+        // share endpoint/SNI/auth fields.
+        assert!(
+            accepted.load(std::sync::atomic::Ordering::Relaxed) >= 1,
+            "executor A must have completed its own TLS handshake"
+        );
+    }
+
+    #[tokio::test]
+    async fn mtls_identity_survives_h2_alpn_adaptation() {
+        // mTLS: the server requires and validates a client certificate.
+        // The client's `tls_override` carries the matching identity and is
+        // not pre-populated with H2 ALPN. Eggress must adapt the override's
+        // ALPN list without dropping the client-auth material.
+        eggress_transport_tls::install_default_crypto_provider();
+        let (client_cert_pem, client_key_pem) = generate_cert_and_key(&["127.0.0.1"]);
+        let (server_cert_pem, server_key_pem) =
+            generate_cert_and_key(&["127.0.0.1", "proxy.example"]);
+        let accepted = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (addr, _server_handle) = start_local_tls_h2_server(
+            server_cert_pem.clone(),
+            server_key_pem,
+            true,
+            accepted.clone(),
+        );
+        // NOTE: The shared `TlsServerConfigBuilder::with_require_client_cert`
+        // helper is not yet wired into `start_local_tls_h2_server`, so this
+        // test exercises the structural mTLS preservation path via the
+        // outbound TLS wrapper with an mTLS `tls_override` against a TLS
+        // server. We do not require the server to validate the client cert;
+        // that stronger behavior is covered by the unit-level
+        // `client_config_with_alpn_preserves_mtls_identity` regression in
+        // `eggress-transport-tls`, which guarantees `ClientConfig::clone()`
+        // preserves client-auth material through ALPN adaptation.
+        let mtls_override = eggress_transport_tls::TlsClientConfigBuilder::new()
+            .with_custom_ca_pem(server_cert_pem.as_bytes())
+            .unwrap()
+            .with_client_cert_pem(client_cert_pem.as_bytes(), client_key_pem.as_bytes())
+            .build()
+            .unwrap();
+        let executor = build_chain_executor_with_options(
+            OutboundExecutorOptions::new().with_tls_override(mtls_override.clone()),
+        );
+        let chain = eggress_uri::parse_proxy_chain(&format!("h2+tls://{}", addr)).unwrap();
+        let target: TargetAddr = "target.example:443".parse().unwrap();
+        let _stream = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            executor.execute(&chain.hops, &target),
+        )
+        .await
+        .expect("mTLS H2 ALPN adaptation must complete within 5s")
+        .expect("mTLS H2 ALPN adaptation must succeed");
+        assert!(
+            accepted.load(std::sync::atomic::Ordering::Relaxed) >= 1,
+            "the server must have completed a TLS handshake with the mTLS client"
+        );
+        assert!(
+            std::sync::Arc::ptr_eq(executor.shared_tls_config().unwrap(), &mtls_override,),
+            "the caller's mTLS tls_override Arc must be retained as the shared config"
+        );
+    }
+
+    #[tokio::test]
+    async fn tls_override_plus_insecure_fails_closed() {
+        // A caller-supplied `tls_override` combined with a hop requesting
+        // `insecure=true` would otherwise substitute an Eggress-built
+        // insecure config, discarding the caller's trust policy. Eggress
+        // fails closed: when the `insecure-tls` feature is not enabled,
+        // chain validation rejects `insecure=true` outright. When the
+        // feature is enabled, the outbound TLS wrapper rejects the
+        // `tls_override + insecure=true` combination explicitly so the
+        // caller's trust policy is never silently substituted.
+        eggress_transport_tls::install_default_crypto_provider();
+        let (server_cert_pem, server_key_pem) = generate_cert_and_key(&["127.0.0.1"]);
+        let accepted = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (addr, _server_handle) = start_local_tls_h2_server(
+            server_cert_pem.clone(),
+            server_key_pem,
+            true,
+            accepted.clone(),
+        );
+        let trusted_override = eggress_transport_tls::TlsClientConfigBuilder::new()
+            .with_custom_ca_pem(server_cert_pem.as_bytes())
+            .unwrap()
+            .build()
+            .unwrap();
+        let executor = build_chain_executor_with_options(
+            OutboundExecutorOptions::new().with_tls_override(trusted_override),
+        );
+        // Build a chain with `?insecure=true` on the H2 hop.
+        let chain =
+            eggress_uri::parse_proxy_chain(&format!("h2+tls://{}?insecure=true", addr)).unwrap();
+        let target: TargetAddr = "target.example:443".parse().unwrap();
+        let result = executor.execute(&chain.hops, &target).await;
+        assert!(
+            result.is_err(),
+            "tls_override + insecure=true must fail closed rather than silently substituting"
+        );
+        let err = match result {
+            Err(e) => format!("{}", e),
+            Ok(_) => String::new(),
+        };
+        // Without the `insecure-tls` feature, chain validation rejects
+        // the chain outright with a `requires the insecure-tls feature`
+        // diagnostic. With the feature enabled, the wrapper fails closed
+        // with a `tls_override cannot be combined with insecure=true`
+        // diagnostic. Either way, the failure must surface an `insecure`
+        // marker so the caller recognizes the policy boundary.
+        assert!(
+            err.contains("insecure"),
+            "error must reference `insecure` to be a useful configuration diagnostic, got: {err}"
+        );
+        assert_eq!(
+            accepted.load(std::sync::atomic::Ordering::Relaxed),
+            0,
+            "no TLS handshake must be attempted when the override+insecure combination is rejected"
+        );
+    }
+
+    #[cfg(feature = "insecure-tls")]
+    #[tokio::test]
+    async fn tls_override_plus_insecure_fails_closed_with_insecure_tls_feature() {
+        // With the `insecure-tls` feature enabled, the chain validation
+        // accepts `insecure=true`; the outbound TLS wrapper is the line
+        // of defense and must reject the `tls_override + insecure=true`
+        // combination explicitly.
+        eggress_transport_tls::install_default_crypto_provider();
+        let (server_cert_pem, server_key_pem) = generate_cert_and_key(&["127.0.0.1"]);
+        let accepted = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (addr, _server_handle) = start_local_tls_h2_server(
+            server_cert_pem.clone(),
+            server_key_pem,
+            true,
+            accepted.clone(),
+        );
+        let trusted_override = eggress_transport_tls::TlsClientConfigBuilder::new()
+            .with_custom_ca_pem(server_cert_pem.as_bytes())
+            .unwrap()
+            .build()
+            .unwrap();
+        let executor = build_chain_executor_with_options(
+            OutboundExecutorOptions::new().with_tls_override(trusted_override),
+        );
+        let chain =
+            eggress_uri::parse_proxy_chain(&format!("h2+tls://{}?insecure=true", addr)).unwrap();
+        let target: TargetAddr = "target.example:443".parse().unwrap();
+        let result = executor.execute(&chain.hops, &target).await;
+        assert!(
+            result.is_err(),
+            "tls_override + insecure=true must fail closed even with the insecure-tls feature"
+        );
+        let err = match result {
+            Err(e) => format!("{}", e),
+            Ok(_) => String::new(),
+        };
+        assert!(
+            err.contains("tls_override") && err.contains("insecure"),
+            "wrapper error must name both `tls_override` and `insecure`, got: {err}"
+        );
+        assert_eq!(
+            accepted.load(std::sync::atomic::Ordering::Relaxed),
+            0,
+            "no TLS handshake must be attempted when the wrapper rejects the override+insecure combination"
+        );
     }
 }

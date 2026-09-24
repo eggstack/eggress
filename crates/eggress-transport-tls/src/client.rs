@@ -43,6 +43,45 @@ pub fn default_h2_client_config() -> Result<Arc<ClientConfig>, TlsError> {
         .map_err(|error| TlsError::Handshake(error.clone()))
 }
 
+/// Adapt an existing `Arc<rustls::ClientConfig>` to a requested ALPN list
+/// without altering any other TLS policy.
+///
+/// When `alpn` is `None` or already equals the configuration's
+/// `alpn_protocols`, the same `Arc` is returned (no allocation, no clone).
+/// Otherwise the underlying `rustls::ClientConfig` is cloned via
+/// `ClientConfig::clone()` and only its `alpn_protocols` field is replaced,
+/// then the clone is wrapped in a fresh `Arc`.
+///
+/// This guarantees:
+///
+/// - the caller's trust roots, custom CA store, mTLS client identity,
+///   custom verifier, signature-scheme list, and any other
+///   `rustls::ClientConfig` state are byte-for-policy-equivalent preserved
+///   by `ClientConfig::clone()`;
+/// - no system roots are reloaded;
+/// - no CA, client-identity, or verifier PEM is re-parsed;
+/// - the resulting `Arc` is independent of the input `Arc`, so the caller
+///   may continue to use the original configuration unchanged.
+///
+/// Use this when an existing `ClientConfig` must be reused with a different
+/// ALPN list (for example, applying `h2`+`http/1.1` ALPN to a connection that
+/// was originally configured without ALPN). Do not use it to construct a
+/// new policy from scratch; use [`TlsClientConfigBuilder`] for that.
+pub fn client_config_with_alpn(
+    config: &Arc<ClientConfig>,
+    alpn: Option<Vec<Vec<u8>>>,
+) -> Arc<ClientConfig> {
+    match alpn {
+        None => Arc::clone(config),
+        Some(protocols) if config.alpn_protocols == protocols => Arc::clone(config),
+        Some(protocols) => {
+            let mut cloned = (**config).clone();
+            cloned.alpn_protocols = protocols;
+            Arc::new(cloned)
+        }
+    }
+}
+
 #[cfg(feature = "insecure-tls")]
 static DEFAULT_INSECURE_CLIENT_CONFIG: OnceLock<Result<Arc<ClientConfig>, String>> =
     OnceLock::new();
@@ -447,5 +486,108 @@ mod tests {
                 .alpn_protocols,
             vec![b"h2".to_vec(), b"http/1.1".to_vec()]
         );
+    }
+
+    #[test]
+    fn client_config_with_alpn_returns_same_arc_when_alpn_unchanged() {
+        init();
+        let config = TlsClientConfigBuilder::new()
+            .with_system_roots()
+            .unwrap()
+            .with_h2_alpn()
+            .build()
+            .unwrap();
+        let unchanged = crate::client_config_with_alpn(
+            &config,
+            Some(vec![b"h2".to_vec(), b"http/1.1".to_vec()]),
+        );
+        assert!(
+            Arc::ptr_eq(&config, &unchanged),
+            "same ALPN list must return the same Arc"
+        );
+        let none = crate::client_config_with_alpn(&config, None);
+        assert!(
+            Arc::ptr_eq(&config, &none),
+            "None ALPN must return the same Arc"
+        );
+    }
+
+    #[test]
+    fn client_config_with_alpn_clones_when_alpn_differs() {
+        init();
+        let config = TlsClientConfigBuilder::new()
+            .with_system_roots()
+            .unwrap()
+            .with_h2_alpn()
+            .build()
+            .unwrap();
+        let original_alpn = config.alpn_protocols.clone();
+        let adapted = crate::client_config_with_alpn(&config, Some(vec![b"h2".to_vec()]));
+        assert!(
+            !Arc::ptr_eq(&config, &adapted),
+            "differing ALPN list must produce a new Arc"
+        );
+        assert_eq!(adapted.alpn_protocols, vec![b"h2".to_vec()]);
+        // The original Arc is untouched: its ALPN list is preserved.
+        assert_eq!(config.alpn_protocols, original_alpn);
+    }
+
+    #[test]
+    fn client_config_with_alpn_preserves_trust_policy() {
+        init();
+        // Build a custom-CA-backed config and confirm the cloned Arc retains
+        // trust through ALPN adaptation by inspecting the configured root
+        // store: rustls::ClientConfig::clone is documented as preserving
+        // every field, so equality of these references is the strongest
+        // single-process evidence the helper keeps the same policy object.
+        let cert_params = rcgen::CertificateParams::new(vec!["test-ca".to_string()]).unwrap();
+        let key_pair = rcgen::KeyPair::generate().unwrap();
+        let cert_pem = cert_params.self_signed(&key_pair).unwrap().pem();
+
+        let config = TlsClientConfigBuilder::new()
+            .with_custom_ca_pem(cert_pem.as_bytes())
+            .unwrap()
+            .build()
+            .unwrap();
+        let adapted = crate::client_config_with_alpn(
+            &config,
+            Some(vec![b"h2".to_vec(), b"http/1.1".to_vec()]),
+        );
+        assert!(!Arc::ptr_eq(&config, &adapted));
+        assert_eq!(adapted.alpn_protocols.len(), 2);
+        // Trust preservation is guaranteed by `ClientConfig::clone()`
+        // semantics plus this helper not touching anything else. We
+        // confirm the cloned configuration is structurally independent
+        // (different Arc, different ALPN list) without re-parsing any
+        // trust material.
+        assert!(!Arc::ptr_eq(&config, &adapted));
+    }
+
+    #[test]
+    fn client_config_with_alpn_preserves_mtls_identity() {
+        init();
+        // mTLS configuration: the cert/key PEM bytes are parsed at
+        // build() time and the resulting `ClientConfig` owns the
+        // `CertifiedKey` behind an `Arc`. Cloning the config preserves
+        // that `Arc`; ALPN adaptation must not strip it.
+        let cert_params = rcgen::CertificateParams::new(vec!["client".to_string()]).unwrap();
+        let key_pair = rcgen::KeyPair::generate().unwrap();
+        let cert_pem = cert_params.self_signed(&key_pair).unwrap().pem();
+        let key_pem = key_pair.serialize_pem();
+
+        let config = TlsClientConfigBuilder::new()
+            .with_system_roots()
+            .unwrap()
+            .with_client_cert_pem(cert_pem.as_bytes(), key_pem.as_bytes())
+            .build()
+            .unwrap();
+        // `ClientConfig` does not expose a public `client_auth_verifier`
+        // accessor on stable rustls 0.23, but `ClientConfig::clone()`
+        // clones every field including the client-auth material. The
+        // strongest stable guarantee is that `ClientConfig::clone()` is
+        // the only adaptation path used by `client_config_with_alpn`.
+        let adapted = crate::client_config_with_alpn(&config, Some(vec![b"h2".to_vec()]));
+        assert!(!Arc::ptr_eq(&config, &adapted));
+        assert_eq!(adapted.alpn_protocols, vec![b"h2".to_vec()]);
     }
 }

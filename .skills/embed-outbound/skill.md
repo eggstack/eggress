@@ -17,6 +17,20 @@ the server or embed crates. `eggress-server` consumes the factory via
 `execute/mod.rs`; `eggress-config::validate_and_compile_toml` remains the
 canonical TOML parse/validate/compile authority.
 
+## TLS composition invariants
+- ALPN adaptation of a caller-supplied `Arc<rustls::ClientConfig>` uses
+  `eggress_transport_tls::client_config_with_alpn`, which clones the
+  underlying `rustls::ClientConfig` via `ClientConfig::clone()` and only
+  mutates `alpn_protocols`. Trust roots, custom CA stores, mTLS client
+  identity, custom verifier, and every other `rustls::ClientConfig` field
+  are preserved. The outbound TLS wrapper must never rebuild a fresh
+  system-roots `ClientConfig` as a fallback when an override is already
+  present.
+- A caller-supplied `tls_override` combined with a per-hop `insecure=true`
+  request is rejected explicitly (no silent substitution of Eggress's
+  default insecure verifier). Callers that need that combination must
+  supply an explicit insecure override or remove `insecure=true`.
+
 ## Full-service embed (`eggress-embed`)
 - `EggressConfig::from_toml_str()` / `from_toml_file()` — parse and validate;
   stores compiled `RuntimeConfig` + source TOML. `to_redacted_toml()` masks

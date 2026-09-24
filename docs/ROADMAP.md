@@ -31,7 +31,7 @@ also still missing.
 
 Registered handoffs, in order:
 
-1. [H2 TLS Override ALPN Preservation and 1.0.10 Qualification Corrective](../plans/H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md) — **READY FOR IMPLEMENTATION; RELEASE BLOCKER**. Preserve caller TLS policy while adapting ALPN, fail closed for unsupported custom-override + insecure combinations, add custom-CA/trust-boundary behavioral regressions, and complete 1.0.10 package/CI qualification.
+1. [H2 TLS Override ALPN Preservation and 1.0.10 Qualification Corrective](../plans/H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md) — **IMPLEMENTED; RELEASE-QUALIFICATION PENDING**. ALPN adaptation now uses `eggress_transport_tls::client_config_with_alpn` (clones the existing `ClientConfig` via `ClientConfig::clone()` and only mutates `alpn_protocols`); `tls_override + insecure=true` is rejected explicitly; new custom-CA H2 ALPN and trust-boundary regressions are in `crates/eggress-outbound/src/executor.rs`. Full release qualification (CI green, package publish dry-run, `v1.0.10` tag) is the next gate.
 2. [Pooled Transport Policy Identity and 1.0.10 Roll-Forward Corrective](../plans/POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md) — **IMPLEMENTED BUT NOT RELEASE-QUALIFIED**. Its pooling/local-bind/route-isolation changes remain the base of 1.0.10; final closure is delegated to the H2 TLS corrective.
 
 `v1.0.9` remains immutable history. The workspace is currently 1.0.10, with

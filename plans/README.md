@@ -18,13 +18,15 @@
 The canonical roadmap has one release-blocking corrective on the prepared
 1.0.10 line:
 
-1. [`H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md`](H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md) — **READY FOR IMPLEMENTATION**. Ensure H2 ALPN adaptation clones/preserves caller TLS trust/identity policy instead of rebuilding from system roots, fail closed for unsupported custom-override + insecure policy, add the missing custom-CA/trust-boundary regressions, and finish package/CI qualification.
+1. [`H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md`](H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md) — **IMPLEMENTED; RELEASE-QUALIFICATION PENDING**. ALPN adaptation now uses `eggress_transport_tls::client_config_with_alpn` (clones the existing `rustls::ClientConfig` via `ClientConfig::clone()` and only mutates `alpn_protocols`); `tls_override + insecure=true` is rejected explicitly; new custom-CA H2 ALPN and trust-boundary regressions are in `crates/eggress-outbound/src/executor.rs`. Full release qualification (CI green on the final SHA, package publish dry-run, `v1.0.10` tag/publish) is the next gate.
 2. [`POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md`](POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md) — **IMPLEMENTED BUT NOT RELEASE-QUALIFIED**. Pool scoping, bind isolation, route isolation, and 1.0.10 version roll-forward are implemented; release closure now depends on the TLS corrective above.
 
 The workspace is 1.0.10. No `v1.0.10` tag or publication is authorized by
 these plans.
 
 ## Recently completed
+
+- [`H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md`](H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md) — **IMPLEMENTED** (workstreams 1-7) on `main`. New `client_config_with_alpn` helper in `eggress-transport-tls`; outbound TLS wrapper closure now uses it for `tls_override` and fails closed on `tls_override + insecure=true`. New regressions: `custom_ca_tls_override_survives_h2_alpn_adaptation`, `h2_pool_does_not_cross_tls_trust_policy`, `mtls_identity_survives_h2_alpn_adaptation`, `tls_override_plus_insecure_fails_closed`, `tls_override_plus_insecure_fails_closed_with_insecure_tls_feature` (gated). Full evidence in the plan's "Completion record — 2026-09-24" section. Release qualification (CI green on the pushed SHA, `v1.0.10` tag/publish) remains a separate authorization.
 
 - [`POOLED_TRANSPORT_ROUTE_ISOLATION_CORRECTIVE.md`](POOLED_TRANSPORT_ROUTE_ISOLATION_CORRECTIVE.md) and [`OUTBOUND_POOLED_TRANSPORT_METADATA_TRUTHFULNESS_CORRECTIVE.md`](OUTBOUND_POOLED_TRANSPORT_METADATA_TRUTHFULNESS_CORRECTIVE.md) — **IMPLEMENTED** at `dfc19a0390e241f5255c8ad78dc2b50e214e537f`. Fresh 1.0.9 release/package requalification is now unblocked and remains pending.
 
