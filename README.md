@@ -88,9 +88,9 @@ socket; proxy chains describe hop 0, including the local socket address and
 the actual peer selected for that hop. Non-TCP first hops may have no
 `SocketAddr` metadata. These optional fields are observational and do not
 change connection success or routing behavior.
-The socket metadata correction shipped in immutable `v1.0.9`. A follow-up
-policy-isolation corrective is being rolled forward to lockstep patch `1.0.10`;
-it scopes H2 pooling to the executor's TLS policy and disables SSH/H2 reuse
+The socket metadata correction shipped in immutable `v1.0.9`. The follow-up
+policy-isolation corrective is qualified on lockstep patch `1.0.10`
+(prepared but unpublished): it scopes H2 pooling to the executor's TLS policy and disables SSH/H2 reuse
 when an explicit source bind would otherwise be bypassed. Nested SSH/H2 stays
 unpooled. No 1.0.10 artifact has been published.
 

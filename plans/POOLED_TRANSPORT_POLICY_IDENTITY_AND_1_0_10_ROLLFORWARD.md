@@ -2,7 +2,7 @@
 
 ## Status
 
-**IMPLEMENTED — FINAL CLOSURE EVIDENCE PENDING — 2026-09-24**
+**IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED — 2026-09-24**
 
 ## Target repository
 
@@ -898,3 +898,25 @@ Still required before changing this record to **IMPLEMENTED AND QUALIFIED**:
 
 No production tag or publication was created. The 1.0.10 line remains
 qualified only after all listed acceptance evidence is complete.
+
+## Closure note — 2026-09-24 (`ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md`)
+
+The delegated H2 TLS corrective is closed as
+`IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED` (see its
+`Closure record — 2026-09-24` section). Historical 1.0.9 audit trail
+above is retained unchanged.
+
+- H2 TLS corrective final SHA: `7b532b9037c41838bc0a96970ba5967aea67e1c5`.
+- New physical policy-isolation regression:
+  `h2_pool_does_not_cross_distinct_tls_config_instances` (two distinct
+  valid `ClientConfig` identities, same endpoint/SNI/auth → two
+  physical H2 connections); `h2_pool_does_not_cross_tls_trust_policy`
+  narrowed to its fail-closed trust-boundary claim.
+- Supported package dry-run:
+  `CARGO_BUILD_JOBS=2 python3 scripts/publish-crates.py --dry-run`,
+  exit 0 on the committed clean `1.0.10` tree (28 crates, all
+  `1.0.10`-missing on crates.io, `dry-run OK: no uploads performed`).
+- Final runs: Rust CI `36015875160` **success** on `7b532b9`; Python
+  smoke `36006795043` **success** on `99e8cf5` (path-scoped workflow;
+  closure touches no Python-smoke paths).
+- No `v1.0.10` tag exists; no crates.io/PyPI/GitHub release mutation.

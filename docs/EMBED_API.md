@@ -200,7 +200,8 @@ Contract:
   `tls_override` and use Eggress's feature-gated insecure policy. There
   is no separate insecure-override field.
   The socket metadata correction shipped in immutable `v1.0.9`; the pooled
-  transport policy corrective is being qualified for `1.0.10`.
+  transport policy corrective is qualified on `1.0.10` (prepared but
+  unpublished).
 
 ### Listener-free UDP (`associate_udp`)
 

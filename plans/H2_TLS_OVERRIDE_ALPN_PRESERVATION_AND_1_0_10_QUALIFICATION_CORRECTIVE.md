@@ -2,7 +2,7 @@
 
 ## Status
 
-**IMPLEMENTED — FINAL CLOSURE EVIDENCE PENDING — 2026-09-24**
+**IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED — 2026-09-24**
 
 ## Target repository
 
@@ -807,3 +807,56 @@ performed by this commit.
 - No binaries are produced by this change.
 - CI green on the pushed corrective SHA is the only remaining gate
   before any release tag/publish is authorized.
+
+## Closure record — 2026-09-24 (`ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md`)
+
+Closed by commit `7b532b9037c41838bc0a96970ba5967aea67e1c5` on `main`
+(closure code + wording; prior records above retained as historical
+evidence). Corrections appended, not silently deleted:
+
+- Package dry-run correction (acceptance item 17): the earlier record
+  citing `python3 scripts/publish-crates.py --dry-run --allow-dirty` is
+  superseded — the publisher does not accept `--allow-dirty`. Supported
+  evidence on the committed clean `1.0.10` tree:
+  `CARGO_BUILD_JOBS=2 python3 scripts/publish-crates.py --dry-run`,
+  exit 0; workspace version `1.0.10`; all 28 publishable crates
+  discovered in dependency order; workspace-wide
+  `cargo package --workspace --exclude eggress-bench --locked`
+  verification succeeded via the helper; every registry query returned
+  non-transient `missing` for `1.0.10` (all 28 crates absent from
+  crates.io); final output `dry-run OK: no uploads performed`.
+- Remote CI/Python smoke correction (acceptance item 18): Rust CI run
+  `36015875160` on closure SHA `7b532b9` is **success**. Python smoke run
+  `36006795043` on implementation SHA `99e8cf5` is **success**; the
+  `python-test.yml` workflow is path-scoped and the closure commit
+  touches no Python-smoke paths (`eggress-outbound`/docs only), so no
+  new Python run was triggered and the prior green stands for the
+  unchanged Python surface.
+- Trust-boundary claim narrowing (acceptance items 5/8):
+  `h2_pool_does_not_cross_tls_trust_policy` proves only that the
+  untrusted executor performs/fails its own TLS verification instead of
+  succeeding through a foreign policy path (fail-closed trust boundary
+  in conjunction with policy-scoped registries). It does not by itself
+  prove H2 pool-lookup separation, because TLS wrapping occurs before
+  the H2 handler is entered.
+- Physical isolation regression (acceptance items 8/9): new
+  `h2_pool_does_not_cross_distinct_tls_config_instances` proves two
+  distinct valid `ClientConfig` identities against the same
+  endpoint/SNI/auth target use two physical TLS/H2 connections (server
+  observes exactly 2 accepted handshakes; both logical H2 CONNECTs
+  succeed).
+- Insecure-override wording correction (acceptance item 5): the
+  `tls_override + insecure=true` combination fails closed with
+  `caller-supplied tls_override cannot be combined with per-hop
+  insecure=true; pass an insecure ClientConfig as tls_override without
+  insecure=true, or remove tls_override and use Eggress's
+  feature-gated insecure policy`. There is no separate
+  insecure-override field in `OutboundExecutorOptions`; runtime error,
+  `with_tls_override` docs, outbound README, `architecture/outbound.md`,
+  `docs/RUST_API.md`, `docs/EMBED_API.md`, and the embed-outbound skill
+  now state the supported contract.
+- Registry/tag state: `1.0.10` absent from crates.io for the release
+  set during final dry-run; no `v1.0.10` tag exists; no
+  crates.io/PyPI/GitHub release mutation occurred.
+
+Final status: `IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED`.

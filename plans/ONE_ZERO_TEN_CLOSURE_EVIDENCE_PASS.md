@@ -2,7 +2,7 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION — FINAL 1.0.10 QUALIFICATION PASS — 2026-09-24**
+**IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED — 2026-09-24**
 
 ## Target repository
 
@@ -541,4 +541,59 @@ This closure pass is complete only when:
 
 ## Completion record
 
-Not yet executed.
+Executed 2026-09-24. Closure commit
+`7b532b9037c41838bc0a96970ba5967aea67e1c5` (code + trust/insecure
+wording) followed by the evidence-reconciliation commit on `main`.
+
+1. ✅ `h2_pool_does_not_cross_distinct_tls_config_instances` proves two
+   distinct valid `ClientConfig` identities do not share one physical
+   H2 connection (server observes exactly 2 accepted handshakes; both
+   logical H2 CONNECTs succeed).
+2. ✅ `h2_pool_does_not_cross_tls_trust_policy` narrowed to its
+   fail-closed trust-boundary claim (code comment + plan records).
+3. ✅ `custom_ca_tls_override_survives_h2_alpn_adaptation` green.
+4. ✅ `tls_override_plus_insecure_fails_closed` (+ gated
+   `..._with_insecure_tls_feature`) green; new fail-closed message
+   names the supported contract without implying a separate
+   insecure-override field.
+5. ✅ runtime/docs/skills no longer imply a separate insecure-override
+   API (`executor.rs`, outbound README, `architecture/outbound.md`,
+   `docs/RUST_API.md`, `docs/EMBED_API.md`, embed-outbound skill).
+6. ✅ pooled H2/SSH route/bind regressions green
+   (`cargo test --workspace --locked`: 2980 passed, 151 ignored).
+7. ✅ fmt clean; `cargo clippy --workspace --all-targets --locked
+   -- -D warnings` clean; `cargo deny check` ok;
+   `cargo audit --ignore RUSTSEC-2023-0071` clean (yanked warnings
+   only); fuzz bins compile; outbound no-default base/`toml`/
+   `pproxy-compat`/`ssh`/`ssh,pproxy-compat`/`udp` slices compile;
+   embed `ssh`/`pproxy-compat`/`ssh,pproxy-compat` slices compile;
+   OpenSSH lane 6 passed (`EGRESS_REQUIRE_OPENSSH_TESTS=1`).
+8. ✅ `CARGO_BUILD_JOBS=2 python3 scripts/publish-crates.py --dry-run`
+   exit 0 on the committed clean `1.0.10` tree (no `--allow-dirty`,
+   no `--skip-package-verify`, no `publish --no-verify`, no `--execute`).
+9. ✅ all 28 crates pass package verification via the helper.
+10. ✅ registry state non-transient: all 28 crates `1.0.10`-missing on
+    crates.io during final dry-run.
+11. ✅ Rust CI `36015875160` success on `7b532b9`.
+12. ✅ Python smoke `36006795043` success on `99e8cf5` (path-scoped
+    workflow; closure touches no Python-smoke paths, so no new run was
+    triggered and the prior green stands).
+13. ✅ no `v1.0.10` tag exists (`git tag --list 'v1.0.10'` empty).
+14. ✅ no crates.io/PyPI/GitHub release mutation.
+15. ✅ H2 TLS corrective marked implemented and qualified (closure
+    record appended).
+16. ✅ parent roll-forward marked implemented and qualified (closure
+    note appended).
+17. ✅ `docs/ROADMAP.md` and `plans/README.md` agree: 1.0.10 prepared,
+    qualified, unpublished; no live blocker section remains.
+18. ✅ stale "qualification pending" / "tag is next qualification gate" /
+    "fresh 1.0.9 requalification remains pending" wording removed.
+19. ✅ evidence records use exact commands/test names/run IDs.
+20. ✅ release publication remains separately maintainer-authorized;
+    handoff checks only: `python3 scripts/publish-crates.py --list`,
+    `scripts/release-preflight.sh --tag v1.0.10` (read-only; not run
+    here beyond `--check-versions-only`, which is OK).
+
+Final state: 1.0.10 source tree qualified; crates.io 1.0.10
+unpublished; `v1.0.10` absent; PyPI/GitHub binary release not
+triggered.
