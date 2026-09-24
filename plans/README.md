@@ -15,14 +15,14 @@
 
 ## Active registered handoff
 
-The canonical roadmap now has one active post-1.0.9 corrective:
+The canonical roadmap has one release-blocking corrective on the prepared
+1.0.10 line:
 
-1. [`POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md`](POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md) — **IMPLEMENTATION IN PROGRESS**. Close hop-zero H2 TLS-policy scope, H2 local-bind/insecure pooling, and SSH local-bind reuse gaps; complete behavioral route-isolation regressions; audit equivalent reusable-transport keys; reconcile the actual 1.0.9 release state; and prepare the next unused lockstep patch (expected 1.0.10) without publishing it.
+1. [`H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md`](H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md) — **READY FOR IMPLEMENTATION**. Ensure H2 ALPN adaptation clones/preserves caller TLS trust/identity policy instead of rebuilding from system roots, fail closed for unsupported custom-override + insecure policy, add the missing custom-CA/trust-boundary regressions, and finish package/CI qualification.
+2. [`POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md`](POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md) — **IMPLEMENTED BUT NOT RELEASE-QUALIFIED**. Pool scoping, bind isolation, route isolation, and 1.0.10 version roll-forward are implemented; release closure now depends on the TLS corrective above.
 
-`v1.0.9` already exists at `e10dea18300f2618c4a47fa46280f1bf518e7a5f`.
-The GitHub Release and tag-triggered Python/binary release workflows succeeded.
-Do not move/recreate that tag. Native crates.io state must be verified
-independently because the crate publisher is manual.
+The workspace is 1.0.10. No `v1.0.10` tag or publication is authorized by
+these plans.
 
 ## Recently completed
 
