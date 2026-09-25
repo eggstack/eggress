@@ -1,7 +1,7 @@
 """Corrective-closure regression: native write contract, exception identity,
 preview hop count, and compatibility-startup forwarding.
 
-Covers the four workstreams in plans/API_BOUNDARY_CORRECTIVE_CLOSURE.md
+Covers the four workstreams in plans/archive/phase-records/API_BOUNDARY_CORRECTIVE_CLOSURE.md
 without reopening architecture or expanding capability.
 """
 

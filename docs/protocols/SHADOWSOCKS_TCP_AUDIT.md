@@ -18,7 +18,7 @@ The implementation and regression tests are in
 The authoritative current wire description is
 [SHADOWSOCKS_PARITY.md](SHADOWSOCKS_PARITY.md). The phase-1 plan records why
 the correction was required:
-`plans/PPROXY_STRICT_PHASE_1_SHADOWSOCKS_AEAD_CORRECTION.md`.
+`plans/archive/phase-records/PPROXY_STRICT_PHASE_1_SHADOWSOCKS_AEAD_CORRECTION.md`.
 
 External evidence is intentionally gated because it requires local proxy
 executables. Run both the pproxy oracle and the maintained Shadowsocks suite

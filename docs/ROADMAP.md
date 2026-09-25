@@ -1,6 +1,12 @@
 # Eggress Roadmap
 
-This document is the canonical roadmap.
+This document is the canonical roadmap. The active planning control surface is
+`plans/registry.md`; the two MUST agree on active work. New milestones follow
+the `plans/003-planning-process.md` lifecycle (subsystem roadmap → bounded
+implementation plan → registration here and in `plans/registry.md` →
+implementation → closure record). Canonical direction also lives in
+`plans/000-long-term-specification.md` through `plans/002-long-term-roadmap.md`;
+pre-transition phase records are provenance under `plans/archive/phase-records/`.
 
 ## Current Status
 
@@ -30,10 +36,10 @@ control. No active 1.0.10 blocker remains.
 
 Recently completed:
 
-1. [H2 Physical Session Evidence Corrective](../plans/H2_PHYSICAL_SESSION_EVIDENCE_CORRECTIVE.md) — **IMPLEMENTED AND QUALIFIED**. Physical H2 isolation proven by handshake counts; supported 28-crate dry-run green; Rust CI `36032622797` success on `c5826b3`.
-2. [1.0.10 Closure and Evidence Reconciliation Pass](../plans/ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md) — **IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED**.
-3. [H2 TLS Override ALPN Preservation and 1.0.10 Qualification Corrective](../plans/H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md) — **IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED**.
-4. [Pooled Transport Policy Identity and 1.0.10 Roll-Forward Corrective](../plans/POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md) — **IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED**.
+1. [H2 Physical Session Evidence Corrective](../plans/archive/phase-records/H2_PHYSICAL_SESSION_EVIDENCE_CORRECTIVE.md) — **IMPLEMENTED AND QUALIFIED**. Physical H2 isolation proven by handshake counts; supported 28-crate dry-run green; Rust CI `36032622797` success on `c5826b3`.
+2. [1.0.10 Closure and Evidence Reconciliation Pass](../plans/archive/phase-records/ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md) — **IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED**.
+3. [H2 TLS Override ALPN Preservation and 1.0.10 Qualification Corrective](../plans/archive/phase-records/H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md) — **IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED**.
+4. [Pooled Transport Policy Identity and 1.0.10 Roll-Forward Corrective](../plans/archive/phase-records/POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md) — **IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED**.
 
 The workspace remains 1.0.10, prepared but unpublished. No v1.0.10 tag or
 publication is authorized by these plans; publication/tagging remains a
@@ -204,16 +210,16 @@ narrow post-implementation corrective closure is complete (native write
 contract restored behind a private async submit path, connection exception
 identity converged, preview hop count corrected, startup-forwarding and Rust
 API evidence added). Details remain in
-[`plans/API_BOUNDARY_CORRECTIVE_CLOSURE.md`](../plans/API_BOUNDARY_CORRECTIVE_CLOSURE.md)
+[`plans/archive/phase-records/API_BOUNDARY_CORRECTIVE_CLOSURE.md`](../plans/archive/phase-records/API_BOUNDARY_CORRECTIVE_CLOSURE.md)
 under the parent
-[`plans/API_BOUNDARY_AND_INTEROP_MAINTENANCE_ROADMAP.md`](../plans/API_BOUNDARY_AND_INTEROP_MAINTENANCE_ROADMAP.md).
+[`plans/archive/phase-records/API_BOUNDARY_AND_INTEROP_MAINTENANCE_ROADMAP.md`](../plans/archive/phase-records/API_BOUNDARY_AND_INTEROP_MAINTENANCE_ROADMAP.md).
 Existing API surface and capability remain fixed constraints.
-The final evidence-state polish pass (acceptance-checkbox reconciliation plus a deterministic native-write semantic proof) is complete in [`plans/API_BOUNDARY_EVIDENCE_STATE_POLISH.md`](../plans/API_BOUNDARY_EVIDENCE_STATE_POLISH.md); it did not reopen runtime/API scope.
+The final evidence-state polish pass (acceptance-checkbox reconciliation plus a deterministic native-write semantic proof) is complete in [`plans/archive/phase-records/API_BOUNDARY_EVIDENCE_STATE_POLISH.md`](../plans/archive/phase-records/API_BOUNDARY_EVIDENCE_STATE_POLISH.md); it did not reopen runtime/API scope.
 
 ### Completed maintenance — Eggfetch 0.2 HTTP CONNECT consolidation
 
 The narrow dependency/conformance migration from
-[`plans/EGGFETCH_0_2_HTTP_CONNECT_CONSOLIDATION.md`](../plans/EGGFETCH_0_2_HTTP_CONNECT_CONSOLIDATION.md)
+[`plans/archive/phase-records/EGGFETCH_0_2_HTTP_CONNECT_CONSOLIDATION.md`](../plans/archive/phase-records/EGGFETCH_0_2_HTTP_CONNECT_CONSOLIDATION.md)
 has landed with response-parser Outcome B:
 
 - Workspace MSRV is now 1.89 (`rust-toolchain.toml` pins 1.89.0) and
@@ -246,14 +252,14 @@ the pre-migration Eggress contract; the Rust-1.85-era
 `plans/README.md` retained stale active-parent bookkeeping.
 
 The bounded corrective has landed as **IMPLEMENTED** in
-[`plans/EGGFETCH_0_2_CORRECTIVE_CLOSURE.md`](../plans/EGGFETCH_0_2_CORRECTIVE_CLOSURE.md).
+[`plans/archive/phase-records/EGGFETCH_0_2_CORRECTIVE_CLOSURE.md`](../plans/archive/phase-records/EGGFETCH_0_2_CORRECTIVE_CLOSURE.md).
 It preserved the implemented Outcome B ownership split without reopening
 protocol/API/capability scope. The Eggfetch runtime/dependency line is closed.
 
 ### Completed maintenance — Eggfetch 0.2 evidence/documentation cleanup
 
 The final documentation-only consistency pass has landed as **IMPLEMENTED** in
-[`plans/EGGFETCH_0_2_EVIDENCE_DOCUMENTATION_CLEANUP.md`](../plans/EGGFETCH_0_2_EVIDENCE_DOCUMENTATION_CLEANUP.md).
+[`plans/archive/phase-records/EGGFETCH_0_2_EVIDENCE_DOCUMENTATION_CLEANUP.md`](../plans/archive/phase-records/EGGFETCH_0_2_EVIDENCE_DOCUMENTATION_CLEANUP.md).
 
 It reconciled the implemented corrective plan's acceptance checkboxes with real
 repository/CI/command evidence and removed stale live `RUSTSEC-2025-0134`
@@ -265,11 +271,11 @@ fixed constraints. The Eggfetch runtime/dependency line remains closed.
 ## Next Phase
 
 The bounded distribution/release-maintenance campaign in
-[`plans/DISTRIBUTION_AND_RELEASE_MAINTENANCE_ROADMAP.md`](../plans/DISTRIBUTION_AND_RELEASE_MAINTENANCE_ROADMAP.md)
+[`plans/archive/phase-records/DISTRIBUTION_AND_RELEASE_MAINTENANCE_ROADMAP.md`](../plans/archive/phase-records/DISTRIBUTION_AND_RELEASE_MAINTENANCE_ROADMAP.md)
 is implemented and closed:
 
-1. [`plans/PYPI_WHEEL_MATRIX_EXPANSION.md`](../plans/PYPI_WHEEL_MATRIX_EXPANSION.md) — **IMPLEMENTED**. Tier A ten-family `cp39-abi3` matrix plus sdist, matrix-driven validation, native ARM smokes, musl/ARMv7 execution smokes, ordinary CPython 3.9–3.15 qualification (3.15 RC-qualified). Tier B deferred per sequencing; physical SBC qualification documented as a pending one-time procedure.
-2. [`plans/MANUAL_CRATES_IO_PUBLISHING_SIMPLIFICATION.md`](../plans/MANUAL_CRATES_IO_PUBLISHING_SIMPLIFICATION.md) — **IMPLEMENTED**. Graph-derived resumable local helper (`scripts/publish-crates.py`); crates.io publication stays local/manual. Native workspace publication is nightly-only on stable 1.89, hence Outcome B.
+1. [`plans/archive/phase-records/PYPI_WHEEL_MATRIX_EXPANSION.md`](../plans/archive/phase-records/PYPI_WHEEL_MATRIX_EXPANSION.md) — **IMPLEMENTED**. Tier A ten-family `cp39-abi3` matrix plus sdist, matrix-driven validation, native ARM smokes, musl/ARMv7 execution smokes, ordinary CPython 3.9–3.15 qualification (3.15 RC-qualified). Tier B deferred per sequencing; physical SBC qualification documented as a pending one-time procedure.
+2. [`plans/archive/phase-records/MANUAL_CRATES_IO_PUBLISHING_SIMPLIFICATION.md`](../plans/archive/phase-records/MANUAL_CRATES_IO_PUBLISHING_SIMPLIFICATION.md) — **IMPLEMENTED**. Graph-derived resumable local helper (`scripts/publish-crates.py`); crates.io publication stays local/manual. Native workspace publication is nightly-only on stable 1.89, hence Outcome B.
 
 This campaign was release-engineering only. Existing Rust/Python/CLI/configuration/protocol behavior and pproxy compatibility claims remain fixed constraints. Free-threaded Python and automated crates.io publication remain explicitly out of scope.
 

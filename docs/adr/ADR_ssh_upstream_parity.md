@@ -5,7 +5,7 @@
 | Status | Supersedes the Phase 47 intentional-non-parity decision |
 | Date | Phase 7 |
 | Decision makers | Eggress maintainers |
-| Related | `docs/architecture/transport-ssh.md`, `plans/PPROXY_STRICT_PHASE_7_SSH_TRANSPORT.md`, `docs/parity/pproxy_capability_manifest.toml` |
+| Related | `docs/architecture/transport-ssh.md`, `plans/archive/phase-records/PPROXY_STRICT_PHASE_7_SSH_TRANSPORT.md`, `docs/parity/pproxy_capability_manifest.toml` |
 
 ## Context
 
