@@ -90,11 +90,11 @@ debug artifacts, or an unexpected sdist. Its installed-artifact smoke is
 `pproxy`, starts a port-0 service, checks readiness/bound addresses, shuts it
 down, and checks readiness is false.
 
-Manually dispatch the workflow with `publish_target=testpypi` using a version
-that is safe for TestPyPI. Confirm every build, collection, wheel smoke,
-compatibility-range smoke, sdist smoke, and publish job succeeds. Install one
-published artifact from TestPyPI in a clean environment and run the same smoke
-script. Record the run URL and artifact filenames in the corrective plan before
+Manually dispatch the workflow with `publish_target=pypi` (the only manual
+option; there is no TestPyPI path — it was removed because TestPyPI has no
+usable trusted publisher for this repo). Confirm every build, collection,
+wheel smoke, compatibility-range smoke, sdist smoke, and publish job succeeds.
+Record the run URL and artifact filenames in the corrective plan before
 production use. Do not push a production tag solely to test the workflow.
 
 ### 6. Publish Python package + CLI binaries (tag push)

@@ -8,8 +8,10 @@ proxy implementations and real-world tools.
 
 ### Python Version
 
-Use **Python 3.11** or **3.12**. Python 3.14 is **not compatible** with the
-required pproxy version.
+Use **Python 3.11** or **3.12** for the pproxy-oracle/differential env.
+Python 3.14 is **not compatible** with the required pproxy version
+(this constraint applies only to the oracle env running
+`pproxy==2.7.9`, not to the `eggress` wheels, which support 3.9–3.15).
 
 ```bash
 python3 --version  # Should show 3.11.x or 3.12.x
@@ -363,7 +365,9 @@ not wire-compatible.
 
 ### Python Version Compatibility
 
-pproxy 2.7.9 is not compatible with Python 3.14. Use Python 3.11 or 3.12.
+pproxy 2.7.9 is not compatible with Python 3.14. Use Python 3.11 or 3.12
+for the oracle/differential runs (the `eggress` wheels themselves support
+3.9–3.15).
 
 ### External Tool Availability
 

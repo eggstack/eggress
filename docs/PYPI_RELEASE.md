@@ -50,10 +50,8 @@ rm -rf /tmp/test-eggress
 ## Publish
 
 ```bash
-# Upload to TestPyPI first
-twine upload --repository testpypi dist/*
-
-# Upload to PyPI
+# Upload to PyPI (no TestPyPI staging: TestPyPI has no usable trusted
+# publisher for this repo, and the workflow's manual path is pypi-only)
 twine upload dist/*
 ```
 

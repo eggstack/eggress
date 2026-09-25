@@ -19,6 +19,9 @@
 >   `system_proxy`, `route_explain`/`test_upstream_connect`, and reverse
 >   summaries — see `architecture/python-bindings.md` (13 classes, 18 functions,
 >   18 exceptions) for the current surface.
+> - Package metadata below names fallback `"0.1.0"` and classifiers
+>   "3.9–3.12": the fallback is unchanged, but supported Python is 3.9–3.15
+>   (one `cp39-abi3` wheel per platform) — see `docs/INSTALLATION.md`.
 
 ## Package Metadata
 

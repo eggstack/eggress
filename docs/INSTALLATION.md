@@ -77,14 +77,14 @@ non-root   -> $HOME/.local/bin
 Pinned version:
 
 ```bash
-curl -fsSL https://github.com/eggstack/eggress/releases/latest/download/install.sh | bash -s -- --version 1.0.7
+curl -fsSL https://github.com/eggstack/eggress/releases/latest/download/install.sh | bash -s -- --version 1.0.10
 ```
 
 Custom directory:
 
 ```bash
 bash install.sh --dir /custom/bin
-bash install.sh --version 1.0.7 --dir "$HOME/.local/bin"
+bash install.sh --version 1.0.10 --dir "$HOME/.local/bin"
 ```
 
 Auditable alternative (review before running; piping remote code to a shell
@@ -138,7 +138,7 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 Pinned version or custom directory:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File install.ps1 -Version 1.0.7
+powershell -ExecutionPolicy Bypass -File install.ps1 -Version 1.0.10
 powershell -ExecutionPolicy Bypass -File install.ps1 -InstallDir "$env:USERPROFILE\.local\bin"
 ```
 

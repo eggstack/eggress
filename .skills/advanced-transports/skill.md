@@ -55,9 +55,27 @@ WS, WSS, Raw, and H2 upstream handlers now **consume the prior-hop stream** supp
   pproxy-compatible translator paths.
 - `RawHopHandler` passes through the stream directly (raw passthrough).
 - `WebSocketHopHandler` performs the WebSocket handshake over the prior-hop stream via `connect_over_stream()`.
-- `H2HopHandler` performs the H2 CONNECT handshake over the prior-hop stream; TLS ALPN is handled by the chain executor.
+- `H2HopHandler` performs the H2 CONNECT handshake over the prior-hop stream; TLS ALPN is handled by the chain executor (see H2/SSH pooled-transport policy identity below).
 - Raw remains an explicit fixed-target listener; H2 and WebSocket listener
   roles use dedicated runtime handlers rather than protocol sniffing.
+
+## H2/SSH pooled-transport policy identity
+
+Reusable H2/SSH physical transports are policy-scoped, never global:
+
+- Hop-zero H2 pools are shared only among chain executors holding the same
+  TLS client-config object (`H2PoolKey` alone is not a complete TLS policy
+  identity). Nested-hop H2/SSH is always unpooled.
+- Explicit per-hop `local_bind` disables hop-zero SSH/H2 cache reuse;
+  explicit insecure H2 is unpooled. Do not use the public global H2 registry
+  from Eggress chain handlers.
+- ALPN adaptation of a caller-supplied `Arc<rustls::ClientConfig>` must go
+  through `eggress_transport_tls::client_config_with_alpn` (clones the config,
+  mutates only `alpn_protocols`; trust roots, CA stores, mTLS identity, and
+  custom verifiers survive). Never rebuild a fresh system-roots config when an
+  override exists; `tls_override` + per-hop `insecure=true` is rejected
+  explicitly. Full rules live in the `embed-outbound` skill ("TLS composition
+  invariants") and `architecture/outbound.md`.
 
 ## H2 CONNECT
 - Server: `h2_connect` module accepts H2 connections, dispatches CONNECT, bridges stream to TCP target (see `crates/eggress-protocol-http/src/h2_connect.rs`; the per-connection entry is `pub(crate)`)
@@ -65,7 +83,7 @@ WS, WSS, Raw, and H2 upstream handlers now **consume the prior-hop stream** supp
   independent CONNECT streams, validates proxy auth, and routes each stream.
 - Client: Use `h2` crate to connect to upstream H2 proxy, issue CONNECT request
 - Key type: `H2StreamWrite` — AsyncWrite adapter for h2::SendStream with flow control
-- `H2HopHandler` — Runtime HopHandler for H2 CONNECT upstream, performs H2 handshake over the prior-hop stream (stream-native); TLS ALPN handled by chain executor
+- `H2HopHandler` — Runtime HopHandler for H2 CONNECT upstream, performs H2 handshake over the prior-hop stream (stream-native); TLS ALPN handled by chain executor under the pooled-transport policy-identity rules above
 - ALPN: `h2` for TLS negotiation
 
 ## WebSocket Tunnels

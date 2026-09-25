@@ -46,7 +46,8 @@ The oracle runner verifies before every execution:
 1. **Installed version** matches `2.7.9`
 2. **Resolved source** is the pinned tag/commit above
 3. **Package hash** matches `hashes.toml` (when `EGRESS_ORACLE_REQUIRE_HASH=1`)
-4. **Python version** is in the tested set (`3.9`–`3.13`)
+4. **Python version** is in the tested set (`3.9`–`3.13`; oracle-runner
+   scope only — the `eggress` wheels themselves support 3.9–3.15)
 5. **Optional dependencies** are installed for protocol coverage
 
 On mismatch, execution halts with a hard error. No silent fallback to a
@@ -118,6 +119,9 @@ system-installed pproxy is permitted.
 | 2.7.9 | 3.9–3.13 | Current oracle |
 | 2.7.8 | 3.9–3.13 | Previous |
 | 2.7.0+ | 3.9–3.13 | Supported |
+
+> Oracle-runner scope: the runner resolves `python3.11`–`python3.13`.
+> The `eggress` wheels themselves support 3.9–3.15.
 
 ## Hash Verification
 

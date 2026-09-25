@@ -2,8 +2,8 @@
 
 > **Maintained elsewhere.** The per-component deep dives in
 > [`architecture/`](../architecture/overview.md) (indexed from
-> `architecture/overview.md`, last verified against the 1.0.7 tree on
-> 2026-09-22) are the maintained architecture reference.
+> `architecture/overview.md`, last verified against the 1.0.10 tree on
+> 2026-09-25) are the maintained architecture reference.
 > This file retains an earlier crate-catalog snapshot and is not updated for
 > every change — prefer the top-level directory for review. For the crate
 > inventory and compat contract, see `architecture/overview.md`,
