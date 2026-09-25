@@ -112,7 +112,7 @@ Server(listen=[...], remote=[...])
 
 ## How it works
 
-1. **maturin build**: `crates/eggress-python/pyproject.toml:41-43`
+1. **maturin build**: `crates/eggress-python/pyproject.toml:42-46`
    declares `module-name = "eggress._eggress"`, `python-source = "../../python"`,
    `abi3-py39`. The `python/eggress/` tree is bundled into the wheel alongside
    the compiled `_eggress.so`.

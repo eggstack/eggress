@@ -12,7 +12,7 @@ proxy-usable HTTP from other protocols by method/response shape.
 | `connect/server.rs` | `handle_connect`: bounded CONNECT head, Basic auth constant-time compare, 200/407 | `MAX_HEAD_SIZE` (:10), `MAX_HEADER_LINES` (:13), `handle_connect` (:35), `parse_authority` (:177), `parse_basic_auth` (:259) |
 | `connect/client.rs` | `http_connect`: CONNECT authority/request via `eggfetch-http-connect`, local byte-preserving reply parse; `validate_credentials` rejects control chars | `HttpConnectLimits`, `validate_credentials`, `http_connect`, `parse_status_code` (compat helper); private: `connect_target` (Eggress validation adapter), `build_connect_request`, `map_connect_error`, `read_response_status` (intentionally local, Outcome B) |
 | `forward/server.rs` | Absolute-to-origin form, hop-by-hop filter, body framing, chunk caps, informational bound | `BodyCopyLimits` (:7), `determine_request_body_kind` (:269), `filter_hop_by_hop` (:398), `forward_response` (:647), `parse_header_line` (:1085) |
-| `h2_connect.rs` | H2 CONNECT client/server/relay; `H2ConnectionPool`/`H2PoolRegistry` keyed by endpoint + SHA-256 cred hash; `H2_PROTOCOL_METRICS` | `h2_connect_relay` (:168), `H2PoolKey` (:441), `H2ConnectionPool` (:550) |
+| `h2_connect.rs` | H2 CONNECT client/server/relay; `H2ConnectionPool`/`H2PoolRegistry` keyed by endpoint + SHA-256 cred hash; `H2_PROTOCOL_METRICS` | `h2_connect_relay` (:168), `H2PoolKey` (:442), `H2ConnectionPool` (:550), `h2_connect_client_pooled_in_registry` (:884) |
 | `detect.rs` | `HttpDetector`: confidence 100 for methods, 95 for responses | `HttpDetector` (:7), `HTTP_METHODS` (:9) |
 | `error.rs` | `HttpError` with `status_code()` mapping | `HttpError` (:3), `status_code` (:82) |
 | `connect/test_server.rs` | Synthetic CONNECT proxy (Success/AuthRequired/Forbidden/MalformedStatus/SlowResponse/HeadersTooLarge) | `ProxyMode` (:7) |
@@ -26,7 +26,8 @@ Re-exported from `lib.rs` (:12-27): `handle_connect`, `ConnectRequest`,
 `filter_hop_by_hop`, `forward_request`/`forward_request_stream`,
 `forward_response`, `has_unsupported_expectation`, `BodyCopyLimits`, `BodyCopyReport`,
 `ForwardRequest`, `ForwardResponse`, `ForwardResponseReport`, `ForwardResult`, `RequestBodyKind`,
-`h2_connect_client`, `h2_connect_client_pooled`, `h2_connect_relay`,
+`h2_connect_client`, `h2_connect_client_pooled`,
+`h2_connect_client_pooled_in_registry`, `h2_connect_relay`,
 `H2ConnectError`, `H2PoolGuard`, `H2PoolKey`, `H2PoolRegistry`, `H2PoolStats`,
 `H2ProtocolMetrics`, `H2StreamRead`, `H2StreamWrite`,
 `H2_POOL_REGISTRY`, `H2_PROTOCOL_METRICS`, `HttpDetector`, `HttpError`.
@@ -60,7 +61,8 @@ are validated before the request is built and never appear in errors.
 
 Server limits: head <= 32 KiB (`MAX_HEAD_SIZE`, :10), headers <= 128
 (`MAX_HEADER_LINES`, :13). Authority (`:177`): `host:port`, `[ipv6]:port`;
-domain-only returns error.
+domain-only without a port implies the default CONNECT port 443
+(`DEFAULT_CONNECT_PORT`).
 
 ### Client-side CONNECT response limits (`HttpConnectLimits` defaults)
 
@@ -139,7 +141,9 @@ capacity-aware `AsyncWrite`.
 
 1. `h2_connect_client` (:363): H2 handshake + CONNECT with optional Basic auth.
 2. `h2_connect_client_pooled` (:815): acquires from pool or creates new.
-   Pool key includes SHA-256 of credentials (:463-469).
+   Pool key includes SHA-256 of credentials (:475-482); the
+   `..._in_registry` variant takes an explicit registry for chain-scoped
+   pooling.
 3. `H2PoolGuard` (:778) releases on drop.
 4. `h2_connect_relay` (:168): domain targets checked against DNS rebinding;
    IP literals connect directly (NOT a policy boundary, see :152-166).
@@ -187,7 +191,7 @@ headers removed per RFC 7230 s6.1 (:384).
 (:314-318), only `chunked` supported (:322-326). Response TE takes
 precedence over CL per RFC 7230 s3.3.3 (:558-559).
 
-**H2 pool isolation**: `H2PoolKey` hashes creds via SHA-256 (:463-469), but
+**H2 pool isolation**: `H2PoolKey` hashes creds via SHA-256 (:475-482), but
 does not encode TLS trust policy. The compatibility global registry remains
 available to direct consumers; Eggress chain handlers use a bounded registry
 scope keyed by the identity of the shared TLS client-config object. Explicit
@@ -235,9 +239,10 @@ default and restrictive limits.
 2. **Request vs response trailer limits differ**: request-side 32 KiB
    (`BodyCopyLimits`, :22) vs response-side 64 KiB (:356). Both chunk-size
    limits are 64 MiB.
-3. **`parse_authority` requires port**: Unlike `parse_authority_with_default`
-   (:forward/server.rs:979), the CONNECT server's version errors on missing
-   port.
+3. **`parse_authority` implies a default port**: the CONNECT server's
+   version maps a missing port to `DEFAULT_CONNECT_PORT` (443); use
+   `parse_authority_with_default` (:forward/server.rs:979) only when a
+   caller-specific default is needed.
 4. **H2 relay is NOT a policy boundary**: checks DNS rebinding for domains
    but NOT IP literals (:152-166). Callers must screen IPs.
 5. **EOF framing**: No CL and no TE (:forward/server.rs:739) means body read

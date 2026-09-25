@@ -243,7 +243,14 @@ The pproxy compat adapter does NOT send or read the 0x01/0x00 accept/reject byte
 - **`try_send` not `send`.** The control channel uses `try_send` (non-blocking). If the channel is full, the authenticated control connection is dropped and the counter is decremented. This avoids head-of-line blocking in the accept loop.
 - **`allow_bind` is IP+port exact match.** `same_bind` does not normalize IPv4-mapped IPv6 addresses. `[::1]:8080` and `127.0.0.1:8080` are different entries.
 - **Backoff resets on clean session end.** If the external client disconnects (normal session end), the client reconnects immediately without backoff. Backoff only applies on errors.
-- **Metrics `heartbeat_failures_total` is tracked but never incremented** in the current codebase. The counter exists for future use; do not interpret its zero value as "no heartbeats configured."
+- **Metrics `heartbeat_failures_total` is tracked but never called outside
+  metrics tests** in the current production path (`record_heartbeat_failure()`
+  exists and is unit-tested; no server/client call sites). Do not interpret
+  its production zero value as "no heartbeats configured."
+- **Compat reconnect/backoff differs from native**: `PproxyBackwardClient`
+  defaults to `reconnect_initial_ms` 100 (native 1000), and the compat
+  control channel uses `max_control_connections.max(1)` rather than the
+  native fixed 256-slot pool.
 - **`PproxyBackwardClient::run_connection` sends auth bytes directly** without the native protocol's newline or accept/reject handshake. This is by design for pproxy wire compatibility.
 
 ## See also

@@ -1,15 +1,17 @@
 # Advanced Transports — SSH, QUIC, HTTP/3
 
-Optional feature-gated transports: `eggress-transport-ssh` (`ssh` feature),
-`eggress-transport-quic` + `eggress-protocol-h3` (`quic` feature). All three
-crates produce and consume `BoxStream` (`eggress_core::BoxStream`), so the
-rest of the proxy stack remains transport-agnostic.
+Optional feature-gated transports: `eggress-transport-ssh` (consumed via the
+`ssh` feature on downstream crates — the transport crate itself has no
+`[features]` section), `eggress-transport-quic` + `eggress-protocol-h3`
+(`quic` feature). All three crates produce and consume `BoxStream`
+(`eggress_core::BoxStream`), so the rest of the proxy stack remains
+transport-agnostic.
 
 ## Module map
 
 | Crate | Root file | Lines | Role |
 |---|---|---|---|
-| `eggress-transport-ssh` | `src/lib.rs` | 463 | SSH client session cache, channel open, remote forward |
+| `eggress-transport-ssh` | `src/lib.rs` | 557 | SSH client session cache, channel open, remote forward |
 | `eggress-transport-quic` | `src/lib.rs` | 593 | QUIC client/listener/connection/stream over quinn |
 | `eggress-protocol-h3` | `src/lib.rs` | 478 | HTTP/3 CONNECT client and server over QUIC |
 
@@ -26,9 +28,14 @@ Single-file crate. All types and logic live in `src/lib.rs`.
 | `SshSessionCache` | :244 | `Arc<Mutex<HashMap<SshSessionKey, Arc<SessionHandle>>>>` cache |
 | `::new()` / `::new_compatibility()` / `::with_known_hosts(path)` | :256/:264/:272 | Constructor variants |
 | `::open_tcp_channel()` | :280 | Direct TCP channel; validates port != 0 |
+| `::open_tcp_channel_fresh()` | :300 | Unpooled TCP channel for nested hops (fresh session over the supplied prefix stream) |
 | `::open_unix_channel()` | :299 | Unix domain socket channel; validates non-empty path |
-| `::start_remote_tcp_forward()` | :323 | Server-side TCP forwarding (pproxy compat) |
-| `::shutdown()` / `::invalidate(key)` | :410/:415 | Bulk clear / single session eviction |
+| `::open_unix_channel_fresh()` | :323 | Unpooled Unix channel for nested hops |
+| `::start_remote_tcp_forward()` | :371 | Server-side TCP forwarding (pproxy compat) |
+| `::shutdown()` / `::invalidate(key)` | :458/:463 | Bulk clear / single session eviction |
+| `SshStream` | :15 | Boxed SSH channel stream alias |
+| `SshTransportError` | — | Transport error taxonomy |
+| `SshRemoteForward::address()` / `::port()` | :212/:217 | Bound forward address introspection |
 | `SshAuth` | :44 | `Password(String)` or `PrivateKey(String)` — the latter is a filesystem *path* loaded via `russh::keys::load_secret_key`; debug redacts both |
 | `SshHostKeyPolicy` | :114 | `KnownHosts` / `KnownHostsFile(PathBuf)` / `InsecureCompatibility` |
 | `SshSessionKey` | :60 | Cache key: `host`, `port`, `username`, `auth`, `hop_index` |
@@ -38,19 +45,20 @@ Single-file crate. All types and logic live in `src/lib.rs`.
 
 ### How it works
 
-1. `get_or_connect()` (:360) locks cache, checks `!session.is_closed()`,
+1. `get_or_connect()` (:408) locks cache, checks `!session.is_closed()`,
    removes dead entries, then calls `connect_authenticated_with_config()`.
 2. Auth (:443-460): `Password` → `authenticate_password`; `PrivateKey` →
    `russh::keys::load_secret_key` → `PrivateKeyWithHashAlg` → `authenticate_publickey`.
 3. Keepalive hardcoded: `keepalive_interval = 60s`, `keepalive_max = 3`
-   (:387-388).
+   (:435-436).
 4. Host key verification (:132-165): `KnownHosts` → `check_known_hosts`,
    `KnownHostsFile` → `check_known_hosts_path`, `InsecureCompatibility` → `true`.
 5. `CompatClient` (:81) is a private `russh::client::Handler`. Its
    `forwarded_channels` field enables `server_channel_open_forwarded_tcpip`
    (:170) for reverse-forwarded channels.
-6. Remote forward (:323-358) bypasses cache — always creates a fresh
-   session. Non-loopback bind emits `tracing::warn` (:331-336).
+6. Remote forward (:371+) bypasses cache — always creates a fresh
+   session (mpsc channel depth 128). Non-loopback bind emits `tracing::warn`
+   (:378-384).
 
 ### Security notes
 
@@ -115,7 +123,9 @@ Quinn types upward.
 5. Server config (:90-117): PEM cert/key → `rustls::ServerConfig` with
    `with_no_client_auth()`, ALPN, bidi-stream limits, idle timeout.
 6. Constants: `DEFAULT_IDLE_TIMEOUT = 60s`, `DEFAULT_MAX_STREAMS = 1024`
-   (:20-21).
+   (:20-21). Back-pressure bounds: `MAX_CONCURRENT_CONNECTION_TASKS = 1024`
+   (:27), `MAX_CONCURRENT_STREAM_TASKS = 4096` (:32) behind
+   `QuicListener::run`.
 
 ### Reviewer gotchas
 
@@ -155,6 +165,8 @@ HTTP/3 CONNECT protocol layer over the QUIC transport.
    `Proxy-Authenticate: Basic realm="eggress"` (:168-170).
 4. Auth (:220-231): `subtle::ConstantTimeEq` for username and password.
    `unwrap_u8() == 1` ensures constant-time semantics (:229).
+   Per-connection request bound: `MAX_ACTIVE_REQUESTS_PER_CONNECTION = 256`
+   (:18).
 5. Duplex bridging (:277-363): both `bridge_client_stream` and
    `bridge_server_stream` create 64 KiB `tokio::io::duplex`, spawn two
    tasks shuttling data between H3 stream and duplex. Application side

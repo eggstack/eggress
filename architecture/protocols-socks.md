@@ -10,7 +10,7 @@ version sniffers.
 | File | Role | Key lines |
 |---|---|---|
 | `detector.rs` | `Socks4Detector`: version byte 0x04, confidence 100 | `Socks4Detector` (:10) |
-| `socks4/mod.rs` | Submodule root; defines `MAX_USER_ID_LEN` | `MAX_USER_ID_LEN` (:9) |
+| `socks4/mod.rs` | Submodule root; defines `MAX_USER_ID_LEN`, `MAX_DOMAIN_LEN` (both 255) | `MAX_USER_ID_LEN` (:9), `MAX_DOMAIN_LEN` (:11) |
 | `socks4/error.rs` | `Socks4Error` taxonomy | `Socks4Error` |
 | `socks4/test_server.rs` | Test-only synthetic SOCKS4 server | — |
 | `socks5/mod.rs` | Submodule root for the SOCKS5 implementation | — |

@@ -115,7 +115,7 @@ Treat as immutable reference data. Prebuilt oracle venvs exist at repo root
 | `fixtures/pproxy_*_behavior.md` | Behavioral documentation (Shadowsocks, SSR, UDP) |
 | `fixtures/pproxy_version_snapshot.toml` | Version snapshot |
 
-Regression injection modules (`tests/regression_injections/`, `inject_*` + `__init__.py`) prove the differential harness catches mutations.
+Regression injection modules (`tests/regression_injections/`, `inject_*` + `__init__.py`) prove the differential harness catches mutations. Release/script guards live in `tests/scripts/` (`test_publish_crates.py`, `test_validate_pproxy_parity_manifest.py`, `test_validate_release_artifacts.py`).
 
 #### `python/tests/` (six-tier taxonomy)
 
@@ -124,7 +124,7 @@ Regression injection modules (`tests/regression_injections/`, `inject_*` + `__in
 | 0 | Unit implementation | none | `test_milestone_c_functional.py`, `test_milestone_c_properties.py` |
 | 1 | Candidate contract | none | `test_asyncio_semantic.py`, `test_protocol_behavioral.py`, `test_cipher_truth.py` |
 | 2 | Paired oracle differential | `EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1` | `test_pproxy_differential.py`, `test_pproxy_oracle.py` |
-| 3 | External interop | `EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1` (Rust `crates/eggress-cli/tests/interoperability_shadowsocks.rs`); `EGRESS_REQUIRE_EXTERNAL_INTEROP=1` gates the pproxy differential/interop suites (`differential_pproxy.rs`, `interoperability_pproxy.rs`) | `crates/eggress-cli/tests/interoperability_shadowsocks.rs`, `python/tests/interop/`, `test_pproxy_*` |
+| 3 | External interop | `EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1` (Rust `crates/eggress-cli/tests/interoperability_shadowsocks.rs`); `EGRESS_REQUIRE_EXTERNAL_INTEROP=1` gates the pproxy differential/interop suites (`differential_pproxy.rs`, `interoperability_pproxy.rs`) | `crates/eggress-cli/tests/interoperability_shadowsocks.rs`, `test_pproxy_*` |
 | 4 | Platform | none | transparent proxy, PF tests |
 | 5 | Release certification | none | strict manifest validation, report freshness |
 

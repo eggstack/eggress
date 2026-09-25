@@ -11,7 +11,7 @@ The only TLS implementation in the workspace (no OpenSSL anywhere). Wraps
 | `src/server.rs` | `TlsServerConfigBuilder`: cert chain + key PEM (PKCS#8), ALPN (PEM loaders are private helpers, not exported) |
 | `src/roots.rs` | `load_system_roots` (webpki-roots), `load_pem_roots` (PEM -> RootCertStore), `load_pem_certs` (PEM -> Vec<CertificateDer>). Empty PEM is an error in `load_pem_roots` |
 | `src/transport.rs` | `tls_connect(stream, config, server_name)` / `tls_accept(stream, config)`: BoxStream in, TLS-wrapped BoxStream out |
-| `src/lib.rs` | Re-exports, `install_default_crypto_provider()` (ring, once), test helper `self_signed_cert()` |
+| `src/lib.rs` | Re-exports, `install_default_crypto_provider()` (ring, once), test-only crate-private `self_signed_cert()` (`#[cfg(test)] pub(crate)`) |
 | `src/error.rs` | `TlsError` enum |
 
 ## Public API surface
@@ -63,6 +63,15 @@ The only TLS implementation in the workspace (no OpenSSL anywhere). Wraps
 |---|---|---|
 | `tls_connect` | `(BoxStream, Arc<ClientConfig>, &str) -> Result<BoxStream, TlsError>` | Client-side handshake; `server_name` parsed into `ServerName` |
 | `tls_accept` | `(BoxStream, Arc<ServerConfig>) -> Result<BoxStream, TlsError>` | Server-side handshake |
+
+### Shared defaults (`client.rs`, re-exported at `lib.rs`)
+
+| Function | Notes |
+|---|---|
+| `default_client_config()` | Process-shared verified config (`OnceLock`) |
+| `default_h2_client_config()` | Process-shared verified config with H2 ALPN |
+| `default_insecure_client_config()` | Feature-gated (`insecure-tls`) insecure shared config |
+| `default_insecure_h2_client_config()` | Feature-gated insecure shared config with H2 ALPN |
 
 ### Error (`TlsError`)
 
