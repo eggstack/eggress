@@ -39,7 +39,7 @@ Architecture: `architecture/cli.md`, `architecture/admin.md`, `architecture/metr
 
 ## 3. Non-goals
 
-- Free-threaded Python; automated crates.io publication; new runtime behavior under a delivery plan.
+- Free-threaded Python; automated crates.io publication; proxy/protocol/runtime behavior changes unrelated to delivery. M003 may change self-update implementation mechanics only while preserving the established user-visible updater contract.
 
 ## 4. Current state
 
@@ -49,7 +49,7 @@ A newly qualified upstream convergence path is registered as M003: Eggup Archive
 
 ## 5. Target architecture
 
-One version, verified artifacts, manual-gated publication — attained.
+One version, verified artifacts, manual-gated publication, with generic self-update archive/transaction mechanics delegated to Eggup while Eggress retains release and CLI policy. The existing release architecture is attained; updater-mechanism convergence remains gated by M003.
 
 ## 6. Dependency graph
 
@@ -93,7 +93,7 @@ Features: `eggress-cli full` excludes `ssh`/`quic`/`pproxy-legacy`/`legacy-crypt
 
 ## 10. Risks and decision points
 
-Tag-push discipline (both publish workflows fire on `v*`); TestPyPI via manual dispatch only. No active risk.
+Tag-push discipline remains critical because both publish workflows fire on `v*`. M003 additionally carries a registry-package dependency gate, Windows running-image qualification risk, and default-binary footprint risk. The current whole-archive SHA-256 release evidence is sufficient for Eggup extraction because member expectations are optional; do not invent a new member manifest solely for this migration.
 
 ## 11. Completion definition
 
