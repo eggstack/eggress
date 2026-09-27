@@ -34,11 +34,11 @@ Complementary authority: `docs/ROADMAP.md` (canonical roadmap), `docs/parity/ppr
 | Transports | closed | `plans/subsystems/transports-roadmap.md` | All milestones closed; SSH/QUIC remain feature-gated by design | None. |
 | Outbound chains and connectors | closed | `plans/subsystems/outbound-chains-roadmap.md` | All milestones closed; pooled-transport/H2/ALPN correctives qualified | None. |
 | Parity contract and compatibility translation | closed | `plans/subsystems/parity-compat-roadmap.md` | All milestones closed; manifest has no unresolved `gap` outside tiered boundaries | None. |
-| Delivery (CLI, embed, Python, release) | closed | `plans/subsystems/delivery-roadmap.md` | All milestones closed; 1.0.10 prepared but unpublished | Publication/tagging is a separate maintainer-authorized action, not a planning blocker. |
+| Delivery (CLI, embed, Python, release) | active | `plans/subsystems/delivery-roadmap.md` | M003 Eggup archive/pair self-update adoption | Blocked on compatible versioned `eggup-core` + `eggup-archive` registry packages; 1.0.10 publication remains separately maintainer-authorized. |
 
 ## Dependency-ready implementation plans
 
-None. There is no active handoff. A new plan may be registered here only alongside an explicit `docs/ROADMAP.md` registration, per `plans/003-planning-process.md` §9.
+None. Delivery M003 is fully planned but blocked on its external package dependency; it MUST NOT be handed off for final dependency cutover until the Eggup registry-package gate closes.
 
 ## Current execution order and dependency gates
 
@@ -48,9 +48,13 @@ None. There is no active handoff. A new plan may be registered here only alongsi
 
 **Verification gate:** `docs/CI_STATUS.md` owns verification policy; `docs/TESTING.md` owns the suite inventory. Ordinary changes use the narrowest test first, then the broad gate before merging substantial Rust changes.
 
+**Eggup updater-convergence gate:** Delivery M003 is registered at `plans/implementation/delivery/003-eggup-archive-pair-self-update-adoption.md`. Eggup Archive M001d is runtime-qualified (`eggstack/eggup@18d83de`, hosted run `36335233644`), but the required post-M001d `eggup-core` + `eggup-archive` APIs are not yet available as a compatible registry package pair. Qualification may use an immutable upstream revision; final Cargo dependency cutover/package closure requires registry versions. Eggress release/checksum/version/CLI policy remains local.
+
 ## Blocked work
 
-None.
+| Subsystem | Milestone | Blocker | Plan |
+|---|---|---|---|
+| Delivery | M003 Eggup archive/pair self-update adoption | compatible versioned `eggup-core` + `eggup-archive` registry packages containing M001d APIs | `plans/implementation/delivery/003-eggup-archive-pair-self-update-adoption.md` |
 
 ## Closure work and current control points
 
