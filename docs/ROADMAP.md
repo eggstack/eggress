@@ -45,6 +45,25 @@ The workspace remains 1.0.10, prepared but unpublished. No v1.0.10 tag or
 publication is authorized by these plans; publication/tagging remains a
 separate maintainer-authorized release action.
 
+### Active maintenance — Eggup archive/pair self-update convergence
+
+Delivery M003 is registered at
+[`plans/implementation/delivery/003-eggup-archive-pair-self-update-adoption.md`](../plans/implementation/delivery/003-eggup-archive-pair-self-update-adoption.md).
+The goal is deliberately narrow: preserve Eggress-owned GitHub release discovery,
+target/asset naming, checksum-sidecar policy, exact staged-version verification,
+CLI exit behavior, and no-fallback/no-elevation policy while replacing generic
+shell archive extraction plus the bespoke two-binary backup/rollback transaction
+with Eggup's qualified archive extraction and multi-artifact transaction.
+
+The plan is **BLOCKED** for final dependency cutover. Eggup Archive M001d is
+runtime-qualified (`eggstack/eggup@18d83de`, hosted run `36335233644`), but its
+post-M001d `eggup-core` API and `eggup-archive` are not yet available as a
+compatible versioned registry package pair. Immutable-revision qualification is
+permitted before that gate closes; a permanent git/path dependency is not
+acceptable for the publishable Eggress workspace. This milestone does not
+authorize a 1.0.10 tag/publication and does not change pproxy compatibility
+claims.
+
 ## Completed Milestones
 
 ### Phase 1: Core TCP proxy foundation
