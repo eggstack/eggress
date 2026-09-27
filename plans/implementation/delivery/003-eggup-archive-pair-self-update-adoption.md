@@ -124,14 +124,14 @@ Preserve the current flow through successful whole-archive checksum verification
    - Unix: `eggress`, `pproxy`;
    - Windows: `eggress.exe`, `pproxy.exe`;
 2. construct finite `eggup_archive::ArchiveLimits` from an explicit Eggress updater policy; no default may be effectively unbounded;
-3. create an `ArchivePlan` whose expected member size/digest evidence is proven from the verified release snapshot or another equally strong existing release artifact source;
+3. create an `ArchivePlan` for exactly those members with finite limits. `ArchiveMember` size/SHA-256 expectations are optional: the current Egress release contract may pass `None` because the complete archive has already passed its release SHA-256 gate; extraction then computes exact member byte/digest evidence from that verified snapshot. If a future release publishes member expectations, pass them as additional checks;
 4. extract into an Eggup-owned private root;
 5. persist and convert to object-bound sources;
 6. construct the `ArtifactMember`/`ArtifactSet`/`InstallPlan` while advisory paths are still valid;
 7. transfer the already-open member objects into `BoundSources`;
 8. call `prepare_with_bound_sources`, never ordinary path preparation for archive members.
 
-If the existing release pipeline does not currently provide member-level size/digest evidence needed by `ArchivePlan`, STOP and record the producer-evidence gap rather than deriving trust from the post-extraction pathname. A bounded consumer-side derivation from the already checksum-verified archive may be acceptable only if it preserves the one-snapshot integrity chain and is explicitly justified in closure evidence.
+The current release workflow publishes whole-archive SHA-256 sidecars but no member manifest. That is compatible with the Eggup API: optional member expectations MUST NOT be synthesized from advisory extracted paths. Integrity continuity is whole verified archive -> bounded extraction from that exact file -> object-bound member evidence -> staged object.
 
 ### Candidate validation
 
@@ -181,7 +181,7 @@ Required changes/evidence:
 
 - registry-visible compatible `eggup-core` + `eggup-archive` versions;
 - package metadata/MSRV checked;
-- explicit archive member evidence source identified;
+- whole-archive integrity continuity and optional-member-expectation posture recorded;
 - baseline dependency tree and binary sizes recorded.
 
 ### Work package B — Eggress archive adapter
@@ -389,7 +389,7 @@ M003 closes only when:
 Stop and report rather than improvise if:
 
 - compatible versioned Eggup core/archive packages are unavailable for final dependency cutover;
-- current release artifacts do not contain enough evidence to build a sound bounded `ArchivePlan`;
+- whole-archive integrity cannot be proven before extraction or finite extraction limits cannot be expressed;
 - a product-specific change to Eggup core/archive would be required;
 - Windows currently-running-image semantics regress under Eggup commit;
 - package dry-run becomes impossible due to dependency source type;
@@ -406,7 +406,7 @@ The closure record must include:
 - before/after default release binary sizes;
 - exact updater modules/helpers removed;
 - current policy retained vs generic mechanism delegated matrix;
-- archive/member evidence source and integrity-continuity rationale;
+- archive integrity-continuity rationale, including why current optional member expectations are `None` and how extraction output evidence remains bound to the verified archive snapshot;
 - fault-injection/rollback/RecoveryRequired results;
 - offline fixture results;
 - package dry-run;
