@@ -1,6 +1,6 @@
 # Delivery Milestone 003 — Eggup Archive/Pair Self-Update Adoption
 
-Status: blocked on versioned Eggup core/archive package availability
+Status: ready — Eggup 0.1.2 registry gate satisfied 2026-09-28 (`eggup-core 0.1.2` + `eggup-archive 0.1.2` published to crates.io; Eggup M009 closed)
 
 Repository baseline: `8cb2caf3977e98c00569a551e9466b6ad1654c89`
 
@@ -28,14 +28,21 @@ Replace Eggress's duplicated generic archive extraction and two-binary backup/ro
 
 The resulting updater must still treat `eggress` and `pproxy` as one version-aligned release unit, but Eggress should no longer own generic tar/zip extraction or generic two-member transactional replacement.
 
-## 2. Why this milestone is blocked
+## 2. Why this milestone is ready (gate satisfied 2026-09-28)
 
-The required Eggup runtime contracts are implemented and qualified upstream, but the publishable package boundary is not yet available:
+The required Eggup runtime contracts are implemented, qualified upstream, and
+now published as a compatible registry pair:
 
 - Eggup M001d added `eggup-core::BoundSources`, `InstallPlan::prepare_with_bound_sources`, and `eggup-archive` bound extraction APIs after Eggup's published 0.1.1 wave.
-- `eggup-archive` is not in the currently published Eggup 0.1.1 set.
-- A crates.io-published Eggress package must not acquire git/path-only Eggup dependencies.
-- Eggup Verified Core M008 owns package/dry-run qualification and the versioned core/archive publication boundary; actual publication remains a separate maintainer action.
+- Eggup Verified Core M009 closed 2026-09-28: `eggup-core 0.1.2` (registry id
+  `3351376`) then `eggup-archive 0.1.2` (first publication, registry id
+  `3351378`), both from `eggstack/eggup@e8e07eb`, tagged `v0.1.2` with GitHub
+  Release `0.1.2`; registry-only consumption proven 3/3 with no path/git
+  overrides.
+- A crates.io-published Eggress package must not acquire git/path-only Eggup dependencies — dependency cutover may now use the registry versions.
+
+The pre-gate research rule below is retained as history; the gate it guarded
+is closed:
 
 Implementation research/prototyping may use the immutable qualified Eggup revision for evidence, but dependency cutover MUST NOT merge into a publishable Eggress release state until compatible versioned packages are available from the registry.
 
