@@ -93,6 +93,6 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: Updater unit and archive-path tests
-        run: cargo test -p eggress-cli --locked --bin eggress update::
+        run: "cargo test -p eggress-cli --locked --bin eggress update::"
       - name: Updater contract suites
         run: cargo test -p eggress-cli --locked --test release_contract --test cli_exit_codes
