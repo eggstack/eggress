@@ -101,7 +101,8 @@ impl ProtocolSpec {
     /// `backward`, `rebind`, `websocket`, `secure`, `in`, ...) intentionally
     /// return `None`.
     pub fn parse_name(name: &str) -> Option<Self> {
-        match name {
+        // Schemes/modifiers are case-insensitive (compat parity).
+        match name.to_ascii_lowercase().as_str() {
             "http" => Some(ProtocolSpec::Http),
             "httponly" => Some(ProtocolSpec::HttpOnly),
             "socks4" | "socks4a" => Some(ProtocolSpec::Socks4),
@@ -342,49 +343,23 @@ pub fn parse_proxy_chain(uri: &str) -> Result<ProxyChainSpec, UriParseError> {
 }
 
 fn split_hops(uri: &str) -> Result<Vec<String>, UriParseError> {
-    // Shared lexical split tracks `[]`/`{}` and fails closed on unmatched
-    // brackets. Triple-underscore policy stays native: any `___` run outside
-    // brackets is `DuplicateHopSeparator`, preserving historical diagnostics.
-    if has_triple_underscore_outside_brackets(uri) {
-        return Err(UriParseError::DuplicateHopSeparator);
-    }
+    // Compat-aligned empty-segment policy: `split_chain_hops` is a pure
+    // lexical split, so leading/trailing/doubled `__` surface as empty
+    // segments (e.g. `a____b` -> ["a", "", "b"]`). Only those are
+    // `DuplicateHopSeparator`. A bare `___` inside a hop (e.g. `a___b` ->
+    // ["a", "_b"]) is left for per-hop parsing, matching compat which only
+    // rejects `____` and rejoins non-scheme segments.
     let hops = syntax::split_chain_hops(uri).map_err(|e| UriParseError::InvalidFormat {
         message: e.message,
         span: e.span,
     })?;
-    Ok(hops.into_iter().map(str::to_string).collect())
-}
-
-/// Detect `___` (or longer) outside `[]` without splitting.
-///
-/// Bracket-only on purpose: this preserves the historical native split policy
-/// exactly (braces were never tracked here). The shared splitter below also
-/// tracks `{}` so compat fixed-targets never split; brace-containing native
-/// inputs still fail closed, only via endpoint validation instead.
-fn has_triple_underscore_outside_brackets(s: &str) -> bool {
-    let mut bracket = 0u32;
-    let bytes = s.as_bytes();
-    let mut run = 0u32;
-    for &b in bytes {
-        match b as char {
-            '[' => {
-                bracket += 1;
-                run = 0;
-            }
-            ']' => {
-                bracket = bracket.saturating_sub(1);
-                run = 0;
-            }
-            '_' if bracket == 0 => {
-                run += 1;
-                if run >= 3 {
-                    return true;
-                }
-            }
-            _ => run = 0,
-        }
+    if hops.iter().any(|h| h.is_empty()) {
+        return Err(UriParseError::DuplicateHopSeparator);
     }
-    false
+    if uri.starts_with("__") || uri.ends_with("__") {
+        return Err(UriParseError::DuplicateHopSeparator);
+    }
+    Ok(hops.into_iter().map(str::to_string).collect())
 }
 
 fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseError> {
@@ -520,13 +495,22 @@ fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseE
 
     // pproxy defaults SSH's endpoint port to 22. Keep the native shorthand
     // aligned with that compatibility form while retaining strict host:port
-    // parsing for every other protocol.
+    // parsing for every other protocol. A bracketed endpoint without `:port`
+    // after `]` (e.g. `ssh://[::1]`) defaults too.
     let endpoint = if protocols == [ProtocolSpec::Ssh]
         && !endpoint_str.starts_with('[')
         && !endpoint_str.contains(':')
     {
         EndpointSpec {
             host: endpoint_str.to_string(),
+            port: 22,
+        }
+    } else if protocols == [ProtocolSpec::Ssh]
+        && endpoint_str.starts_with('[')
+        && endpoint_str.ends_with(']')
+    {
+        EndpointSpec {
+            host: endpoint_str[1..endpoint_str.len() - 1].to_string(),
             port: 22,
         }
     } else {
@@ -925,6 +909,10 @@ mod tests {
         assert_eq!(result.hops[0].protocols, vec![ProtocolSpec::Ssh]);
         assert_eq!(result.hops[0].endpoint.host, "proxy.example");
         assert_eq!(result.hops[0].endpoint.port, 22);
+        // Bracketed IPv6 without `:port` defaults too.
+        let result = parse_proxy_chain("ssh://[::1]").unwrap();
+        assert_eq!(result.hops[0].endpoint.host, "::1");
+        assert_eq!(result.hops[0].endpoint.port, 22);
     }
 
     #[test]
@@ -941,8 +929,21 @@ mod tests {
 
     #[test]
     fn test_triple_hop_separator_is_rejected() {
+        // Compat-aligned policy: a bare `___` inside hops is not an empty
+        // segment, so it reaches per-hop parsing (`_http` is not a
+        // protocol) instead of `DuplicateHopSeparator`.
+        assert!(parse_proxy_chain("socks5://a:1080___http://b:8080").is_err());
+        // Empty-segment policy still yields `DuplicateHopSeparator`.
         assert!(matches!(
-            parse_proxy_chain("socks5://a:1080___http://b:8080"),
+            parse_proxy_chain("socks5://a:1080____http://b:8080"),
+            Err(UriParseError::DuplicateHopSeparator)
+        ));
+        assert!(matches!(
+            parse_proxy_chain("__http://b:8080"),
+            Err(UriParseError::DuplicateHopSeparator)
+        ));
+        assert!(matches!(
+            parse_proxy_chain("http://b:8080__"),
             Err(UriParseError::DuplicateHopSeparator)
         ));
     }

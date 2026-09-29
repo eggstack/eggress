@@ -458,8 +458,8 @@ enabled = true
 // 3. reject_fallback_returns_error_when_upstream_refused
 //
 // One upstream (refused port) with GroupFallback::Reject. Health checks
-// disable the upstream, then the router rejects. Connect through SOCKS5
-// and verify reply code 0x02 (policy denied).
+// disable the upstream, then the router has no eligible members.
+// Connect through SOCKS5 and verify reply code 0x01 (upstream unavailable).
 // ---------------------------------------------------------------------------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -519,21 +519,23 @@ enabled = true
 
     let target: std::net::SocketAddr = "192.0.2.1:80".parse().unwrap();
     let (reply_code, stream_opt) = socks5_connect(listener_addr, target).await;
+    // Stop the supervisor before asserting so a failure cannot hang the
+    // test binary on the blocked `sup.run()` thread.
+    token.cancel();
+    jh.await.ok();
     assert!(
         reply_code != 0x00,
         "reject fallback should produce error reply, got 0x{:02x}",
         reply_code
     );
-    // Health checks disabled upstream → router rejects → PolicyDenied → 0x02
+    // Health checks disabled upstream → no eligible members →
+    // UpstreamUnavailable → 0x01 (general failure, not policy denied).
     assert_eq!(
-        reply_code, 0x02,
-        "expected SOCKS5 policy denied (0x02), got 0x{:02x}",
+        reply_code, 0x01,
+        "expected SOCKS5 general failure (0x01), got 0x{:02x}",
         reply_code
     );
     assert!(stream_opt.is_none(), "stream should be None on error");
-
-    token.cancel();
-    jh.await.ok();
 }
 
 // ---------------------------------------------------------------------------
@@ -630,7 +632,8 @@ enabled = true
 // 5. all_upstreams_fail_with_reject_fallback
 //
 // Two upstreams (both refused) with GroupFallback::Reject. Health checks
-// disable both. Connect through SOCKS5, verify error reply 0x02.
+// disable both. Connect through SOCKS5, verify error reply 0x01
+// (no eligible members → upstream unavailable, not policy denied).
 // ---------------------------------------------------------------------------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -696,19 +699,20 @@ enabled = true
 
     let target: std::net::SocketAddr = "192.0.2.1:80".parse().unwrap();
     let (reply_code, stream_opt) = socks5_connect(listener_addr, target).await;
+    // Stop the supervisor before asserting so a failure cannot hang the
+    // test binary on the blocked `sup.run()` thread.
+    token.cancel();
+    jh.await.ok();
     assert!(
         reply_code != 0x00,
         "all-upstreams-fail with reject should produce error reply"
     );
     assert_eq!(
-        reply_code, 0x02,
-        "expected SOCKS5 policy denied (0x02), got 0x{:02x}",
+        reply_code, 0x01,
+        "expected SOCKS5 general failure (0x01), got 0x{:02x}",
         reply_code
     );
     assert!(stream_opt.is_none());
-
-    token.cancel();
-    jh.await.ok();
 }
 
 // ---------------------------------------------------------------------------

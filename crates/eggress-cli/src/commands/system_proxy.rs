@@ -35,7 +35,11 @@ fn print_inspection_result(result: &eggress_system_proxy::InspectionResult) {
     }
     println!();
 
-    if let Some(ref settings) = result.settings {
+    if let Some(settings) = result
+        .redacted_settings
+        .as_ref()
+        .or(result.settings.as_ref())
+    {
         println!("Current Settings (source: {}):", settings.source);
         if let Some(ref http) = settings.http_proxy {
             println!("  HTTP proxy:  {http}");

@@ -41,18 +41,19 @@ pub fn validate_credentials(value: &str) -> Result<(), HttpError> {
     Ok(())
 }
 
-/// Compatibility-unbounded bound for the serialized outbound CONNECT request head.
+/// Bound for the serialized outbound CONNECT request head.
 ///
-/// Eggress historically had no independently documented outbound
-/// request-head-size limit: the URI/config layers place no length bound on
-/// hosts or credentials, and the previous local builder grew a `Vec`
-/// without a cap. `encode_connect_request()` requires a caller-provided
-/// bound, so this adapter passes `usize::MAX` to preserve the pre-migration
-/// contract: valid credentials/targets must not be newly rejected at an
-/// adapter-imposed size. A true request-size hardening policy, if desired,
-/// must be designed separately at the input/config layer before credential
-/// and authority allocations occur.
-const COMPAT_UNBOUNDED_REQUEST_HEAD: usize = usize::MAX;
+/// Caps the request-head allocation at 64 KiB (consistent with the relay
+/// buffer compat contract) and is enforced on the raw inputs *before*
+/// Base64/authority materialization so oversized credentials or targets
+/// cannot drive unbounded `Vec`/`String` growth. Oversize inputs fail with
+/// [`HttpError::HeaderTooLarge`] via the same mapping as the serializer's
+/// head-size arm.
+const MAX_OUTBOUND_CONNECT_HEAD: usize = 64 * 1024;
+
+/// Framing overhead budgeted in the pre-allocation estimate: request line,
+/// `Host` header, `Proxy-Authorization` header name, and CRLF framing.
+const CONNECT_HEAD_FRAMING_OVERHEAD: usize = 512;
 
 /// Build the validated outbound CONNECT target.
 ///
@@ -133,6 +134,24 @@ fn build_connect_request(
     if let Some((user, pass)) = auth {
         validate_credentials(user)?;
         validate_credentials(pass)?;
+        // Bound the pending Base64/authority allocations before they happen:
+        // reject inputs whose encoded head cannot fit the budget.
+        let raw_cred_len = user.len().saturating_add(1).saturating_add(pass.len());
+        let b64_len = raw_cred_len.saturating_add(2) / 3 * 4;
+        let estimated = b64_len
+            .saturating_add(target.authority().len().saturating_mul(2))
+            .saturating_add(CONNECT_HEAD_FRAMING_OVERHEAD);
+        if estimated > MAX_OUTBOUND_CONNECT_HEAD {
+            return Err(HttpError::HeaderTooLarge);
+        }
+    } else if target
+        .authority()
+        .len()
+        .saturating_mul(2)
+        .saturating_add(CONNECT_HEAD_FRAMING_OVERHEAD)
+        > MAX_OUTBOUND_CONNECT_HEAD
+    {
+        return Err(HttpError::HeaderTooLarge);
     }
     let auth_value = auth.map(|(user, pass)| {
         let credentials = format!("{}:{}", user, pass);
@@ -143,7 +162,7 @@ fn build_connect_request(
         target,
         proxy_authorization: auth_value.as_deref(),
         extra_headers: &[],
-        max_head_bytes: COMPAT_UNBOUNDED_REQUEST_HEAD,
+        max_head_bytes: MAX_OUTBOUND_CONNECT_HEAD,
     };
     encode_connect_request(&request).map_err(map_connect_error)
 }
@@ -655,9 +674,9 @@ mod tests {
                 if req.len() >= 4 && &req[req.len() - 4..] == b"\r\n\r\n" {
                     break;
                 }
-                // Test-harness bound only: the production adapter is
-                // compatibility-unbounded, so allow heads well above the
-                // former 64 KiB cap (the >64 KiB regression is ~96 KiB).
+                // Test-harness bound only: allow heads up to the 2 MiB
+                // harness limit so oversized-input rejections can be
+                // observed without truncating the exchange.
                 if req.len() > 2 * 1024 * 1024 {
                     break;
                 }
@@ -856,11 +875,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_wire_large_credentials_above_64kib_preserved() {
-        // Corrective regression: the pre-migration builder had no
-        // request-head cap, so a valid >64 KiB CONNECT head must succeed.
-        // A 72 KiB password serializes to ~96 KiB on the wire and would
-        // have failed under the removed 64 KiB adapter bound.
+    async fn test_wire_large_credentials_above_64kib_rejected() {
+        // Bound pin: the outbound head budget is 64 KiB, enforced on the
+        // raw inputs before Base64/authority allocation. A 72 KiB password
+        // serializes to ~96 KiB on the wire and must now be rejected with
+        // `HeaderTooLarge` without writing any request bytes.
         use base64::Engine;
         let large_password = "a".repeat(72 * 1024);
         let target = TargetAddr {
@@ -874,18 +893,16 @@ mod tests {
             b"HTTP/1.1 200 OK\r\n\r\n".to_vec(),
         )
         .await;
-        assert!(result.is_ok(), "large valid head must not be rejected");
         assert!(
-            req.len() > 64 * 1024,
-            "regression must actually exceed 64 KiB, got {}",
+            matches!(result, Err(HttpError::HeaderTooLarge)),
+            "oversized head must be rejected before allocation"
+        );
+        assert!(
+            req.is_empty(),
+            "no request bytes may precede the size check, got {}",
             req.len()
         );
-        let expected =
-            base64::engine::general_purpose::STANDARD.encode(format!("user:{large_password}"));
-        let text = String::from_utf8(req).unwrap();
-        assert!(text.contains(&format!("Proxy-Authorization: Basic {expected}")));
-        assert!(text.starts_with("CONNECT example.com:80 HTTP/1.1\r\n"));
-        assert!(text.contains("\r\nHost: example.com:80\r\n"));
+        let _ = base64::engine::general_purpose::STANDARD.encode(format!("user:{large_password}"));
     }
 
     #[tokio::test]

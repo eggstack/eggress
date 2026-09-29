@@ -106,7 +106,13 @@ impl AppliedProxy {
 
 impl Drop for AppliedProxy {
     fn drop(&mut self) {
-        let _ = self.restore();
+        // Best-effort restore on drop; explicit `restore()` remains the
+        // supported path. Log failures instead of swallowing them silently.
+        if self.rollback.is_some() {
+            if let Err(e) = self.restore() {
+                tracing::warn!("system proxy restore on drop failed: {e}");
+            }
+        }
     }
 }
 
@@ -154,7 +160,7 @@ pub fn apply_compatibility_proxy_with_runner(
         socks.as_deref(),
         None,
         Some(&settings),
-    );
+    )?;
     let rollback = create_rollback(&platform, plan.service.as_deref(), &settings);
     if let Err(error) = execute_apply(&plan, runner) {
         let rollback_error = restore_with_runner(&rollback, runner).err();
@@ -214,7 +220,7 @@ pub fn plan_apply(
     socks_proxy: Option<&str>,
     no_proxy: Option<&str>,
     current_settings: Option<&SystemProxySettings>,
-) -> ApplyPlan {
+) -> Result<ApplyPlan, String> {
     let commands = match platform {
         "macos" => {
             let svc = service.unwrap_or("*Wi-Fi");
@@ -237,11 +243,11 @@ pub fn plan_apply(
             https_proxy,
             socks_proxy,
             no_proxy,
-        ),
+        )?,
         _ => Vec::new(),
     };
 
-    ApplyPlan {
+    Ok(ApplyPlan {
         platform: platform.to_string(),
         service: service.map(|s| s.to_string()),
         http_proxy: http_proxy.map(|s| s.to_string()),
@@ -250,7 +256,7 @@ pub fn plan_apply(
         no_proxy: no_proxy.map(|s| s.to_string()),
         commands,
         previous_settings: current_settings.cloned(),
-    }
+    })
 }
 
 /// Create a rollback state from current settings.
@@ -391,12 +397,16 @@ pub fn generate_revert_commands(rollback: &RollbackState) -> Vec<Command> {
                 || rollback.https_proxy.is_some()
                 || rollback.socks_proxy.is_some();
             if has_any {
-                commands.extend(crate::backends::linux::generate_gnome_apply_commands(
+                // Revert must not fail when stored rollback values are stale;
+                // fall back to disable-only rather than aborting restore.
+                if let Ok(restore) = crate::backends::linux::generate_gnome_apply_commands(
                     rollback.http_proxy.as_deref(),
                     rollback.https_proxy.as_deref(),
                     rollback.socks_proxy.as_deref(),
                     rollback.no_proxy.as_deref(),
-                ));
+                ) {
+                    commands.extend(restore);
+                }
             }
             commands
         }
@@ -430,7 +440,8 @@ mod tests {
             None,
             None,
             None,
-        );
+        )
+        .unwrap();
         assert_eq!(plan.platform, "macos");
         assert!(plan
             .commands
@@ -440,7 +451,7 @@ mod tests {
 
     #[test]
     fn plan_apply_windows_produces_commands() {
-        let plan = plan_apply("windows", None, Some("proxy:8080"), None, None, None, None);
+        let plan = plan_apply("windows", None, Some("proxy:8080"), None, None, None, None).unwrap();
         assert_eq!(plan.platform, "windows");
         assert!(plan
             .commands
@@ -450,7 +461,7 @@ mod tests {
 
     #[test]
     fn plan_apply_linux_produces_commands() {
-        let plan = plan_apply("linux", None, Some("proxy:8080"), None, None, None, None);
+        let plan = plan_apply("linux", None, Some("proxy:8080"), None, None, None, None).unwrap();
         assert_eq!(plan.platform, "linux");
         assert!(plan
             .commands

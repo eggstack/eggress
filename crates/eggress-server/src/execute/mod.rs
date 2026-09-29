@@ -335,8 +335,8 @@ async fn open_route(
 ) -> Result<OpenedRoute, SessionOpenError> {
     let selected = config.routing.route(request).map_err(|e| match e {
         eggress_routing::RouteError::Rejected { .. } => SessionOpenError::PolicyDenied,
-        eggress_routing::RouteError::NoEligibleUpstream(_) => SessionOpenError::PolicyDenied,
-        eggress_routing::RouteError::UnknownGroup(_) => SessionOpenError::PolicyDenied,
+        eggress_routing::RouteError::NoEligibleUpstream(_) => SessionOpenError::UpstreamUnavailable,
+        eggress_routing::RouteError::UnknownGroup(_) => SessionOpenError::UpstreamUnavailable,
     })?;
 
     let route = route_description(&selected);
@@ -565,6 +565,9 @@ async fn execute_http_forward(
     let mut request = pending.request;
     let mut client_close = request.connection_close;
 
+    const MAX_REQUESTS_PER_CONNECTION: usize = 100;
+    let mut request_count: usize = 1;
+
     loop {
         let target_addr = request.target.clone();
         last_target = Some(target_addr.to_string());
@@ -736,20 +739,31 @@ async fn execute_http_forward(
                     break;
                 }
 
-                // Read the next request from the client
-                match eggress_protocol_http::forward_request_stream(&mut client).await {
-                    Ok(next_request) => {
+                if request_count >= MAX_REQUESTS_PER_CONNECTION {
+                    break;
+                }
+
+                // Bound idle time between keep-alive requests with the
+                // existing handshake timeout.
+                let next = tokio::time::timeout(
+                    config.handshake_timeout,
+                    eggress_protocol_http::forward_request_stream(&mut client),
+                )
+                .await;
+                match next {
+                    Ok(Ok(next_request)) => {
                         client_close = next_request.connection_close;
                         request = next_request;
+                        request_count += 1;
                     }
-                    Err(eggress_protocol_http::HttpError::Io(ref e))
+                    Ok(Err(eggress_protocol_http::HttpError::Io(ref e)))
                         if e.kind() == std::io::ErrorKind::UnexpectedEof =>
                     {
                         // Client closed the connection
                         break;
                     }
-                    Err(_) => {
-                        // Malformed next request — close with error
+                    Ok(Err(_)) | Err(_) => {
+                        // Malformed next request or idle timeout — close
                         break;
                     }
                 }

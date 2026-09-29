@@ -29,6 +29,25 @@ SOCKET_TIMEOUT = 60
 UDP_LIMIT = 30
 
 
+def _test_exit_code(exc: BaseException) -> int:
+    """Map a native ``--test`` failure to a process exit code.
+
+    ``UnsupportedFeatureError`` → 5 (matches the ``translate`` unsupported
+    path in :func:`main`), ``ConfigError`` → 3, parse ``ValueError`` and
+    anything else → 2.
+    """
+    try:
+        from eggress._eggress import ConfigError, UnsupportedFeatureError
+    except ImportError:
+        ConfigError = ()
+        UnsupportedFeatureError = ()
+    if isinstance(exc, UnsupportedFeatureError):
+        return 5
+    if isinstance(exc, ConfigError):
+        return 3
+    return 2
+
+
 def DUMMY(value):
     """Identity helper matching pproxy 2.7.9's ``pproxy.server.DUMMY``."""
     return value
@@ -358,7 +377,7 @@ def main(args=None):
             return int(run_pproxy_test(argv, target))
         except Exception as exc:
             print(str(exc), file=sys.stderr)
-            return 2
+            return _test_exit_code(exc)
 
     from eggress.pproxy import PPProxyService, translate_pproxy_args
 

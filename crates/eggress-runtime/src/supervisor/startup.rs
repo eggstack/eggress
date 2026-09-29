@@ -95,11 +95,17 @@ pub(crate) fn resolve_udp_global_limit(
 pub(crate) fn build_ssh_sessions(
     allow_insecure_host_keys: bool,
 ) -> Arc<eggress_transport_ssh::SshSessionCache> {
-    Arc::new(if allow_insecure_host_keys {
-        eggress_transport_ssh::SshSessionCache::new_compatibility()
-    } else {
-        eggress_transport_ssh::SshSessionCache::new()
-    })
+    #[cfg(feature = "pproxy-compat")]
+    if allow_insecure_host_keys {
+        return Arc::new(eggress_transport_ssh::SshSessionCache::new_compatibility());
+    }
+    #[cfg(not(feature = "pproxy-compat"))]
+    if allow_insecure_host_keys {
+        tracing::warn!(
+            "insecure SSH host keys requested but the pproxy-compat feature is off; using verified known-hosts policy"
+        );
+    }
+    Arc::new(eggress_transport_ssh::SshSessionCache::new())
 }
 
 /// Assemble a [`ServiceSupervisor`] (shared state, tokens, task trackers)

@@ -268,6 +268,7 @@ pub async fn shadowsocks_standalone_udp_relay(
                                         hop: hop.clone(),
                                         connect_timeout: std::time::Duration::from_secs(10),
                                         udp_bind: local_udp_bind_addr(),
+                                        control_timeout: Some(config.limits.target_idle_timeout),
                                     };
 
                                     match open_socks5_udp_upstream(upstream_config, None).await {

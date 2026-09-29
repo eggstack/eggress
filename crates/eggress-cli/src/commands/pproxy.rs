@@ -245,6 +245,9 @@ fn handle_pproxy_check(args: &PproxyCheck) -> i32 {
             }
         }
     }
+    if output.has_unsupported() {
+        return EXIT_UNSUPPORTED_FEATURE;
+    }
     EXIT_SUCCESS
 }
 

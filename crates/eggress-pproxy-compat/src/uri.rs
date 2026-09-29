@@ -2,7 +2,7 @@ use crate::error::CompatError;
 use eggress_uri::syntax as uri_syntax;
 
 /// Parsed pproxy-style URI.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct PproxyUri {
     /// Protocol scheme (e.g. "socks5", "http", "socks4", "trojan", "bind", "listen", "backward").
     pub scheme: String,
@@ -53,6 +53,34 @@ pub struct PproxyPluginSpec {
 }
 
 impl PproxyUri {
+    /// Redacting `Debug`: never emits credentials, auth fragments, or raw URIs.
+    fn fmt_redacted(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PproxyUri")
+            .field("scheme", &self.scheme)
+            .field("username", &self.username.as_ref().map(|_| "****"))
+            .field("password", &self.password.as_ref().map(|_| "****"))
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("tls", &self.tls)
+            .field("ssl", &self.ssl)
+            .field("inbound", &self.inbound)
+            .field("backward_num", &self.backward_num)
+            .field("rule", &self.rule)
+            .field("rules_file", &self.rules_file)
+            .field("rule_suffix", &self.rule_suffix)
+            .field("path", &self.path.as_ref().map(|_| "****"))
+            .field("protocol_chain", &self.protocol_chain)
+            .field("transport_modifiers", &self.transport_modifiers)
+            .field("local_bind", &self.local_bind)
+            .field("fixed_target", &self.fixed_target)
+            .field("plugins", &self.plugins)
+            .field(
+                "auth_fragment",
+                &self.auth_fragment.as_ref().map(|_| "****"),
+            )
+            .field("raw", &"****")
+            .finish()
+    }
     /// Returns true if this is a reverse proxy listener URI (bind/listen/backward/rebind scheme).
     pub fn is_reverse_listener(&self) -> bool {
         matches!(
@@ -146,7 +174,15 @@ impl PproxyUri {
         // `wss` already carries the TLS scheme semantics. Keep its stable
         // redacted display as `wss://...` while retaining `self.tls` for
         // translation and listener transport setup.
-        if self.tls && !parts.iter().any(|p| p == "tls") && !parts.iter().any(|p| p == "wss") {
+        // `+ssl`/`+secure` imply `tls` internally but must round-trip as
+        // `+ssl`: only render `+tls` when it was an explicit modifier
+        // (or when `tls` stands alone without `ssl`).
+        let explicit_tls = self.transport_modifiers.iter().any(|p| p == "tls");
+        if self.tls
+            && !parts.iter().any(|p| p == "tls")
+            && !parts.iter().any(|p| p == "wss")
+            && (explicit_tls || !self.ssl)
+        {
             parts.push("tls".to_string());
         }
         if self.ssl && !parts.iter().any(|p| p == "ssl") {
@@ -184,6 +220,27 @@ fn redact_unix_path(path: &str) -> String {
     }
 }
 
+/// Redact secret-bearing URI input before embedding it in error messages.
+fn redact_uri_for_error(uri: &str) -> String {
+    // Strip userinfo (`user:pass@`) and fragment auth; keep the remainder for
+    // diagnostics. Bound length so huge inputs cannot blow up logs.
+    let mut out = uri.to_string();
+    if let Some(scheme_end) = out.find("://") {
+        let after = scheme_end + 3;
+        if let Some(at) = out[after..].find('@') {
+            out.replace_range(after..after + at + 1, "****:****@");
+        }
+    }
+    if let Some((head, _)) = out.split_once('#') {
+        out = format!("{head}#****");
+    }
+    if out.len() > 256 {
+        out.truncate(256);
+        out.push_str("...");
+    }
+    out
+}
+
 /// Shared host formatting (bracket IPv6 literals).
 ///
 /// Delegates to [`eggress_uri::syntax::format_host`] so native and
@@ -203,15 +260,23 @@ fn format_host_for_uri(host: &str) -> String {
 /// - `redir://:12345`
 /// - `redir://127.0.0.1:12345`
 pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
-    // The Python compatibility helpers historically accepted a listener URI
-    // followed by a legacy `;` or `__` remote suffix. The typed single-URI
-    // parser describes the listener portion; callers that need every hop use
-    // `parse_pproxy_chain`.
-    let parse_uri = if uri.contains("__") {
-        split_chain_hops(uri)?.into_iter().next().unwrap_or(uri)
-    } else {
-        uri.split_once(';').map_or(uri, |(head, _)| head)
-    };
+    // Fail closed on multi-hop input: silently keeping only the first hop
+    // drops hops 1..n. Callers that need every hop must use
+    // `parse_pproxy_chain`. `__` that stays inside one hop's query/path
+    // (no additional `://` segment) is data, not a separator.
+    // The legacy `;` listener+remote suffix keeps its historical head-parse.
+    if uri.contains("__") {
+        let parts = split_chain_hops(uri)?;
+        if parts.len() > 1 && parts[1..].iter().any(|s| s.contains("://")) {
+            return Err(CompatError::InvalidUri {
+                message: format!(
+                    "single URI contains a '__' chain separator; use parse_pproxy_chain: {}",
+                    redact_uri_for_error(uri)
+                ),
+            });
+        }
+    }
+    let parse_uri = uri.split_once(';').map_or(uri, |(head, _)| head);
     let (without_fragment, auth_fragment) = split_top_level(parse_uri, '#');
     let (before_query, query) = split_top_level(without_fragment, '?');
 
@@ -222,7 +287,7 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
         (scheme.to_string(), rest)
     } else {
         return Err(CompatError::InvalidUri {
-            message: format!("missing scheme in URI: {}", uri),
+            message: format!("missing scheme in URI: {}", redact_uri_for_error(uri)),
         });
     };
 
@@ -621,12 +686,27 @@ fn extract_query_params(query: &str) -> (Option<String>, Option<String>, Option<
 }
 
 /// A parsed pproxy chain (one or more hops separated by `__`).
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct PproxyChain {
     /// The raw input string.
     pub raw: String,
     /// Parsed hops in order (left = first hop, right = the last hop).
     pub hops: Vec<PproxyUri>,
+}
+
+impl std::fmt::Debug for PproxyUri {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.fmt_redacted(f)
+    }
+}
+
+impl std::fmt::Debug for PproxyChain {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PproxyChain")
+            .field("raw", &"****")
+            .field("hops", &self.hops)
+            .finish()
+    }
 }
 
 impl PproxyChain {
@@ -654,7 +734,7 @@ pub fn parse_pproxy_chain(uri: &str) -> Result<PproxyChain, CompatError> {
         return Err(CompatError::InvalidUri {
             message: format!(
                 "semicolon and comma are not chain separators in pproxy; use '__' (double underscore) to separate hops: {}",
-                uri
+                redact_uri_for_error(uri)
             ),
         });
     }
@@ -662,24 +742,46 @@ pub fn parse_pproxy_chain(uri: &str) -> Result<PproxyChain, CompatError> {
     // Check for leading/trailing __
     if uri.starts_with("__") || uri.ends_with("__") {
         return Err(CompatError::InvalidUri {
-            message: format!("chain URI has leading or trailing '__' separator: {}", uri),
+            message: format!(
+                "chain URI has leading or trailing '__' separator: {}",
+                redact_uri_for_error(uri)
+            ),
         });
     }
 
     // Check for doubled ____
     if uri.contains("____") {
         return Err(CompatError::InvalidUri {
-            message: format!("chain URI has doubled '____' separator: {}", uri),
+            message: format!(
+                "chain URI has doubled '____' separator: {}",
+                redact_uri_for_error(uri)
+            ),
         });
     }
 
     let mut hops = Vec::new();
+    // `__` inside `?rule=`/`?suffix` query values is data, not a hop
+    // separator. Rejoin split segments that do not start a new hop (no
+    // `://`), so `http://h:80?rule=a__b` stays one hop.
+    let mut segments: Vec<String> = Vec::new();
     for segment in split_chain_hops(uri)? {
         if segment.is_empty() {
             return Err(CompatError::InvalidUri {
-                message: format!("chain URI has empty hop segment: {}", uri),
+                message: format!(
+                    "chain URI has empty hop segment: {}",
+                    redact_uri_for_error(uri)
+                ),
             });
         }
+        if segment.contains("://") || segments.is_empty() {
+            segments.push(segment.to_string());
+        } else {
+            let last = segments.len() - 1;
+            segments[last].push_str("__");
+            segments[last].push_str(segment);
+        }
+    }
+    for segment in &segments {
         let hop = parse_pproxy_uri(segment)?;
         hops.push(hop);
     }
@@ -695,17 +797,18 @@ pub fn parse_pproxy_chain(uri: &str) -> Result<PproxyChain, CompatError> {
 /// The lexical split lives in `eggress-uri`; empty/duplicate-separator policy
 /// stays compat-owned in [`parse_pproxy_chain`].
 fn split_chain_hops(uri: &str) -> Result<Vec<&str>, CompatError> {
+    let redacted = redact_uri_for_error(uri);
     uri_syntax::split_chain_hops(uri).map_err(|e| {
         let detail = if e.message.contains(']') {
-            format!("chain URI has unmatched ']': {uri}")
+            format!("chain URI has unmatched ']': {redacted}")
         } else if e.message.contains('}') {
-            format!("chain URI has unmatched '}}': {uri}")
+            format!("chain URI has unmatched '}}': {redacted}")
         } else if e.message.contains('[') {
-            format!("chain URI has unmatched '[': {uri}")
+            format!("chain URI has unmatched '[': {redacted}")
         } else if e.message.contains('{') {
-            format!("chain URI has unmatched '{{': {uri}")
+            format!("chain URI has unmatched '{{': {redacted}")
         } else {
-            format!("chain URI split failed for '{uri}': {}", e.message)
+            format!("chain URI split failed for '{redacted}': {}", e.message)
         };
         CompatError::InvalidUri { message: detail }
     })
@@ -719,10 +822,14 @@ pub fn validate_chain_hops(chain: &PproxyChain) -> Vec<(usize, String)> {
     for (idx, hop) in chain.hops.iter().enumerate() {
         match hop.scheme.as_str() {
             "ssh" if cfg!(feature = "ssh") => {}
-            "ssh" | "redir" | "direct" => {
+            "quic" | "h3" if cfg!(feature = "quic") => {}
+            "ssh" | "redir" | "direct" | "quic" | "h3" => {
                 unsupported.push((idx, hop.scheme.clone()));
             }
-            _ => {} // http, https, socks4, socks4a, socks5, trojan, ss, ssr, shadowsocks are supported
+            // http, https, socks4, socks4a, socks5, trojan, ss, ssr,
+            // shadowsocks, h2, ws, wss are native-capable: executor-gated
+            // (outbound `extended`/`quic`) and diagnosed at translation.
+            _ => {}
         }
     }
     unsupported

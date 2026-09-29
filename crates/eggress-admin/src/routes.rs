@@ -363,12 +363,11 @@ pub async fn handle_request(
         }
         _ => {
             let snap = state.snapshot();
-            if path == snap.pac.as_ref().map(|p| p.path.as_str()).unwrap_or("/pac") {
-                if let Some(pac_config) = snap.pac.as_ref() {
+            if let Some(pac_config) = snap.pac.as_ref() {
+                if path == pac_config.path.as_str() {
                     let pac = generate_pac(pac_config);
                     return build_response(200, pac, "application/x-ns-proxy-autoconfig");
                 }
-                return build_text_response(404, "pac not configured");
             }
 
             for route in snap.static_routes.iter() {

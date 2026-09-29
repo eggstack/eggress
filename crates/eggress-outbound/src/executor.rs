@@ -284,8 +284,12 @@ fn build_chain_executor_inner(
 
     #[cfg(feature = "quic")]
     {
-        handlers.push(Box::new(QuicHopHandler));
-        handlers.push(Box::new(H3HopHandler));
+        handlers.push(Box::new(QuicHopHandler {
+            tls_override: tls_override.cloned(),
+        }));
+        handlers.push(Box::new(H3HopHandler {
+            tls_override: tls_override.cloned(),
+        }));
     }
 
     // Pre-build TLS configs per distinct ALPN set so we don't re-read

@@ -151,12 +151,15 @@ impl TcpListener {
     }
 
     pub async fn accept(&self) -> std::io::Result<AcceptedConnection> {
-        let permit = self
-            .semaphore
-            .clone()
-            .acquire_owned()
-            .await
-            .map_err(|_| std::io::Error::other("semaphore closed"))?;
+        // Acquire a connection slot or observe shutdown while waiting at the
+        // connection limit, so shutdown cannot hang when all slots are held.
+        let permit = tokio::select! {
+            permit = self.semaphore.clone().acquire_owned() => permit
+                .map_err(|_| std::io::Error::other("semaphore closed"))?,
+            _ = self.cancel_token.cancelled() => {
+                return Err(std::io::Error::other(ListenerCancelled));
+            }
+        };
 
         let (stream, peer_addr) = tokio::select! {
             result = self.listener.accept() => result?,

@@ -24,7 +24,12 @@ quic = [
     "eggress-runtime/quic",
     "eggress-outbound/quic",
 ]
-pproxy-compat = ["dep:eggress-pproxy-compat", "eggress-outbound/pproxy-compat"]
+pproxy-compat = [
+    "dep:eggress-pproxy-compat",
+    "eggress-outbound/pproxy-compat",
+    "eggress-runtime/pproxy-compat",
+    "eggress-transport-ssh?/pproxy-compat",
+]
 ssh = [
     "dep:eggress-transport-ssh",
     "eggress-runtime/ssh",

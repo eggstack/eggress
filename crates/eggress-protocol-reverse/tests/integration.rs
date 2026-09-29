@@ -148,7 +148,9 @@ async fn test_auth_required_not_provided() {
     let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
     stream.shutdown().await.unwrap();
     let mut buf = [0u8; 1];
-    let result = tokio::time::timeout(Duration::from_millis(200), stream.read(&mut buf)).await;
+    // Generous bound: the server closes unauthenticated connections
+    // promptly, but parallel CI load can delay task scheduling.
+    let result = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut buf)).await;
     assert!(
         matches!(result, Ok(Ok(0)) | Ok(Err(_))),
         "unauthenticated connection was not closed: {result:?}"

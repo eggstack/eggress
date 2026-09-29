@@ -58,6 +58,10 @@ pub struct H2StreamLabels {
 
 pub(crate) const MAX_ROUTE_LABEL_LENGTH: usize = 128;
 
+pub fn bounded_label(value: &str) -> String {
+    bounded_route_label(value)
+}
+
 pub(crate) fn bounded_route_label(value: &str) -> String {
     let mut bounded = String::with_capacity(value.len().min(MAX_ROUTE_LABEL_LENGTH));
     for character in value.chars() {

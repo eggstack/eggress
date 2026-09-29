@@ -25,8 +25,11 @@ pub(crate) fn validate_upstreams(
             ));
         }
 
-        if eggress_uri::parse_proxy_chain(&upstream.uri).is_err() {
-            errors.push(ConfigError::validation(&path, "invalid upstream URI"));
+        if let Err(e) = eggress_uri::parse_proxy_chain(&upstream.uri) {
+            errors.push(ConfigError::validation(
+                &path,
+                &format!("invalid upstream URI: {e}"),
+            ));
         }
 
         if let Some(ref health) = upstream.health {

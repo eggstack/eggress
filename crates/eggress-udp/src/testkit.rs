@@ -1,5 +1,18 @@
 use std::net::SocketAddr;
 
+/// Constant-time byte equality mirroring prod `subtle::ct_eq` semantics
+/// without adding a dependency to this test helper.
+fn ct_eq_bytes(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
 pub async fn start_udp_echo_server() -> SocketAddr {
     let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let addr = socket.local_addr().unwrap();
@@ -178,7 +191,9 @@ async fn handle_socks5_connection(
             let mut password = vec![0u8; plen];
             stream.read_exact(&mut password).await?;
 
-            if username == expected_user.as_bytes() && password == expected_pass.as_bytes() {
+            if ct_eq_bytes(&username, expected_user.as_bytes())
+                && ct_eq_bytes(&password, expected_pass.as_bytes())
+            {
                 stream.write_all(&[0x01, 0x00]).await?;
             } else {
                 stream.write_all(&[0x01, 0x01]).await?;

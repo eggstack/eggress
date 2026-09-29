@@ -3,7 +3,7 @@ from __future__ import annotations
 try:
     from eggress._eggress import __version__ as __version__
 except ImportError:
-    __version__ = "1.0.7"
+    __version__ = "1.0.10"
 
 import sys
 from typing import Any, Sequence
@@ -43,7 +43,7 @@ except ImportError as error:
     class InternalError(EggressError): pass  # type: ignore[no-redef]
 
 
-class NativeExtensionError(ImportError, EggressError):
+class NativeExtensionError(ImportError):
     """Raised when a native-backed API is used without the extension."""
 
 

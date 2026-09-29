@@ -556,8 +556,49 @@ pub(crate) fn route_explain(py: Python<'_>, toml_str: &str, target: &str) -> PyR
             let runtime_config =
                 compile_config(&config).map_err(|e| format!("failed to compile config: {e}"))?;
 
-            let router =
-                Router::with_groups(runtime_config.rules, runtime_config.default_action, vec![]);
+            let router = {
+                use eggress_core::UpstreamId;
+                use eggress_routing::upstream::{
+                    GroupFallback as UpstreamFallback, UpstreamGroup, UpstreamRuntime,
+                };
+                use std::collections::HashMap;
+                use std::sync::Arc;
+                let mut map: HashMap<String, Arc<UpstreamRuntime>> = HashMap::new();
+                for u in &runtime_config.upstreams {
+                    map.insert(
+                        u.id.clone(),
+                        Arc::new(UpstreamRuntime::new(
+                            UpstreamId::new(u.id.clone()),
+                            u.chain.clone(),
+                        )),
+                    );
+                }
+                let mut groups = Vec::new();
+                for g in &runtime_config.groups {
+                    let mut members = Vec::new();
+                    for m in &g.members {
+                        let member = map.get(m).ok_or_else(|| {
+                            format!("group '{}' references unknown upstream '{m}'", g.id.0)
+                        })?;
+                        members.push(member.clone());
+                    }
+                    if members.is_empty() {
+                        return Err(format!("group '{}' has no valid members", g.id.0));
+                    }
+                    let fallback = match g.fallback {
+                        eggress_config::compile::GroupFallback::Reject => UpstreamFallback::Reject,
+                        eggress_config::compile::GroupFallback::Direct => UpstreamFallback::Direct,
+                        eggress_config::compile::GroupFallback::UseUnhealthy => {
+                            UpstreamFallback::UseUnhealthy
+                        }
+                    };
+                    groups.push((
+                        g.id.clone(),
+                        UpstreamGroup::new(g.id.clone(), g.scheduler, Arc::from(members), fallback),
+                    ));
+                }
+                Router::with_groups(runtime_config.rules, runtime_config.default_action, groups)
+            };
 
             let request = RouteRequest {
                 target: &target_addr,
@@ -956,19 +997,30 @@ pub(crate) fn run_pproxy_test(
     parsed
         .validate_strict_values()
         .map_err(|e| PyValueError::new_err(format!("pproxy argument error: {e}")))?;
-    let output = eggress_pproxy_compat::translate_pproxy_args(&parsed)
-        .map_err(|e| PyValueError::new_err(format!("pproxy translation error: {e}")))?;
-    let gate = eggress_pproxy_compat::evaluate_execution_gate(&parsed, &output);
+    let (output, gate) = py
+        .detach(|| -> Result<_, String> {
+            let output = eggress_pproxy_compat::translate_pproxy_args(&parsed)
+                .map_err(|e| format!("pproxy translation error: {e}"))?;
+            let gate = eggress_pproxy_compat::evaluate_execution_gate(&parsed, &output);
+            Ok((output, gate))
+        })
+        .map_err(PyValueError::new_err)?;
     if !gate.allows_start() {
         return Err(UnsupportedFeatureError::new_err(gate.blocker_summary()));
     }
-    let (config, _) = eggress_config::validate_and_compile_toml_with_warnings(&output.toml)
-        .map_err(|e| ConfigError::new_err(format!("pproxy config error: {e}")))?;
+    let (config, _) = py
+        .detach(|| {
+            eggress_config::validate_and_compile_toml_with_warnings(&output.toml)
+                .map_err(|e| format!("pproxy config error: {e}"))
+        })
+        .map_err(ConfigError::new_err)?;
     let target = eggress_cli::parse_pproxy_test_target(target)
         .map_err(PyValueError::new_err)?
         .to_string();
     if config.upstreams.is_empty() {
-        return Ok(0);
+        return Err(ConfigError::new_err(
+            "pproxy config error: no upstreams to test",
+        ));
     }
     Ok(py.detach(|| {
         eggress_cli::run_upstream_test(&config, Some(&target), Duration::from_secs(10), false)

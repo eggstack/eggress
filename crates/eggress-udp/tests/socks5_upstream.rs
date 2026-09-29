@@ -603,6 +603,7 @@ fn upstream_config_for_timeout_test(
         hop,
         connect_timeout: std::time::Duration::from_millis(50),
         udp_bind: "127.0.0.1:0".parse().unwrap(),
+        control_timeout: None,
     }
 }
 

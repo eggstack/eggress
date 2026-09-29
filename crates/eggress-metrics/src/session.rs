@@ -80,8 +80,8 @@ impl MetricsRegistry {
     pub fn set_upstream_health(&self, upstream_id: &str, group_id: &str, healthy: bool) {
         self.upstream_health
             .get_or_create(&UpstreamLabels {
-                upstream_id: upstream_id.to_string(),
-                group_id: group_id.to_string(),
+                upstream_id: crate::labels::bounded_label(upstream_id),
+                group_id: crate::labels::bounded_label(group_id),
             })
             .set(if healthy { 1 } else { 0 });
     }
@@ -89,8 +89,8 @@ impl MetricsRegistry {
     pub fn record_upstream_open(&self, protocol: &str, outcome: &str) {
         self.upstream_open_total
             .get_or_create(&UpstreamOpenLabels {
-                protocol: protocol.to_string(),
-                outcome: outcome.to_string(),
+                protocol: crate::labels::bounded_label(protocol),
+                outcome: crate::labels::bounded_label(outcome),
             })
             .inc();
     }
@@ -98,8 +98,8 @@ impl MetricsRegistry {
     pub fn record_upstream_failure(&self, protocol: &str, reason: &str) {
         self.upstream_open_failures_total
             .get_or_create(&UpstreamFailureLabels {
-                protocol: protocol.to_string(),
-                reason: reason.to_string(),
+                protocol: crate::labels::bounded_label(protocol),
+                reason: crate::labels::bounded_label(reason),
             })
             .inc();
     }
@@ -107,9 +107,9 @@ impl MetricsRegistry {
     pub fn record_unsupported_transport(&self, protocol: &str, transport: &str, reason: &str) {
         self.unsupported_transport_total
             .get_or_create(&UnsupportedTransportLabels {
-                protocol: protocol.to_string(),
-                transport: transport.to_string(),
-                reason: reason.to_string(),
+                protocol: crate::labels::bounded_label(protocol),
+                transport: crate::labels::bounded_label(transport),
+                reason: crate::labels::bounded_label(reason),
             })
             .inc();
     }

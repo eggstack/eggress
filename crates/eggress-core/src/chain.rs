@@ -454,9 +454,11 @@ fn find_handler<'a>(
     handlers: &'a [Box<dyn HopHandler>],
     protocols: &[ProtocolSpec],
 ) -> Result<&'a dyn HopHandler, ChainError> {
-    for handler in handlers {
-        if protocols.contains(&handler.protocol()) {
-            return Ok(handler.as_ref());
+    for protocol in protocols {
+        for handler in handlers {
+            if &handler.protocol() == protocol {
+                return Ok(handler.as_ref());
+            }
         }
     }
     Err(ChainError::InvalidChain {

@@ -504,6 +504,7 @@ impl OutboundConnector {
                         hop: hop.clone(),
                         connect_timeout: OUTBOUND_UDP_CONNECT_TIMEOUT,
                         udp_bind,
+                        control_timeout: None,
                     },
                     Some(target_socks.clone()),
                 )

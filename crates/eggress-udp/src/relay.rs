@@ -59,11 +59,19 @@ fn reap_idle_flows(
             match &entry.flow {
                 UdpFlowKind::Socks5Upstream(ref u) => {
                     u.control_cancel.cancel();
+                    u.control_task.abort();
                 }
                 #[cfg(feature = "shadowsocks")]
                 UdpFlowKind::ShadowsocksUpstream(_) => {}
                 UdpFlowKind::Direct(_) => {}
-                UdpFlowKind::Composed(_) => {}
+                UdpFlowKind::Composed(ref c) => {
+                    for cancel in &c.control_cancels {
+                        cancel.cancel();
+                    }
+                    for task in &c.control_tasks {
+                        task.abort();
+                    }
+                }
             }
             metrics.record_target_flow_timeout();
         }
@@ -160,6 +168,7 @@ async fn handle_client_datagram(
                             hop: hop.clone(),
                             connect_timeout: config.upstream_connect_timeout,
                             udp_bind: config.upstream_udp_bind,
+                            control_timeout: Some(config.limits.target_idle_timeout),
                         };
 
                         match open_socks5_udp_upstream(upstream_config, None).await {
@@ -542,13 +551,13 @@ async fn handle_client_datagram(
             let target_idle_timeout = config.limits.target_idle_timeout;
 
             let recv_task = tokio::spawn(async move {
-                let mut recv_buf = [0u8; 65535];
+                let mut recv_buf = Box::new([0u8; 65535]);
                 loop {
                     let result = tokio::select! {
                         _ = flow_cancel.cancelled() => break,
                         result = tokio::time::timeout(
                         target_idle_timeout,
-                            flow_socket.recv(&mut recv_buf),
+                            flow_socket.recv(&mut recv_buf[..]),
                         ) => result,
                     };
                     let Ok(Ok(n)) = result else { break };
@@ -714,11 +723,19 @@ pub async fn udp_relay_loop(
         match &entry.flow {
             UdpFlowKind::Socks5Upstream(ref u) => {
                 u.control_cancel.cancel();
+                u.control_task.abort();
             }
             #[cfg(feature = "shadowsocks")]
             UdpFlowKind::ShadowsocksUpstream(_) => {}
             UdpFlowKind::Direct(_) => {}
-            UdpFlowKind::Composed(_) => {}
+            UdpFlowKind::Composed(ref c) => {
+                for cancel in &c.control_cancels {
+                    cancel.cancel();
+                }
+                for task in &c.control_tasks {
+                    task.abort();
+                }
+            }
         }
         config.udp_metrics.record_target_flow_closed();
     }

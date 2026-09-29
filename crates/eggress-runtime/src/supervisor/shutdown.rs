@@ -67,7 +67,12 @@ pub(crate) async fn shutdown_ordered(plan: ShutdownPlan) -> Result<(), RuntimeEr
     // 6. Wait for listener accept loops to exit so they cannot hand
     //    new connections to the connection tracker.
     plan.tasks.close();
-    plan.tasks.wait().await;
+    if tokio::time::timeout(plan.shutdown_grace, plan.tasks.wait())
+        .await
+        .is_err()
+    {
+        tracing::warn!("listener task drain timed out");
+    }
 
     // 7. Drain active connections within the grace period; force-cancel
     //    afterwards. Admin stays up through this window so operators
@@ -91,7 +96,12 @@ pub(crate) async fn shutdown_ordered(plan: ShutdownPlan) -> Result<(), RuntimeEr
 
     // 8. Wait for connection tasks (either drained naturally or force-cancelled)
     plan.connection_tasks.close();
-    plan.connection_tasks.wait().await;
+    if tokio::time::timeout(plan.shutdown_grace, plan.connection_tasks.wait())
+        .await
+        .is_err()
+    {
+        tracing::warn!("connection task drain timed out");
+    }
 
     #[cfg(feature = "ssh")]
     plan.ssh_sessions.shutdown().await;

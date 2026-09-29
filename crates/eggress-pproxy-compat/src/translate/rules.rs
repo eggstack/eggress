@@ -7,6 +7,26 @@ use super::model::MatchToml;
 use crate::error::CompatError;
 use crate::warnings::TranslationOutput;
 
+/// Fail closed on parent-directory traversal so `?rules_file=` cannot escape
+/// its intended directory via `..`. Absolute paths stay allowed (rule files
+/// legitimately live in `/tmp`, `/etc/eggress`, ...); traversal is not.
+pub(crate) fn validate_rule_file_path(path: &str) -> Result<(), CompatError> {
+    if path.is_empty() || path.contains('\0') {
+        return Err(CompatError::ConfigValidation {
+            message: format!("rules_file path is invalid: '{path}'"),
+        });
+    }
+    if std::path::Path::new(path)
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err(CompatError::ConfigValidation {
+            message: format!("rules_file path escapes its directory via '..': '{path}'"),
+        });
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct TcpCompatRoute {
     pub(crate) declaration_index: usize,
@@ -38,6 +58,7 @@ pub(crate) fn load_pproxy_rule_file(
     path: &str,
     output: &mut TranslationOutput,
 ) -> Result<Vec<String>, CompatError> {
+    validate_rule_file_path(path)?;
     let rule_file =
         crate::regex_compat::PproxyRuleFile::load(std::path::Path::new(path)).map_err(|error| {
             CompatError::ConfigValidation {

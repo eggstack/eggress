@@ -1,4 +1,6 @@
+use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
+use std::sync::{Mutex, OnceLock};
 
 use tokio::io::AsyncWriteExt;
 
@@ -11,6 +13,46 @@ use eggress_core::{BoxStream, TargetAddr};
 
 /// Maximum size for a single Shadowsocks data frame (payload length).
 pub const MAX_FRAME_SIZE: usize = 16 * 1024 - 1;
+
+/// Bound for the inbound TCP salt replay window.
+///
+/// Duplicate salts on the accept path indicate replayed handshakes; the
+/// window is a bounded FIFO (no LRU dependency) so memory stays capped
+/// while recent salts are still detected.
+const MAX_SEEN_TCP_SALTS: usize = 4096;
+
+struct SaltReplayWindow {
+    seen: HashSet<Vec<u8>>,
+    order: VecDeque<Vec<u8>>,
+}
+
+fn tcp_salt_replay_window() -> &'static Mutex<SaltReplayWindow> {
+    static WINDOW: OnceLock<Mutex<SaltReplayWindow>> = OnceLock::new();
+    WINDOW.get_or_init(|| {
+        Mutex::new(SaltReplayWindow {
+            seen: HashSet::new(),
+            order: VecDeque::new(),
+        })
+    })
+}
+
+/// Record `salt`, returning `true` when it was already seen (replay).
+fn check_tcp_salt_replay(salt: &[u8]) -> bool {
+    let mut window = tcp_salt_replay_window()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if window.seen.contains(salt) {
+        return true;
+    }
+    if window.order.len() >= MAX_SEEN_TCP_SALTS {
+        if let Some(oldest) = window.order.pop_front() {
+            window.seen.remove(&oldest);
+        }
+    }
+    window.seen.insert(salt.to_vec());
+    window.order.push_back(salt.to_vec());
+    false
+}
 
 /// Send a Shadowsocks TCP CONNECT request and return the upgraded stream.
 ///
@@ -83,6 +125,13 @@ pub async fn shadowsocks_accept(
         .read_exact(&mut salt_buf[..method.salt_size()])
         .await?;
     let salt = &salt_buf[..method.salt_size()];
+
+    if check_tcp_salt_replay(salt) {
+        if let Some(m) = metrics.as_ref() {
+            m.record_tcp_decrypt_failure();
+        }
+        return Err(ShadowsocksError::DecryptionFailed("replayed salt".into()));
+    }
 
     let subkey = method.derive_key(password.as_bytes(), salt)?;
     let tag_size = method.tag_size();

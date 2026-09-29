@@ -61,6 +61,10 @@ pub struct QuicClientConfig {
     pub max_concurrent_streams: u32,
     /// TLS ALPN values. HTTP/3 callers set this to `h3`; raw QUIC leaves it empty.
     pub alpn_protocols: Vec<Vec<u8>>,
+    /// Caller-supplied TLS policy. When present, ALPN is adapted by cloning
+    /// this config (never rebuilt from platform roots). Cannot combine with
+    /// `insecure=true`.
+    pub tls_override: Option<std::sync::Arc<rustls::ClientConfig>>,
 }
 
 impl Default for QuicClientConfig {
@@ -71,6 +75,7 @@ impl Default for QuicClientConfig {
             idle_timeout: DEFAULT_IDLE_TIMEOUT,
             max_concurrent_streams: DEFAULT_MAX_STREAMS,
             alpn_protocols: Vec::new(),
+            tls_override: None,
         }
     }
 }
@@ -231,7 +236,18 @@ impl QuicClient {
             .ok_or_else(|| QuicError::Resolve("no addresses found".to_string()))?;
         let mut endpoint = Endpoint::client("0.0.0.0:0".parse().expect("valid ephemeral address"))
             .map_err(|e| QuicError::Endpoint(e.to_string()))?;
-        let client_config = if config.insecure {
+        if config.insecure && config.tls_override.is_some() {
+            return Err(QuicError::Tls(
+                "tls_override cannot be combined with insecure=true".to_string(),
+            ));
+        }
+        let client_config = if let Some(ovr) = config.tls_override.clone() {
+            let mut tls = (*ovr).clone();
+            tls.alpn_protocols = config.alpn_protocols.clone();
+            let crypto = QuinnTlsClientConfig::try_from(Arc::new(tls))
+                .map_err(|e| QuicError::Tls(e.to_string()))?;
+            ClientConfig::new(Arc::new(crypto))
+        } else if config.insecure {
             #[cfg(feature = "insecure-quic")]
             {
                 let mut tls = rustls::ClientConfig::builder()

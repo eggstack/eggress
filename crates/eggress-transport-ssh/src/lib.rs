@@ -56,6 +56,10 @@ impl std::fmt::Debug for SshAuth {
 }
 
 /// A redacted key for a reusable SSH session.
+///
+/// `policy` scopes pooled sessions to one host-key verification policy so
+/// a session authenticated under one policy (e.g. insecure compatibility)
+/// can never be reused by a caller expecting another.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct SshSessionKey {
     pub host: String,
@@ -63,6 +67,7 @@ pub struct SshSessionKey {
     pub username: String,
     pub auth: SshAuth,
     pub hop_index: usize,
+    pub policy: SshHostKeyPolicy,
 }
 
 impl std::fmt::Debug for SshSessionKey {
@@ -73,6 +78,7 @@ impl std::fmt::Debug for SshSessionKey {
             .field("username", &self.username)
             .field("auth", &self.auth)
             .field("hop_index", &self.hop_index)
+            .field("policy", &self.policy)
             .finish()
     }
 }
@@ -110,7 +116,7 @@ impl CompatClient {
 }
 
 /// Policy used to verify the SSH server's host key.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum SshHostKeyPolicy {
     /// Verify against the user's default OpenSSH known_hosts file.
     KnownHosts,
@@ -260,7 +266,16 @@ impl SshSessionCache {
         }
     }
 
+    /// Host-key verification policy scoping this cache's pooled sessions.
+    pub fn policy(&self) -> SshHostKeyPolicy {
+        self.host_key_policy.clone()
+    }
+
     /// Construct the explicitly opted-in pproxy compatibility cache.
+    ///
+    /// Only available with the `pproxy-compat` feature so the insecure
+    /// host-key policy cannot be selected accidentally.
+    #[cfg(feature = "pproxy-compat")]
     pub fn new_compatibility() -> Self {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),

@@ -77,6 +77,12 @@ pub struct Socks5UdpUpstreamConfig {
     /// ephemeral bind for the relay family is used so IPv6 relays do
     /// not fail with a cryptic address-family OS error.
     pub udp_bind: SocketAddr,
+    /// Bound for the UDP-associate control TCP hold.
+    ///
+    /// `None` preserves the historical 300s default; callers with an idle
+    /// policy (e.g. the relay's `target_idle_timeout`) pass `Some(timeout)`
+    /// so the control task cannot outlive flow reaping.
+    pub control_timeout: Option<Duration>,
 }
 
 /// Wildcard ephemeral bind matching the relay address family.
@@ -198,9 +204,10 @@ async fn open_socks5_udp_upstream_inner(
 
     let control_cancel = CancellationToken::new();
     let control_task_cancel = control_cancel.clone();
+    let control_timeout = config.control_timeout.unwrap_or(Duration::from_secs(300));
     let control_task = tokio::spawn(async move {
         let mut buf = [0u8; 1];
-        let _ = tokio::time::timeout(Duration::from_secs(300), stream.read_exact(&mut buf)).await;
+        let _ = tokio::time::timeout(control_timeout, stream.read_exact(&mut buf)).await;
         control_task_cancel.cancel();
     });
 

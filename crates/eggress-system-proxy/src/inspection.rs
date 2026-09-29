@@ -29,15 +29,16 @@ pub struct SystemProxySettings {
 
 impl fmt::Display for SystemProxySettings {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use crate::redaction::redact_proxy_uri;
         write!(f, "System proxy settings (source: {})", self.source)?;
         if let Some(ref http) = self.http_proxy {
-            write!(f, "\n  HTTP proxy: {http}")?;
+            write!(f, "\n  HTTP proxy: {}", redact_proxy_uri(http))?;
         }
         if let Some(ref https) = self.https_proxy {
-            write!(f, "\n  HTTPS proxy: {https}")?;
+            write!(f, "\n  HTTPS proxy: {}", redact_proxy_uri(https))?;
         }
         if let Some(ref socks) = self.socks_proxy {
-            write!(f, "\n  SOCKS proxy: {socks}")?;
+            write!(f, "\n  SOCKS proxy: {}", redact_proxy_uri(socks))?;
         }
         if let Some(ref no_proxy) = self.no_proxy {
             write!(f, "\n  No proxy: {no_proxy}")?;
@@ -70,7 +71,7 @@ impl fmt::Display for InspectionResult {
         for cap in &self.capabilities {
             writeln!(f, "  {cap}")?;
         }
-        if let Some(ref settings) = self.settings {
+        if let Some(ref settings) = self.redacted_settings.as_ref().or(self.settings.as_ref()) {
             writeln!(f, "\nSettings:")?;
             writeln!(f, "{settings}")?;
         }
@@ -243,7 +244,8 @@ fn generate_dry_run_commands(
             settings.https_proxy.as_deref(),
             settings.socks_proxy.as_deref(),
             settings.no_proxy.as_deref(),
-        ),
+        )
+        .unwrap_or_default(),
         _ => Vec::new(),
     }
 }

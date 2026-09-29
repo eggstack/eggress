@@ -59,12 +59,16 @@ pub fn inspect_gnome_proxy(runner: &dyn CommandRunner) -> Result<SystemProxySett
 }
 
 /// Generate `gsettings` commands to apply GNOME proxy settings (dry-run).
+///
+/// Fails closed when a supplied proxy address cannot be parsed (bare host,
+/// missing port, unbracketed IPv6): returns `Err` instead of emitting a
+/// bare `mode manual` that leaves the proxy unset while reporting success.
 pub fn generate_gnome_apply_commands(
     http_proxy: Option<&str>,
     https_proxy: Option<&str>,
     socks_proxy: Option<&str>,
     no_proxy: Option<&str>,
-) -> Vec<Command> {
+) -> Result<Vec<Command>, String> {
     let mut commands = Vec::new();
 
     let has_any = http_proxy.is_some() || https_proxy.is_some() || socks_proxy.is_some();
@@ -81,72 +85,72 @@ pub fn generate_gnome_apply_commands(
     }
 
     if let Some(http) = http_proxy {
-        if let Some((host, port)) = parse_proxy_address(http) {
-            commands.push(Command::new(
-                "gsettings",
-                vec![
-                    "set".into(),
-                    "org.gnome.system.proxy.http".into(),
-                    "host".into(),
-                    host,
-                ],
-            ));
-            commands.push(Command::new(
-                "gsettings",
-                vec![
-                    "set".into(),
-                    "org.gnome.system.proxy.http".into(),
-                    "port".into(),
-                    port.to_string(),
-                ],
-            ));
-        }
+        let (host, port) = parse_proxy_address(http)
+            .ok_or_else(|| format!("invalid GNOME http proxy address: '{http}'"))?;
+        commands.push(Command::new(
+            "gsettings",
+            vec![
+                "set".into(),
+                "org.gnome.system.proxy.http".into(),
+                "host".into(),
+                host,
+            ],
+        ));
+        commands.push(Command::new(
+            "gsettings",
+            vec![
+                "set".into(),
+                "org.gnome.system.proxy.http".into(),
+                "port".into(),
+                port.to_string(),
+            ],
+        ));
     }
 
     if let Some(https) = https_proxy {
-        if let Some((host, port)) = parse_proxy_address(https) {
-            commands.push(Command::new(
-                "gsettings",
-                vec![
-                    "set".into(),
-                    "org.gnome.system.proxy.https".into(),
-                    "host".into(),
-                    host,
-                ],
-            ));
-            commands.push(Command::new(
-                "gsettings",
-                vec![
-                    "set".into(),
-                    "org.gnome.system.proxy.https".into(),
-                    "port".into(),
-                    port.to_string(),
-                ],
-            ));
-        }
+        let (host, port) = parse_proxy_address(https)
+            .ok_or_else(|| format!("invalid GNOME https proxy address: '{https}'"))?;
+        commands.push(Command::new(
+            "gsettings",
+            vec![
+                "set".into(),
+                "org.gnome.system.proxy.https".into(),
+                "host".into(),
+                host,
+            ],
+        ));
+        commands.push(Command::new(
+            "gsettings",
+            vec![
+                "set".into(),
+                "org.gnome.system.proxy.https".into(),
+                "port".into(),
+                port.to_string(),
+            ],
+        ));
     }
 
     if let Some(socks) = socks_proxy {
-        if let Some((host, port)) = parse_proxy_address(socks) {
-            commands.push(Command::new(
-                "gsettings",
-                vec![
-                    "set".into(),
-                    "org.gnome.system.proxy.socks".into(),
-                    "host".into(),
-                    host,
-                ],
-            ));
-            commands.push(Command::new(
-                "gsettings",
-                vec![
-                    "set".into(),
-                    "org.gnome.system.proxy.socks".into(),
-                    "port".into(),
-                    port.to_string(),
-                ],
-            ));
-        }
+        let (host, port) = parse_proxy_address(socks)
+            .ok_or_else(|| format!("invalid GNOME socks proxy address: '{socks}'"))?;
+        commands.push(Command::new(
+            "gsettings",
+            vec![
+                "set".into(),
+                "org.gnome.system.proxy.socks".into(),
+                "host".into(),
+                host,
+            ],
+        ));
+        commands.push(Command::new(
+            "gsettings",
+            vec![
+                "set".into(),
+                "org.gnome.system.proxy.socks".into(),
+                "port".into(),
+                port.to_string(),
+            ],
+        ));
     }
 
     if let Some(no_proxy) = no_proxy {
@@ -169,7 +173,7 @@ pub fn generate_gnome_apply_commands(
         ));
     }
 
-    commands
+    Ok(commands)
 }
 
 /// Generate `gsettings` commands to disable GNOME proxy (dry-run).
@@ -404,7 +408,8 @@ mod tests {
             Some("proxy:8443"),
             None,
             Some("localhost"),
-        );
+        )
+        .unwrap();
         assert!(commands.iter().any(|c| {
             let s = c.to_string();
             s.contains("mode") && s.contains("manual")
@@ -423,6 +428,12 @@ mod tests {
         let commands = generate_gnome_disable_commands();
         assert_eq!(commands.len(), 1);
         assert!(commands[0].to_string().contains("none"));
+    }
+
+    #[test]
+    fn generate_gnome_apply_rejects_bare_host() {
+        assert!(generate_gnome_apply_commands(Some("proxy"), None, None, None).is_err());
+        assert!(generate_gnome_apply_commands(Some("proxy:notaport"), None, None, None).is_err());
     }
 
     #[test]

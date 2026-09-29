@@ -262,11 +262,39 @@ mod tests {
 
     #[tokio::test]
     async fn pac_endpoint_returns_404_when_not_configured() {
+        // With pac=None the PAC branch must not intercept: `/pac` falls
+        // through to static routes and then the generic 404.
         let state = test_state_no_pac();
         let addr = start_server(state).await;
         let (status, body) = http_get(&addr, "/pac").await;
         assert_eq!(status, 404);
-        assert!(body.contains("pac not configured"));
+        assert_eq!(body, "not found");
+    }
+
+    #[tokio::test]
+    async fn pac_path_static_route_served_when_pac_unconfigured() {
+        // B42 pin: a static route at `/pac` stays reachable when pac=None.
+        let router = Arc::new(eggress_routing::Router::new(
+            vec![],
+            eggress_routing::RouteActionSpec::Direct,
+        ));
+        let snap = AdminSnapshot {
+            generation: 0,
+            router,
+            pac: None,
+            static_routes: vec![StaticRoute {
+                path: "/pac".to_string(),
+                content_type: "text/plain".to_string(),
+                body: "static pac placeholder".to_string(),
+            }],
+            listeners: Vec::new(),
+        };
+        let mut state = test_state_no_pac();
+        state.provider = Arc::new(StaticAdminSnapshot { snapshot: snap });
+        let addr = start_server(state).await;
+        let (status, body) = http_get(&addr, "/pac").await;
+        assert_eq!(status, 200);
+        assert_eq!(body, "static pac placeholder");
     }
 
     #[tokio::test]

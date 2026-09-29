@@ -1,3 +1,11 @@
+//! OpenSSH interop tests for the compatibility session cache.
+//!
+//! These tests require the `pproxy-compat` feature (they exercise the
+//! explicitly opted-in insecure-compatibility cache against a local fixture
+//! with no known_hosts entry) and skip at runtime when OpenSSH tools are
+//! genuinely unavailable.
+#![cfg(feature = "pproxy-compat")]
+
 use std::io;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -5,7 +13,9 @@ use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 use eggress_core::BoxStream;
-use eggress_transport_ssh::{SshAuth, SshSessionCache, SshSessionKey, SshTransportError};
+use eggress_transport_ssh::{
+    SshAuth, SshHostKeyPolicy, SshSessionCache, SshSessionKey, SshTransportError,
+};
 use tempfile::TempDir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -90,6 +100,7 @@ impl OpenSsh {
             username: self.user.clone(),
             auth: SshAuth::PrivateKey(self.private_key.display().to_string()),
             hop_index,
+            policy: SshHostKeyPolicy::InsecureCompatibility,
         }
     }
 
@@ -100,6 +111,7 @@ impl OpenSsh {
             username: self.user.clone(),
             auth: SshAuth::Password(password.to_string()),
             hop_index: 0,
+            policy: SshHostKeyPolicy::InsecureCompatibility,
         }
     }
 }

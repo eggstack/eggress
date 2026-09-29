@@ -95,8 +95,8 @@ pub async fn trojan_accept(
         .await
         .map_err(TrojanError::Io)?;
 
-    let received_hash = std::str::from_utf8(&hash_buf[..56])
-        .map_err(|_| TrojanError::Protocol("invalid hash encoding".into()))?;
+    let received_hash =
+        std::str::from_utf8(&hash_buf[..56]).map_err(|_| TrojanError::AuthFailed)?;
 
     use subtle::ConstantTimeEq;
     let hash_matches: bool = received_hash

@@ -14,7 +14,7 @@ readme = "README.md"
 default = []
 
 toml = ["dep:eggress-config"]
-pproxy-compat = ["dep:eggress-pproxy-compat"]
+pproxy-compat = ["dep:eggress-pproxy-compat", "eggress-transport-ssh?/pproxy-compat"]
 udp = ["dep:eggress-udp"]
 
 extended = [

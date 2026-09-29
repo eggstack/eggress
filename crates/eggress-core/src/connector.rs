@@ -1,6 +1,10 @@
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
+use std::time::Duration;
 
 use tokio::net::TcpStream;
+
+/// Default bound for standalone DNS resolution and TCP connect.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 use crate::{BoxStream, ConnectError, TargetAddr, TargetHost};
 
@@ -208,16 +212,32 @@ async fn connect_to_addrs(
                     .unwrap_or(local.into()),
                 local => local,
             };
-            let socket = if local.is_ipv4() {
+            let socket = match if addr.is_ipv4() {
                 tokio::net::TcpSocket::new_v4()
             } else {
                 tokio::net::TcpSocket::new_v6()
+            } {
+                Ok(socket) => socket,
+                Err(e) => {
+                    last_error = Some(ConnectError::Io(e));
+                    continue;
+                }
+            };
+            if let Err(e) = socket.bind(local) {
+                last_error = Some(ConnectError::Io(e));
+                continue;
             }
-            .map_err(ConnectError::Io)?;
-            socket.bind(local).map_err(ConnectError::Io)?;
-            socket.connect(addr).await.map_err(ConnectError::Io)
+            match tokio::time::timeout(CONNECT_TIMEOUT, socket.connect(addr)).await {
+                Ok(Ok(stream)) => Ok(stream),
+                Ok(Err(e)) => Err(ConnectError::Io(e)),
+                Err(_) => Err(ConnectError::Timeout),
+            }
         } else {
-            TcpStream::connect(addr).await.map_err(ConnectError::Io)
+            match tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(addr)).await {
+                Ok(Ok(stream)) => Ok(stream),
+                Ok(Err(e)) => Err(ConnectError::Io(e)),
+                Err(_) => Err(ConnectError::Timeout),
+            }
         };
         match result {
             Ok(stream) => {
@@ -247,10 +267,14 @@ async fn resolve_target(
         }
         TargetHost::Domain(domain) => {
             let lookup = format!("{}:{}", domain, target.port);
-            let addrs: Vec<_> = tokio::net::lookup_host(&lookup)
-                .await
-                .map_err(|e| ConnectError::DnsResolution(e.to_string()))?
-                .collect();
+            let resolved =
+                match tokio::time::timeout(CONNECT_TIMEOUT, tokio::net::lookup_host(&lookup)).await
+                {
+                    Ok(Ok(iter)) => iter,
+                    Ok(Err(e)) => return Err(ConnectError::DnsResolution(e.to_string())),
+                    Err(_) => return Err(ConnectError::Timeout),
+                };
+            let addrs: Vec<_> = resolved.collect();
             if addrs.is_empty() {
                 return Err(ConnectError::DnsResolution(
                     "no addresses found".to_string(),

@@ -218,7 +218,8 @@ pub fn execute(prepared: PreparedRun, diag_prefix: &str) -> i32 {
             }
         };
         if rt_config.upstreams.is_empty() {
-            return EXIT_SUCCESS;
+            eprintln!("{diag_prefix}error: no upstreams to test");
+            return EXIT_CONFIG_VALIDATION;
         }
         return run_upstream_test(&rt_config, Some(&target), timeout, false);
     }

@@ -359,12 +359,27 @@ where
 }
 
 fn parse_basic_auth(value: &str) -> Option<(String, Zeroizing<String>)> {
-    let encoded = value.strip_prefix("Basic ")?;
+    // Predicate mirrors H3 `parse_basic_authorization`: trim framing
+    // whitespace, require the case-sensitive `Basic ` scheme, cap field
+    // lengths at 4096, and reject control bytes.
+    let encoded = value.trim().strip_prefix("Basic ")?;
+    let encoded = encoded.trim();
+    // Bound the Base64 decode allocation: 4096-char fields encode to at
+    // most ~11 KiB, so anything larger cannot be valid.
+    if encoded.is_empty() || encoded.len() > 12_288 {
+        return None;
+    }
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(encoded)
         .ok()?;
     let decoded = Zeroizing::new(String::from_utf8(decoded).ok()?);
     let (user, password) = decoded.split_once(':')?;
+    if user.contains(['\r', '\n', '\0', '\x7f']) || password.contains(['\r', '\n', '\0', '\x7f']) {
+        return None;
+    }
+    if user.len() > 4096 || password.len() > 4096 {
+        return None;
+    }
     Some((user.to_string(), Zeroizing::new(password.to_string())))
 }
 

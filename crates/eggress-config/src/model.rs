@@ -277,7 +277,7 @@ pub struct H2UpstreamConfig {
     pub max_header_list_size: Option<u32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UpstreamConfig {
     pub id: String,
@@ -286,6 +286,17 @@ pub struct UpstreamConfig {
     pub health: Option<HealthConfigToml>,
     #[serde(default)]
     pub h2: Option<H2UpstreamConfig>,
+}
+
+impl std::fmt::Debug for UpstreamConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UpstreamConfig")
+            .field("id", &self.id)
+            .field("uri", &Redacted)
+            .field("health", &self.health)
+            .field("h2", &self.h2)
+            .finish()
+    }
 }
 
 #[derive(Debug, Deserialize)]

@@ -6,22 +6,41 @@ from eggress._asyncio import wrap_blocking_call
 from enum import Enum
 from typing import Any, Optional, Sequence
 
-from eggress._eggress import (
-    EggressError,
-    ConnectionError as _NativeConnectionError,
-    ConnectionClosedError as _NativeConnectionClosedError,
-    TimeoutError as _NativeTimeoutError,
-    DnsError as _NativeDnsError,
-    AuthError as _NativeAuthError,
-    TlsError as _NativeTlsError,
-    UnsupportedFeatureError,
-    PyConnection as _PyConnection,
-    ConnectionCancelledError as _ConnectionCancelledError,
-    UseAfterCloseError as _UseAfterCloseError,
-    UdpAssociationError as _UdpAssociationError,
-    UnsupportedCompositionError as _NativeUnsupportedCompositionError,
-    LoopMismatchError as _NativeLoopMismatchError,
-)
+try:
+    from eggress._eggress import (
+        EggressError,
+        ConnectionError as _NativeConnectionError,
+        ConnectionClosedError as _NativeConnectionClosedError,
+        TimeoutError as _NativeTimeoutError,
+        DnsError as _NativeDnsError,
+        AuthError as _NativeAuthError,
+        TlsError as _NativeTlsError,
+        UnsupportedFeatureError,
+        PyConnection as _PyConnection,
+        ConnectionCancelledError as _ConnectionCancelledError,
+        UseAfterCloseError as _UseAfterCloseError,
+        UdpAssociationError as _UdpAssociationError,
+        UnsupportedCompositionError as _NativeUnsupportedCompositionError,
+        LoopMismatchError as _NativeLoopMismatchError,
+    )
+
+    _HAS_NATIVE_CONNECTION = True
+except ImportError:
+    from eggress import EggressError, UnsupportedFeatureError
+
+    _NativeConnectionError = EggressError  # type: ignore[no-redef]
+    _NativeConnectionClosedError = EggressError  # type: ignore[no-redef]
+    _NativeTimeoutError = EggressError  # type: ignore[no-redef]
+    _NativeDnsError = EggressError  # type: ignore[no-redef]
+    _NativeAuthError = EggressError  # type: ignore[no-redef]
+    _NativeTlsError = EggressError  # type: ignore[no-redef]
+    _NativeUnsupportedCompositionError = EggressError  # type: ignore[no-redef]
+    _NativeLoopMismatchError = EggressError  # type: ignore[no-redef]
+    _ConnectionCancelledError = EggressError  # type: ignore[no-redef]
+    _UseAfterCloseError = EggressError  # type: ignore[no-redef]
+    _UdpAssociationError = EggressError  # type: ignore[no-redef]
+    _PyConnection = None  # type: ignore[assignment]
+    _HAS_NATIVE_CONNECTION = False
 
 
 class ConnectionState(str, Enum):

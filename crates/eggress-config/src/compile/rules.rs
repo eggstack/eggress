@@ -410,6 +410,21 @@ pub(crate) fn compile_rules(
                 "rules_file routes all rules to a single group; multiple groups are not supported with rules_file — use explicit [[rules]] instead",
             ));
         }
+        if rules_file_path.is_empty() || rules_file_path.contains('\0') {
+            return Err(ConfigError::validation(
+                "rules_file",
+                &format!("rules_file path is invalid: '{rules_file_path}'"),
+            ));
+        }
+        if std::path::Path::new(rules_file_path)
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            return Err(ConfigError::validation(
+                "rules_file",
+                &format!("rules_file path escapes its directory via '..': '{rules_file_path}'"),
+            ));
+        }
         let content = crate::file::load_rules_file(rules_file_path).map_err(|e| {
             ConfigError::validation(
                 "rules_file",

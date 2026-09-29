@@ -110,7 +110,7 @@ impl AsyncRead for ReplayStream {
             // stream via a temporary buffer, then copy into our internal buffer.
             if self.buffer.len() >= self.max_buffer {
                 return Poll::Ready(Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
+                    io::ErrorKind::QuotaExceeded,
                     "sniff buffer full",
                 )));
             }

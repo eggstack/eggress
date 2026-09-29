@@ -88,10 +88,16 @@ impl ProtocolDispatcher {
 
                 // Read more data from the stream
                 let to_read = (self.max_sniff - total_read).min(read_buf.len());
-                let n = replay
-                    .read(&mut read_buf[..to_read])
-                    .await
-                    .map_err(DispatchError::Io)?;
+                let n = replay.read(&mut read_buf[..to_read]).await.map_err(|e| {
+                    // The replay sniffer reports a full sniff buffer as
+                    // `QuotaExceeded` ("sniff buffer full"); surface it as
+                    // `BufferOverflow` so overflow handling/metrics apply.
+                    if e.kind() == std::io::ErrorKind::QuotaExceeded {
+                        DispatchError::BufferOverflow(self.max_sniff)
+                    } else {
+                        DispatchError::Io(e)
+                    }
+                })?;
 
                 if n == 0 {
                     // Stream closed before we could determine the protocol.
@@ -101,7 +107,11 @@ impl ProtocolDispatcher {
                 total_read += n;
                 let prefix = &replay.buffer()[..total_read];
 
-                // Try each detector in order
+                // Try each detector in registration order: the first ordered
+                // `Match` wins regardless of `confidence` (deterministic
+                // priority, not max-confidence). `NeedMore` keeps the
+                // smallest `minimum` so every detector gets another chance
+                // as soon as the least-demanding one can decide.
                 let mut need_more_min = None;
                 for detector in &self.detectors {
                     match detector.detect(prefix) {

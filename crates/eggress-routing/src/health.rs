@@ -169,7 +169,17 @@ impl HealthCell {
         snap.state = match snap.state {
             HealthState::Disabled => HealthState::Disabled,
             HealthState::Unhealthy => HealthState::Unhealthy,
-            HealthState::Recovering => HealthState::Unhealthy,
+            HealthState::Recovering => {
+                // Symmetric with Healthy/Suspect: require the configured
+                // consecutive-failure threshold before flapping back to
+                // Unhealthy, so a single failure cannot mask a recovering
+                // upstream.
+                if snap.consecutive_failures >= config.failures_to_unhealthy {
+                    HealthState::Unhealthy
+                } else {
+                    HealthState::Recovering
+                }
+            }
             HealthState::Healthy => {
                 if snap.consecutive_failures >= config.failures_to_unhealthy {
                     HealthState::Unhealthy
@@ -240,6 +250,9 @@ pub fn is_eligible(upstream: &UpstreamRuntime) -> bool {
     if !upstream.is_enabled() {
         return false;
     }
+    // Suspect|Recovering stay eligible: existing routing tests require
+    // Suspect to route, and flapping is contained by the symmetric
+    // consecutive-failure threshold in `observe_failure` instead.
     matches!(
         upstream.health.state(),
         HealthState::Unknown
@@ -476,6 +489,12 @@ mod tests {
     fn recovering_to_unhealthy_on_failure() {
         let config = HealthConfig::default();
         let cell = HealthCell::new(HealthState::Recovering);
+        // Symmetric threshold: a single failure stays Recovering; only
+        // `failures_to_unhealthy` consecutive failures flap to Unhealthy.
+        cell.observe_failure(None, &config);
+        assert_eq!(cell.state(), HealthState::Recovering);
+        cell.observe_failure(None, &config);
+        assert_eq!(cell.state(), HealthState::Recovering);
         cell.observe_failure(None, &config);
         assert_eq!(cell.state(), HealthState::Unhealthy);
     }
@@ -539,8 +558,9 @@ mod tests {
         let cell = HealthCell::new(HealthState::Recovering);
         cell.observe_success(Duration::from_millis(10), &config);
         assert_eq!(cell.state(), HealthState::Recovering);
+        // Single failure no longer flaps straight to Unhealthy.
         cell.observe_failure(None, &config);
-        assert_eq!(cell.state(), HealthState::Unhealthy);
+        assert_eq!(cell.state(), HealthState::Recovering);
     }
 
     #[test]

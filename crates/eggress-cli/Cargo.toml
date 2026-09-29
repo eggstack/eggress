@@ -32,7 +32,11 @@ quic = [
 ]
 insecure-quic = ["eggress-runtime/insecure-quic", "eggress-transport-quic/insecure-quic"]
 pproxy-compat = ["dep:eggress-pproxy-compat"]
-ssh = ["eggress-runtime/ssh", "eggress-pproxy-compat/ssh"]
+ssh = [
+    "eggress-runtime/ssh",
+    "eggress-runtime/pproxy-compat",
+    "eggress-pproxy-compat/ssh",
+]
 
 [[bin]]
 name = "eggress"

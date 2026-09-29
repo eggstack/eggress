@@ -380,13 +380,12 @@ impl HopHandler for TrojanHopHandler {
             })?;
 
             let chosen = if insecure {
-                if let Some(ovr) = tls_override.clone() {
-                    // Global override is already insecure in tests that set it;
-                    // reuse it for per-hop insecure when available.
-                    Some(ovr)
-                } else {
-                    insecure_tls_config.clone().or(tls_config.clone())
+                if tls_override.is_some() {
+                    return Err(Box::<dyn std::error::Error + Send + Sync>::from(
+                        "caller-supplied tls_override cannot be combined with per-hop insecure=true",
+                    ));
                 }
+                insecure_tls_config.clone().or(tls_config.clone())
             } else {
                 tls_config.clone()
             };
@@ -495,6 +494,7 @@ impl HopHandler for SshHopHandler {
                 username: credentials.username,
                 auth,
                 hop_index,
+                policy: sessions.policy(),
             };
             // Format once (O-03); previously each branch formatted separately.
             let target_host = target.host.to_string();
@@ -545,7 +545,9 @@ pub(crate) struct H2HopHandler {
 }
 
 #[cfg(feature = "quic")]
-pub(crate) struct QuicHopHandler;
+pub(crate) struct QuicHopHandler {
+    pub(crate) tls_override: Option<std::sync::Arc<rustls::ClientConfig>>,
+}
 
 #[cfg(feature = "quic")]
 impl HopHandler for QuicHopHandler {
@@ -564,14 +566,22 @@ impl HopHandler for QuicHopHandler {
             .server_name
             .clone()
             .unwrap_or_else(|| endpoint.host.clone());
+        let insecure = hop.insecure;
+        let tls_override = self.tls_override.clone();
         Some(Box::pin(async move {
+            if insecure && tls_override.is_some() {
+                return Err(Box::<dyn std::error::Error + Send + Sync>::from(
+                    "caller-supplied tls_override cannot be combined with per-hop insecure=true",
+                ));
+            }
             let client = eggress_transport_quic::QuicClient::connect(
                 &endpoint.host,
                 endpoint.port,
                 eggress_transport_quic::QuicClientConfig {
                     server_name,
-                    insecure: hop.insecure,
+                    insecure,
                     alpn_protocols: Vec::new(),
+                    tls_override,
                     ..Default::default()
                 },
             )
@@ -595,7 +605,9 @@ impl HopHandler for QuicHopHandler {
 }
 
 #[cfg(feature = "quic")]
-pub(crate) struct H3HopHandler;
+pub(crate) struct H3HopHandler {
+    pub(crate) tls_override: Option<std::sync::Arc<rustls::ClientConfig>>,
+}
 
 #[cfg(feature = "quic")]
 impl HopHandler for H3HopHandler {
@@ -619,14 +631,22 @@ impl HopHandler for H3HopHandler {
             .credentials
             .as_ref()
             .map(|credentials| (credentials.username.clone(), credentials.password.clone()));
+        let insecure = hop.insecure;
+        let tls_override = self.tls_override.clone();
         Some(Box::pin(async move {
+            if insecure && tls_override.is_some() {
+                return Err(Box::<dyn std::error::Error + Send + Sync>::from(
+                    "caller-supplied tls_override cannot be combined with per-hop insecure=true",
+                ));
+            }
             let client = eggress_transport_quic::QuicClient::connect(
                 &endpoint.host,
                 endpoint.port,
                 eggress_transport_quic::QuicClientConfig {
                     server_name,
-                    insecure: hop.insecure,
+                    insecure,
                     alpn_protocols: vec![b"h3".to_vec()],
+                    tls_override,
                     ..Default::default()
                 },
             )

@@ -283,7 +283,7 @@ uri = "not-a-uri"
         let error = result.unwrap_err().to_string();
         assert_eq!(
             error,
-            "configuration error at config: configuration error at upstreams[0]: invalid upstream URI"
+            "configuration error at config: configuration error at upstreams[0]: invalid upstream URI: invalid URI format: hop 0: missing scheme (expected protocol://)"
         );
     }
 

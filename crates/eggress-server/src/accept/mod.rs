@@ -488,57 +488,46 @@ pub async fn accept_with_fixed_target_for_peer(
 
     // Try HTTP detection if HTTP is allowed
     if has_http {
-        // Read more bytes to detect the HTTP method
+        // Accumulate the prefix in 32B chunks until the detector can decide,
+        // bounded by a byte cap. The caller's handshake timeout bounds the
+        // total wait (see `serve_connection`).
         let mut prefix = vec![first_byte[0]];
-        let mut buf = [0u8; 32];
-        let n = stream
-            .read(&mut buf)
-            .await
-            .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
-        prefix.extend_from_slice(&buf[..n]);
-
-        match detect_http_method(&prefix) {
-            DetectResult::Match => {
-                tracing::trace!(
-                    "detected protocol: http (prefix={:?})",
-                    &prefix[..prefix.len().min(16)]
-                );
-                let stream: BoxStream = Box::new(PrefixedStream::new(prefix, stream));
-                return accept_http(stream, auth, peer_ip).await;
-            }
-            DetectResult::NeedMore => {
-                // Read more bytes
-                let mut more = [0u8; 32];
-                let n = stream
-                    .read(&mut more)
-                    .await
-                    .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
-                prefix.extend_from_slice(&more[..n]);
-                match detect_http_method(&prefix) {
-                    DetectResult::Match => {
-                        tracing::trace!(
-                            "detected protocol: http (prefix={:?})",
-                            &prefix[..prefix.len().min(16)]
-                        );
-                        let stream: BoxStream = Box::new(PrefixedStream::new(prefix, stream));
-                        return accept_http(stream, auth, peer_ip).await;
-                    }
-                    DetectResult::NoMatch => {
+        loop {
+            match detect_http_method(&prefix) {
+                DetectResult::Match => {
+                    tracing::trace!(
+                        "detected protocol: http (prefix={:?})",
+                        &prefix[..prefix.len().min(16)]
+                    );
+                    let stream: BoxStream = Box::new(PrefixedStream::new(prefix, stream));
+                    return accept_http(stream, auth, peer_ip).await;
+                }
+                DetectResult::NoMatch => {
+                    return Err(AcceptError::Protocol(
+                        "no matching protocol for listener".into(),
+                    ));
+                }
+                DetectResult::NeedMore => {
+                    if prefix.len() >= 512 {
                         return Err(AcceptError::Protocol(
                             "no matching protocol for listener".into(),
                         ));
                     }
-                    DetectResult::NeedMore => {
+                    let mut buf = [0u8; 32];
+                    let n = stream
+                        .read(&mut buf)
+                        .await
+                        .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
+                    if n == 0 {
                         return Err(AcceptError::Protocol(
                             "no matching protocol for listener".into(),
                         ));
+                    }
+                    prefix.extend_from_slice(&buf[..n]);
+                    if prefix.len() > 512 {
+                        prefix.truncate(512);
                     }
                 }
-            }
-            DetectResult::NoMatch => {
-                return Err(AcceptError::Protocol(
-                    "no matching protocol for listener".into(),
-                ));
             }
         }
     }

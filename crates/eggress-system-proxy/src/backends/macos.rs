@@ -28,9 +28,9 @@ pub fn inspect_macos_proxy(
 ) -> Result<SystemProxySettings, String> {
     let mut raw = std::collections::HashMap::new();
 
-    let http_proxy = get_macos_proxy_field(runner, service, "-getwebproxy", "Server")?;
-    let https_proxy = get_macos_proxy_field(runner, service, "-getsecurewebproxy", "Server")?;
-    let socks_proxy = get_macos_proxy_field(runner, service, "-getsocksfirewallproxy", "Server")?;
+    let http_proxy = get_macos_proxy_endpoint(runner, service, "-getwebproxy")?;
+    let https_proxy = get_macos_proxy_endpoint(runner, service, "-getsecurewebproxy")?;
+    let socks_proxy = get_macos_proxy_endpoint(runner, service, "-getsocksfirewallproxy")?;
     let no_proxy = get_macos_proxy_field(runner, service, "-getwebproxy", "BypassDomains")?;
 
     if let Some(ref v) = http_proxy {
@@ -83,6 +83,56 @@ fn get_macos_proxy_field(
     Ok(None)
 }
 
+fn get_macos_proxy_endpoint(
+    runner: &dyn CommandRunner,
+    service: &str,
+    flag: &str,
+) -> Result<Option<String>, String> {
+    let output = runner
+        .run("networksetup", &[flag, service])
+        .map_err(|e| format!("failed to run networksetup {flag}: {e}"))?;
+    if !output.status.success() {
+        return Ok(None);
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut server: Option<String> = None;
+    let mut port: Option<String> = None;
+    for line in stdout.lines() {
+        if let Some(pos) = line.find(':') {
+            let key = line[..pos].trim();
+            let value = line[pos + 1..].trim();
+            match key {
+                "Server" if !value.is_empty() => server = Some(value.to_string()),
+                "Port" if !value.is_empty() && value != "0" => port = Some(value.to_string()),
+                _ => {}
+            }
+        }
+    }
+    match (server, port) {
+        (Some(s), Some(p)) if !s.is_empty() => Ok(Some(format!("{s}:{p}"))),
+        (Some(s), None) if !s.is_empty() => Ok(Some(s)),
+        _ => Ok(None),
+    }
+}
+
+/// Split `host:port` into separate argv parts (`networksetup` wants host + port).
+fn split_host_port(addr: &str) -> (String, String) {
+    let stripped = addr.rsplit("://").next().unwrap_or(addr);
+    let stripped = stripped.strip_prefix('[').unwrap_or(stripped);
+    // Bracketed IPv6 `[::1]:8080`.
+    if let Some(end) = stripped.find(']') {
+        let host = stripped[..end].to_string();
+        let port = stripped[end + 1..].trim_start_matches(':').to_string();
+        return (host, port);
+    }
+    match stripped.rfind(':') {
+        Some(pos) if !stripped[pos + 1..].contains(':') => {
+            (stripped[..pos].to_string(), stripped[pos + 1..].to_string())
+        }
+        _ => (stripped.to_string(), String::new()),
+    }
+}
+
 /// Generate `networksetup` commands to apply proxy settings (dry-run).
 pub fn generate_macos_apply_commands(
     service: &str,
@@ -93,42 +143,68 @@ pub fn generate_macos_apply_commands(
 ) -> Vec<Command> {
     let mut commands = Vec::new();
     if let Some(http) = http_proxy {
+        let (host, port) = split_host_port(http);
         commands.push(Command::new(
             "networksetup",
             vec!["-setwebproxy".into(), service.into(), "on".into()],
         ));
-        commands.push(Command::new(
-            "networksetup",
-            vec!["-setwebproxyservers".into(), service.into(), http.into()],
-        ));
+        if port.is_empty() {
+            commands.push(Command::new(
+                "networksetup",
+                vec!["-setwebproxyservers".into(), service.into(), host],
+            ));
+        } else {
+            commands.push(Command::new(
+                "networksetup",
+                vec!["-setwebproxyservers".into(), service.into(), host, port],
+            ));
+        }
     }
     if let Some(https) = https_proxy {
+        let (host, port) = split_host_port(https);
         commands.push(Command::new(
             "networksetup",
             vec!["-setsecurewebproxy".into(), service.into(), "on".into()],
         ));
-        commands.push(Command::new(
-            "networksetup",
-            vec![
-                "-setsecurewebproxyservers".into(),
-                service.into(),
-                https.into(),
-            ],
-        ));
+        if port.is_empty() {
+            commands.push(Command::new(
+                "networksetup",
+                vec!["-setsecurewebproxyservers".into(), service.into(), host],
+            ));
+        } else {
+            commands.push(Command::new(
+                "networksetup",
+                vec![
+                    "-setsecurewebproxyservers".into(),
+                    service.into(),
+                    host,
+                    port,
+                ],
+            ));
+        }
     }
     if let Some(socks) = socks_proxy {
+        let (host, port) = split_host_port(socks);
         commands.push(Command::new(
             "networksetup",
             vec!["-setsocksfirewallproxy".into(), service.into(), "on".into()],
         ));
-        commands.push(Command::new(
-            "networksetup",
-            vec![
-                "-setsocksfirewallproxyserver".into(),
-                service.into(),
-                socks.into(),
-            ],
-        ));
+        if port.is_empty() {
+            commands.push(Command::new(
+                "networksetup",
+                vec!["-setsocksfirewallproxyserver".into(), service.into(), host],
+            ));
+        } else {
+            commands.push(Command::new(
+                "networksetup",
+                vec![
+                    "-setsocksfirewallproxyserver".into(),
+                    service.into(),
+                    host,
+                    port,
+                ],
+            ));
+        }
     }
     if let Some(no_proxy) = no_proxy {
         commands.push(Command::new(

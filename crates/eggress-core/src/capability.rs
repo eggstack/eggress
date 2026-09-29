@@ -40,8 +40,7 @@ impl UpstreamCapabilities {
 /// - HTTP upstream: TCP CONNECT supported; UDP unsupported
 /// - SOCKS4 upstream: TCP CONNECT supported; UDP unsupported
 /// - SOCKS5 upstream: TCP CONNECT supported; UDP supported
-/// - Shadowsocks upstream: TCP not advertised (non-standard AEAD framing);
-///   UDP supported (standard AEAD format)
+/// - Shadowsocks upstream: TCP CONNECT supported; UDP supported
 /// - Multi-hop: TCP may be supported; UDP is supported when every hop has a
 ///   proven UDP codec (SOCKS5 or Shadowsocks)
 pub fn classify_upstream_chain(chain: &ProxyChainSpec) -> UpstreamCapabilities {
@@ -178,10 +177,22 @@ fn classify_single_protocol(protocol: ProtocolSpec) -> UpstreamCapabilities {
                 protocol: "WebSocket".to_string(),
             },
         },
-        ProtocolSpec::Raw | ProtocolSpec::Ssh | ProtocolSpec::Unix => UpstreamCapabilities {
+        ProtocolSpec::Raw => UpstreamCapabilities {
             tcp_connect: CapabilityResult::Supported,
             udp_associate: CapabilityResult::UnsupportedProtocol {
                 protocol: "Raw".to_string(),
+            },
+        },
+        ProtocolSpec::Ssh => UpstreamCapabilities {
+            tcp_connect: CapabilityResult::Supported,
+            udp_associate: CapabilityResult::UnsupportedProtocol {
+                protocol: "Ssh".to_string(),
+            },
+        },
+        ProtocolSpec::Unix => UpstreamCapabilities {
+            tcp_connect: CapabilityResult::Supported,
+            udp_associate: CapabilityResult::UnsupportedProtocol {
+                protocol: "Unix".to_string(),
             },
         },
     }

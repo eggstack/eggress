@@ -209,10 +209,14 @@ impl Drop for TargetFlowEntry {
         self.recv_task.abort();
         if let UdpFlowKind::Socks5Upstream(flow) = &self.flow {
             flow.control_cancel.cancel();
+            flow.control_task.abort();
         }
         if let UdpFlowKind::Composed(flow) = &self.flow {
             for cancel in &flow.control_cancels {
                 cancel.cancel();
+            }
+            for task in &flow.control_tasks {
+                task.abort();
             }
         }
     }
@@ -287,10 +291,14 @@ pub fn shutdown_flow(entry: &TargetFlowEntry) {
     entry.recv_task.abort();
     if let UdpFlowKind::Socks5Upstream(flow) = &entry.flow {
         flow.control_cancel.cancel();
+        flow.control_task.abort();
     }
     if let UdpFlowKind::Composed(flow) = &entry.flow {
         for cancel in &flow.control_cancels {
             cancel.cancel();
+        }
+        for task in &flow.control_tasks {
+            task.abort();
         }
     }
 }

@@ -208,9 +208,9 @@ pub async fn h2_connect_relay(
     };
 
     let tcp_to_h2 = async {
-        let mut buf = [0u8; 65536];
+        let mut buf = Box::new([0u8; 65536]);
         loop {
-            let n = tcp_read.read(&mut buf).await?;
+            let n = tcp_read.read(&mut buf[..]).await?;
             if n == 0 {
                 h2_write.shutdown().await?;
                 break;

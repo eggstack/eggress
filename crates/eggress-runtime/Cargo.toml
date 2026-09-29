@@ -27,6 +27,7 @@ operations = [
     "dep:eggress-system-proxy",
 ]
 reverse = ["dep:eggress-protocol-reverse", "operations"]
+pproxy-compat = ["eggress-transport-ssh?/pproxy-compat"]
 ssh = ["eggress-server/ssh", "dep:eggress-transport-ssh"]
 quic = ["eggress-config/quic", "eggress-server/quic", "dep:eggress-transport-quic", "dep:eggress-protocol-h3"]
 insecure-quic = ["eggress-server/insecure-quic", "eggress-transport-quic/insecure-quic"]

@@ -17,6 +17,14 @@ use tokio_util::sync::CancellationToken;
 /// helper tasks, so a client cannot multiply spawned tasks without limit.
 const MAX_ACTIVE_REQUESTS_PER_CONNECTION: usize = 256;
 
+/// Maximum bytes accepted for a single H3 DATA payload.
+///
+/// Matches the WebSocket tunnel's 8 MiB `max_message_size` default.
+/// Oversized DATA payloads are skipped (not forwarded) so one large message
+/// cannot force an unbounded `copy_to_bytes` allocation; the stream stays
+/// open for subsequent messages. The 64 KiB duplex buffer size is unchanged.
+const MAX_H3_DATA_MESSAGE: usize = 8 * 1024 * 1024;
+
 /// HTTP/3 CONNECT errors.
 #[derive(Debug, thiserror::Error)]
 pub enum H3Error {
@@ -308,6 +316,9 @@ where
     });
     tokio::spawn(async move {
         while let Ok(Some(mut data)) = recv.recv_data().await {
+            if data.remaining() > MAX_H3_DATA_MESSAGE {
+                continue;
+            }
             let bytes = data.copy_to_bytes(data.remaining());
             if peer_writer.write_all(&bytes).await.is_err() {
                 return;
@@ -352,6 +363,9 @@ where
     });
     tokio::spawn(async move {
         while let Ok(Some(mut data)) = recv.recv_data().await {
+            if data.remaining() > MAX_H3_DATA_MESSAGE {
+                continue;
+            }
             let bytes = data.copy_to_bytes(data.remaining());
             if peer_writer.write_all(&bytes).await.is_err() {
                 return;

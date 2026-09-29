@@ -87,7 +87,7 @@ async fn handle_route_explain_remote(args: &RouteExplain, admin_url: &str) -> i3
         return EXIT_CLI_PARSE_ERROR;
     }
     let protocol = args.protocol.map(RouteProtocol::as_str).unwrap_or("http");
-    let listener = args.listener.as_deref().unwrap_or("default");
+    let listener = args.listener.as_deref().unwrap_or("cli");
 
     match eggress_admin::client::route_explain(admin_url, &args.target, listener, protocol).await {
         Ok(explanation) => {

@@ -56,6 +56,23 @@ pub enum ControlState {
 ///
 /// Generic over any async stream so the same framing works over plaintext
 /// TCP and TLS-wrapped control channels.
+/// Validate one reverse-auth field before framing.
+///
+/// Mirrors the HTTP CONNECT `validate_credentials()` predicate (reject bytes
+/// `< 0x20` and `0x7F`) and additionally rejects `:` — the `user:pass`
+/// separator — so a credential can never inject framing (`:` splits user
+/// from password, `\n` terminates the record). Errors never echo the value.
+fn validate_auth_field(value: &str) -> Result<(), ProtocolError> {
+    for byte in value.bytes() {
+        if byte == b':' || byte < 0x20 || byte == 0x7F {
+            return Err(ProtocolError::ConfigInvalid(
+                "reverse auth field contains a forbidden character".to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub async fn write_auth<S>(
     stream: &mut S,
     username: &str,
@@ -64,6 +81,8 @@ pub async fn write_auth<S>(
 where
     S: AsyncWrite + Unpin,
 {
+    validate_auth_field(username)?;
+    validate_auth_field(password)?;
     let auth = format!("{}:{}\n", username, password);
     stream.write_all(auth.as_bytes()).await?;
     stream.flush().await?;

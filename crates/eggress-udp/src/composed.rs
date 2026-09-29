@@ -53,6 +53,7 @@ pub async fn open_composed_udp_upstream(
                         hop: spec.clone(),
                         connect_timeout: Duration::from_secs(10),
                         udp_bind,
+                        control_timeout: None,
                     },
                     None,
                 )

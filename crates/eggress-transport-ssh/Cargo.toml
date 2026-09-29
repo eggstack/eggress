@@ -17,6 +17,10 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
+[features]
+default = []
+pproxy-compat = []
+
 [dev-dependencies]
 tempfile.workspace = true
 
