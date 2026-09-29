@@ -48,6 +48,8 @@ path = "src/pproxy_main.rs"
 required-features = ["pproxy-compat"]
 
 [dependencies]
+eggup-archive = "=0.1.2"
+eggup-core = "=0.1.2"
 eggress-admin.workspace = true
 eggress-core.workspace = true
 eggress-server.workspace = true
@@ -83,12 +85,15 @@ eggress-routing.workspace = true
 assert_cmd.workspace = true
 predicates.workspace = true
 base64 = "0.23"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 rand.workspace = true
 rcgen.workspace = true
 rustls.workspace = true
+tar = { version = "0.4", default-features = false }
 tempfile.workspace = true
 tokio-rustls.workspace = true
 toml.workspace = true
+zip = { version = "6", default-features = false, features = ["deflate-flate2"] }
 
 [lints]
 workspace = true

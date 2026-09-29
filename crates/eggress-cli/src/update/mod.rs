@@ -20,6 +20,7 @@
 //!   offline).
 
 pub mod download;
+pub mod eggup;
 pub mod install;
 pub mod target;
 pub mod verify;
@@ -33,11 +34,10 @@ use eggress_cli::{
 };
 
 use download::{curl_download, curl_fetch_text, user_agent, DownloadError};
-use install::{
-    check_destination_writable, extract_archive, make_executable, replace_pair, sibling_pproxy_path,
-};
+use eggup::install_pair_via_eggup;
+use install::{check_destination_writable, sibling_pproxy_path};
 use target::{asset_urls, detect_target, download_base_for_tag, latest_release_api_url};
-use verify::{run_candidate_version, verify_archive, verify_staged_pair};
+use verify::{run_candidate_version, verify_archive};
 use version::{parse_tag, tag_for, ReleaseVersion};
 
 /// Handle `eggress update`: update the standalone installation to the
@@ -175,39 +175,23 @@ fn update_from_urls(
     eprintln!("verifying checksum");
     verify_archive(archive_path, &sidecar).map_err(UpdateFailure::Failed)?;
 
-    eprintln!("extracting archive");
-    extract_archive(archive_path, stage).map_err(UpdateFailure::Failed)?;
-
-    let (staged_eggress_name, staged_pproxy_name) = if target::is_windows_target(target) {
-        ("eggress.exe", "pproxy.exe")
-    } else {
-        ("eggress", "pproxy")
-    };
-    let staged_eggress = stage.join(staged_eggress_name);
-    let staged_pproxy = stage.join(staged_pproxy_name);
-    for (kind, path) in [("eggress", &staged_eggress), ("pproxy", &staged_pproxy)] {
-        if !path.is_file() {
-            return Err(UpdateFailure::Failed(format!(
-                "release archive is missing {kind}; leaving the current installation untouched"
-            )));
-        }
+    eprintln!("extracting archive and installing eggress {expected}");
+    let install_dir = installed_eggress.parent().ok_or_else(|| {
+        UpdateFailure::Failed(format!(
+            "cannot resolve installation directory from {}",
+            installed_eggress.display()
+        ))
+    })?;
+    // The sibling pair requirement: both live destinations must sit in the
+    // same installation directory the transaction will own.
+    if installed_pproxy.parent() != Some(install_dir) {
+        return Err(UpdateFailure::Failed(format!(
+            "sibling `pproxy` is not next to {}; refusing to update a split pair — reinstall with the bootstrap installer to repair it (see docs/INSTALLATION.md)",
+            installed_eggress.display()
+        )));
     }
-    make_executable(&staged_eggress).map_err(UpdateFailure::Failed)?;
-    make_executable(&staged_pproxy).map_err(UpdateFailure::Failed)?;
-
-    eprintln!("verifying staged versions");
-    verify_staged_pair(&staged_eggress, &staged_pproxy, expected).map_err(UpdateFailure::Failed)?;
-
-    eprintln!("installing eggress {expected}");
-    replace_pair(
-        installed_eggress,
-        installed_pproxy,
-        &staged_eggress,
-        &staged_pproxy,
-    )
-    .map_err(UpdateFailure::Failed)?;
-
-    Ok(String::new())
+    install_pair_via_eggup(archive_path, target, expected, install_dir, stage)
+        .map_err(UpdateFailure::Failed)
 }
 
 /// Resolve the latest stable release version from GitHub (or fixtures).

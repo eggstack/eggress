@@ -216,7 +216,9 @@ Behavior:
   anything. A checksum, extraction, or candidate-version failure leaves the
   current installation untouched with no fallback to another source.
 - Replaces `eggress` and the sibling `pproxy` next to it as one release
-  unit (with backups and rollback on failure). If no matching sibling
+  unit through a verified staging transaction (bounded archive extraction
+  plus atomic pair commit with rollback on failure; `eggup-core` +
+  `eggup-archive` registry dependencies). If no matching sibling
   `pproxy` exists it fails with a repair message instead of replacing only
   `eggress`.
 - Never invokes `sudo`, never mutates shell/PATH state, performs no

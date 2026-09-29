@@ -72,3 +72,27 @@ jobs:
           --features ssh,pproxy-compat --test ssh -- --nocapture
       - name: Check fuzz targets
         run: cargo check --manifest-path fuzz/Cargo.toml --bins
+
+  updater-matrix:
+    # Delivery M003 evidence: the updater/archive path must execute (not
+    # merely compile) on Linux, macOS, and Windows. Shell-candidate flow
+    # tests are Unix-gated by design; the Windows lane executes mapping,
+    # budget, ownership, outcome-mapping, lock-contention, extraction,
+    # rejection, and zip stage/commit tests through the real Eggup path.
+    name: Updater path (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Updater unit and archive-path tests
+        run: cargo test -p eggress-cli --locked --bin eggress update::
+      - name: Updater contract suites
+        run: cargo test -p eggress-cli --locked --test release_contract --test cli_exit_codes

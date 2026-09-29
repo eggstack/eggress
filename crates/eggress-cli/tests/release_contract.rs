@@ -326,6 +326,7 @@ fn updater_never_escalates_or_falls_back() {
         "crates/eggress-cli/src/update/mod.rs",
         "crates/eggress-cli/src/update/install.rs",
         "crates/eggress-cli/src/update/download.rs",
+        "crates/eggress-cli/src/update/eggup.rs",
     ] {
         let content = read_repo(rel);
         for line in content.lines() {
