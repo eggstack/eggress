@@ -185,9 +185,12 @@ mod tests {
         assert!(parse_eggress_version("").is_err());
     }
 
+    #[cfg(unix)]
     #[test]
     fn staged_pair_must_agree_with_tag() {
         // Fixture candidates are shell scripts so no compilation is needed.
+        // Unix-only: Windows cannot execute POSIX shell fixtures (same
+        // gating as the offline fixture flows in `mod.rs`).
         let dir = std::env::temp_dir().join(format!("eggress-verify-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
