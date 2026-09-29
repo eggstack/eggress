@@ -70,9 +70,9 @@ pub struct RelayOptions {
 
 impl Default for RelayOptions {
     fn default() -> Self {
+        const _: () = assert!(DEFAULT_BUFFER_SIZE != 0);
         Self {
-            buffer_size: NonZeroUsize::new(DEFAULT_BUFFER_SIZE)
-                .expect("default relay buffer is non-zero"),
+            buffer_size: NonZeroUsize::new(DEFAULT_BUFFER_SIZE).unwrap_or(NonZeroUsize::MIN),
             half_close: HalfClosePolicy::Drain,
         }
     }
@@ -444,17 +444,38 @@ where
 
         if let Some(deadline) = this.drain_deadline.as_mut() {
             if std::future::Future::poll(deadline.as_mut(), cx).is_ready() {
+                let Some(first_closed) = this.first_closed else {
+                    debug_assert!(false, "drain deadline fired with no first close");
+                    return std::task::Poll::Ready(Err(RelayFailure {
+                        direction: RelayDirection::Upstream,
+                        source: std::io::Error::new(
+                            std::io::ErrorKind::BrokenPipe,
+                            "relay drain without first close",
+                        ),
+                        bytes_upstream: this.upstream.bytes,
+                        bytes_downstream: this.downstream.bytes,
+                    }));
+                };
                 return std::task::Poll::Ready(Ok(RelayReport {
                     bytes_upstream: this.upstream.bytes,
                     bytes_downstream: this.downstream.bytes,
-                    termination: RelayTermination::DrainTimedOut {
-                        first_closed: this.first_closed.expect("drain has a first close"),
-                    },
+                    termination: RelayTermination::DrainTimedOut { first_closed },
                 }));
             }
         }
 
-        let first_closed = this.first_closed.expect("drain has a first close");
+        let Some(first_closed) = this.first_closed else {
+            debug_assert!(false, "drain has a first close");
+            return std::task::Poll::Ready(Err(RelayFailure {
+                direction: RelayDirection::Upstream,
+                source: std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "relay drain without first close",
+                ),
+                bytes_upstream: this.upstream.bytes,
+                bytes_downstream: this.downstream.bytes,
+            }));
+        };
         let remaining = match first_closed {
             RelaySide::Client => poll_direction(
                 std::pin::Pin::new(&mut this.server),

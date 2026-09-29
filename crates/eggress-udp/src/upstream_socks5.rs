@@ -207,7 +207,14 @@ async fn open_socks5_udp_upstream_inner(
     let control_timeout = config.control_timeout.unwrap_or(Duration::from_secs(300));
     let control_task = tokio::spawn(async move {
         let mut buf = [0u8; 1];
-        let _ = tokio::time::timeout(control_timeout, stream.read_exact(&mut buf)).await;
+        // Surface a half-closed control connection: a timeout (idle peer)
+        // and an orderly `Ok(0)`/error both mean the relay half is gone.
+        if tokio::time::timeout(control_timeout, stream.read_exact(&mut buf))
+            .await
+            .is_err()
+        {
+            tracing::debug!("SOCKS5 UDP control connection idle timeout");
+        }
         control_task_cancel.cancel();
     });
 

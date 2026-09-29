@@ -43,6 +43,10 @@ pub struct PproxyUri {
     /// Fragment authentication, kept separately from URL userinfo.
     pub auth_fragment: Option<String>,
     /// The raw URI, retained for diagnostics.
+    ///
+    /// SECRET-BEARING: retains credentials exactly as supplied. Never log
+    /// or display directly; use the redacted `Debug` impl or
+    /// `redact_uri_for_error`.
     pub raw: String,
 }
 
@@ -224,10 +228,12 @@ fn redact_unix_path(path: &str) -> String {
 fn redact_uri_for_error(uri: &str) -> String {
     // Strip userinfo (`user:pass@`) and fragment auth; keep the remainder for
     // diagnostics. Bound length so huge inputs cannot blow up logs.
+    // Uses the canonical bracket-aware last-`@` separator so a `@` inside
+    // the password does not leak a fragment into the redacted output.
     let mut out = uri.to_string();
     if let Some(scheme_end) = out.find("://") {
         let after = scheme_end + 3;
-        if let Some(at) = out[after..].find('@') {
+        if let Some(at) = uri_syntax::find_userinfo_separator(&out[after..]) {
             out.replace_range(after..after + at + 1, "****:****@");
         }
     }
@@ -749,15 +755,10 @@ pub fn parse_pproxy_chain(uri: &str) -> Result<PproxyChain, CompatError> {
         });
     }
 
-    // Check for doubled ____
-    if uri.contains("____") {
-        return Err(CompatError::InvalidUri {
-            message: format!(
-                "chain URI has doubled '____' separator: {}",
-                redact_uri_for_error(uri)
-            ),
-        });
-    }
+    // NOTE: no raw `contains("____")` pre-check here: `____` inside a
+    // `?rule=`/`?suffix` query value is data (rejoined below), not a
+    // separator. Top-level doubled separators surface as empty hop
+    // segments after the query-aware rejoin.
 
     let mut hops = Vec::new();
     // `__` inside `?rule=`/`?suffix` query values is data, not a hop
@@ -765,23 +766,41 @@ pub fn parse_pproxy_chain(uri: &str) -> Result<PproxyChain, CompatError> {
     // `://`), so `http://h:80?rule=a__b` stays one hop.
     let mut segments: Vec<String> = Vec::new();
     for segment in split_chain_hops(uri)? {
-        if segment.is_empty() {
-            return Err(CompatError::InvalidUri {
-                message: format!(
-                    "chain URI has empty hop segment: {}",
-                    redact_uri_for_error(uri)
-                ),
-            });
-        }
         if segment.contains("://") || segments.is_empty() {
+            // An empty first segment cannot occur: leading `__` is rejected
+            // above, so `segments` is non-empty for every continuation.
+            if segment.is_empty() {
+                return Err(CompatError::InvalidUri {
+                    message: format!(
+                        "chain URI has doubled '____' separator: {}",
+                        redact_uri_for_error(uri)
+                    ),
+                });
+            }
             segments.push(segment.to_string());
         } else {
+            // Query/fragment data (`?rule=a__b`, including `____` and empty
+            // continuations from `____` inside a query) rejoins verbatim.
             let last = segments.len() - 1;
             segments[last].push_str("__");
             segments[last].push_str(segment);
         }
     }
     for segment in &segments {
+        // Doubled `____` at hop level (outside `?query`/`#fragment`, which
+        // are data) is a separator typo; `____` inside query values was
+        // already rejoined above and is not rejected here. A top-level
+        // `____` splits into an empty continuation that rejoins as a
+        // trailing/leading `__` on the head, so all three shapes are checked.
+        let head = segment.split(['?', '#']).next().unwrap_or(segment);
+        if head.contains("____") || head.ends_with("__") || head.starts_with("__") {
+            return Err(CompatError::InvalidUri {
+                message: format!(
+                    "chain URI has doubled '____' separator: {}",
+                    redact_uri_for_error(uri)
+                ),
+            });
+        }
         let hop = parse_pproxy_uri(segment)?;
         hops.push(hop);
     }

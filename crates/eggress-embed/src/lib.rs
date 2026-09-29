@@ -647,11 +647,15 @@ impl Drop for EggressHandle {
             let _ = jh.join();
         }
         if let Some(task) = self._runtime_task.take() {
-            let rt = tokio::runtime::Runtime::new().ok();
-            if let Some(rt) = rt {
-                rt.block_on(async {
-                    let _ = tokio::time::timeout(Duration::from_secs(5), task).await;
-                });
+            match tokio::runtime::Runtime::new() {
+                Ok(rt) => {
+                    rt.block_on(async {
+                        let _ = tokio::time::timeout(Duration::from_secs(5), task).await;
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!("failed to create runtime for Drop join: {e}");
+                }
             }
         }
         let _ = self._config_path.take();
@@ -663,11 +667,21 @@ fn listener_addr_or_configured(
     idx: usize,
     configured_bind: &str,
 ) -> SocketAddr {
-    bound_addrs
-        .get(idx)
-        .and_then(|a| *a)
-        .or_else(|| configured_bind.parse().ok())
-        .unwrap_or_else(default_listener_addr)
+    if let Some(addr) = bound_addrs.get(idx).and_then(|a| *a) {
+        return addr;
+    }
+    match configured_bind.parse() {
+        Ok(addr) => addr,
+        Err(_) => {
+            // Display-only fallback: the listener itself already failed
+            // closed at bind time; warn here so a typo'd bind is visible
+            // instead of silently reporting wildcard/ephemeral.
+            tracing::warn!(
+                "invalid configured bind '{configured_bind}'; reporting default listener address"
+            );
+            default_listener_addr()
+        }
+    }
 }
 
 fn default_listener_addr() -> SocketAddr {

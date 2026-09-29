@@ -92,6 +92,8 @@ impl AuthFailureLimiter {
         }
         entry.failures = entry.failures.saturating_add(1);
         if entry.failures >= AUTH_FAILURE_LIMIT {
+            // Extend the block on every further failure during the block so
+            // blocked requests cannot poll without cost (sliding window).
             entry.blocked_until = Some(now + AUTH_FAILURE_BLOCK);
         }
     }
@@ -195,10 +197,10 @@ impl AdminServer {
                             async move {
                                 let response = match state.auth.as_ref() {
                                     Some(auth) if !authorized(&req, auth) => {
+                                        // Record-then-check: the Nth failure that
+                                        // trips the limit is itself a 429.
+                                        auth_failures.record_failure(addr.ip());
                                         let blocked_for = auth_failures.blocked_for(addr.ip());
-                                        if blocked_for.is_none() {
-                                            auth_failures.record_failure(addr.ip());
-                                        }
                                         let mut response = http::Response::new(Full::new(
                                             Bytes::from_static(if blocked_for.is_some() {
                                                 b"too many authentication failures"

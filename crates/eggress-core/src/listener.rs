@@ -126,6 +126,11 @@ impl TcpListener {
         let socket =
             socket2::Socket::new(domain, socket2::Type::STREAM, Some(socket2::Protocol::TCP))?;
         socket.set_reuse_address(true)?;
+        if !config.bind_addr.is_ipv4() {
+            // Allow `[::]:port` dual-stack where the platform supports it;
+            // failure to clear the flag is non-fatal (single-stack V6).
+            let _ = socket.set_only_v6(false);
+        }
         if reuse_port {
             #[cfg(unix)]
             socket.set_reuse_port(true)?;

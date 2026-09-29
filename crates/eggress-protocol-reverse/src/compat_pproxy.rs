@@ -72,7 +72,10 @@ pub struct PproxyBackwardClientConfig {
 impl Default for PproxyBackwardClientConfig {
     fn default() -> Self {
         Self {
-            server_addr: "127.0.0.1:0".parse().expect("valid default socket address"),
+            server_addr: std::net::SocketAddr::new(
+                std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+                0,
+            ),
             server_chain: None,
             auth: Vec::new(),
             reconnect_initial_ms: 100,
@@ -348,11 +351,24 @@ impl PproxyBackwardClient {
     }
 
     async fn connect_control(&self) -> Result<TcpStream, ProtocolError> {
+        let timeout = Duration::from_millis(self.config.target_connect_timeout_ms.max(1));
+        let timed_out = || {
+            ProtocolError::Io(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "reverse control connect timed out",
+            ))
+        };
+        let direct = |addr: SocketAddr| async move {
+            tokio::time::timeout(timeout, TcpStream::connect(addr))
+                .await
+                .map_err(|_| timed_out())?
+                .map_err(ProtocolError::from)
+        };
         let Some(chain) = self.config.server_chain.as_ref() else {
-            return Ok(TcpStream::connect(self.config.server_addr).await?);
+            return direct(self.config.server_addr).await;
         };
         if chain.hops.len() <= 1 {
-            return Ok(TcpStream::connect(self.config.server_addr).await?);
+            return direct(self.config.server_addr).await;
         }
         if chain.hops.iter().any(|hop| hop.tls) {
             return Err(ProtocolError::ConfigInvalid(
@@ -360,9 +376,17 @@ impl PproxyBackwardClient {
             ));
         }
 
-        let last = chain.hops.last().expect("chain length checked");
-        let mut stream =
-            TcpStream::connect((last.endpoint.host.as_str(), last.endpoint.port)).await?;
+        let Some(last) = chain.hops.last() else {
+            return Err(ProtocolError::ConfigInvalid(
+                "pproxy backward chain has no hops".into(),
+            ));
+        };
+        let mut stream = tokio::time::timeout(
+            timeout,
+            TcpStream::connect((last.endpoint.host.as_str(), last.endpoint.port)),
+        )
+        .await
+        .map_err(|_| timed_out())??;
         for index in (1..chain.hops.len()).rev() {
             let jump = &chain.hops[index];
             let endpoint = &chain.hops[index - 1].endpoint;
@@ -408,9 +432,11 @@ pub struct PproxyBackwardServerConfig {
 
 impl Default for PproxyBackwardServerConfig {
     fn default() -> Self {
+        let loopback =
+            std::net::SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 0);
         Self {
-            control_bind: "127.0.0.1:0".parse().expect("valid default socket address"),
-            external_bind: "127.0.0.1:0".parse().expect("valid default socket address"),
+            control_bind: loopback,
+            external_bind: loopback,
             auth: Vec::new(),
             max_control_connections: 256,
             max_pending_external: 1024,

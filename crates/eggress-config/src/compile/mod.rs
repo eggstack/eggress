@@ -30,7 +30,7 @@ use rules::{compile_default_action, compile_rules};
 use upstreams::{compile_groups, compile_upstreams};
 
 pub fn compile_config(config: &ConfigFile) -> Result<RuntimeConfig, ConfigError> {
-    let process = compile_process(config);
+    let process = compile_process(config)?;
     let timeouts = compile_timeouts(config)?;
     let listeners = compile_listeners(config)?;
     let upstreams = compile_upstreams(config)?;
@@ -75,8 +75,13 @@ fn resolve_password(
     }
 }
 
-fn parse_duration_opt(s: &str) -> Option<std::time::Duration> {
-    crate::validate::validate_duration(s).ok()
+fn parse_duration_opt(s: &str) -> Result<std::time::Duration, ConfigError> {
+    crate::validate::validate_duration(s).map_err(|e| {
+        ConfigError::validation(
+            "process.shutdown_grace",
+            &format!("invalid duration '{s}': {e}"),
+        )
+    })
 }
 
 pub fn load_and_compile(path: &str) -> Result<RuntimeConfig, crate::error::ConfigError> {

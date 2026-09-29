@@ -66,7 +66,7 @@ impl PumpError {
 }
 
 struct WritePump {
-    sender: Mutex<Option<mpsc::UnboundedSender<WriteCommand>>>,
+    sender: Mutex<Option<mpsc::Sender<WriteCommand>>>,
     task: Mutex<Option<tokio::task::JoinHandle<()>>>,
     status: Arc<Mutex<WritePumpStatus>>,
     submit_lock: Mutex<()>,
@@ -78,7 +78,11 @@ impl WritePump {
         stream: eggress_core::BoxStream,
     ) -> (ReadHalf<eggress_core::BoxStream>, Self) {
         let (read_half, mut write_half) = split(stream);
-        let (sender, mut receiver) = mpsc::unbounded_channel();
+        // Bounded queue applies backpressure: a fast Python producer against a
+        // slow socket gets `write buffer full` instead of unbounded growth.
+        // `std::Mutex` guards below are never held across `.await`; the async
+        // pump copies the payload/sender out of the critical section first.
+        let (sender, mut receiver) = mpsc::channel::<WriteCommand>(1024);
         let status = Arc::new(Mutex::new(WritePumpStatus {
             terminal_error: None,
             closed: false,
@@ -187,14 +191,24 @@ impl WritePump {
                 .ok_or_else(|| PumpError::Closed("outbound stream is closed".to_string()))?
         };
         let len = data.len();
-        if sender.send(WriteCommand::Data(data.to_vec())).is_err() {
-            if let Ok(mut state) = self.status.lock() {
-                state.terminal_error = Some("write pump stopped".to_string());
-                state.closed = true;
+        if let Err(e) = sender.try_send(WriteCommand::Data(data.to_vec())) {
+            use tokio::sync::mpsc::error::TrySendError;
+            match e {
+                TrySendError::Full(_) => {
+                    return Err(PumpError::Failed(
+                        "write failed: write buffer full".to_string(),
+                    ));
+                }
+                TrySendError::Closed(_) => {
+                    if let Ok(mut state) = self.status.lock() {
+                        state.terminal_error = Some("write pump stopped".to_string());
+                        state.closed = true;
+                    }
+                    return Err(PumpError::Failed(
+                        "write failed: write pump stopped".to_string(),
+                    ));
+                }
             }
-            return Err(PumpError::Failed(
-                "write failed: write pump stopped".to_string(),
-            ));
         }
         Ok(len)
     }
@@ -261,7 +275,7 @@ impl WritePump {
             } else {
                 WriteCommand::Barrier(waiter)
             };
-            if sender.send(command).is_err() {
+            if sender.try_send(command).is_err() {
                 return Err(PumpError::Failed(
                     "drain failed: write pump stopped".to_string(),
                 ));

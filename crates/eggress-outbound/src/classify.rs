@@ -147,8 +147,8 @@ pub fn classify_handshake_source(
     // 92/93 are identd identity failures.
     if let Some(socks4) = source.downcast_ref::<eggress_protocol_socks::Socks4Error>() {
         return match socks4 {
-            eggress_protocol_socks::Socks4Error::ConnectionRefused
-            | eggress_protocol_socks::Socks4Error::ConnectionFailed => ClassifiedKind::Refused,
+            eggress_protocol_socks::Socks4Error::ConnectionRefused => ClassifiedKind::Refused,
+            eggress_protocol_socks::Socks4Error::ConnectionFailed => ClassifiedKind::Protocol,
             eggress_protocol_socks::Socks4Error::FailedNoIdent
             | eggress_protocol_socks::Socks4Error::FailedDifferentUser => ClassifiedKind::Auth,
             eggress_protocol_socks::Socks4Error::Io(io) => classify_io_kind(io.kind()),

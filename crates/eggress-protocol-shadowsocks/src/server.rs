@@ -34,9 +34,15 @@ async fn handle_client(
     let boxed: eggress_core::BoxStream = Box::new(stream);
     let (ss_stream, target_addr) = shadowsocks_accept(boxed, &password, method, None).await?;
 
-    // Connect to target
+    // Connect to target (bracket IPv6 literals).
     let target_str = match &target_addr.host {
-        eggress_core::TargetHost::Ip(ip) => format!("{}:{}", ip, target_addr.port),
+        eggress_core::TargetHost::Ip(ip) => {
+            format!(
+                "{}:{}",
+                eggress_uri::syntax::format_host(&ip.to_string()),
+                target_addr.port
+            )
+        }
         eggress_core::TargetHost::Domain(d) => format!("{}:{}", d, target_addr.port),
     };
     let target_stream = TcpStream::connect(&target_str).await?;

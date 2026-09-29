@@ -667,8 +667,6 @@ pub async fn udp_relay_loop(
                         }
                     }
 
-                    association.touch();
-
                     if let Err(e) = handle_client_datagram(
                         &buf[..n],
                         client_addr,
@@ -682,6 +680,8 @@ pub async fn udp_relay_loop(
                             association_id = ?assoc_id,
                             "datagram handling error: {e}"
                         );
+                    } else {
+                        association.touch();
                     }
                 }
                 Some(msg) = response_rx.recv() => {

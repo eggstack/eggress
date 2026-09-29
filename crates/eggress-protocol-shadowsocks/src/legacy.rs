@@ -378,7 +378,11 @@ impl CipherState {
                     .enumerate()
                     .for_each(|(i, value)| *value = i as u8);
                 let digest = md5::Md5::digest(key);
-                let a = u64::from_le_bytes(digest[..8].try_into().unwrap());
+                let a = u64::from_le_bytes(
+                    digest[..8]
+                        .try_into()
+                        .map_err(|_| ShadowsocksError::InvalidKeyLength)?,
+                );
                 for i in 1..1024u64 {
                     encrypt.sort_by_key(|value| a % (*value as u64 + i));
                 }
@@ -691,7 +695,13 @@ fn derive_key(password: &[u8], length: usize) -> Zeroizing<Vec<u8>> {
 }
 
 fn hmac_sha1(key: &[u8], data: &[u8]) -> [u8; 20] {
-    let mut mac = HmacSha1::new_from_slice(key).expect("HMAC accepts arbitrary keys");
+    // HMAC accepts arbitrary key lengths, so construction is infallible in
+    // practice; fall back to a zero MAC instead of panicking the relay task
+    // on the unreachable error path.
+    let mut mac = match HmacSha1::new_from_slice(key) {
+        Ok(mac) => mac,
+        Err(_) => return [0u8; 20],
+    };
     mac.update(data);
     mac.finalize().into_bytes().into()
 }
@@ -701,7 +711,9 @@ fn ota_mac(key: &[u8], iv: &[u8], data: &[u8]) -> [u8; OTA_MAC_LEN] {
     hmac_key.extend_from_slice(iv);
     hmac_key.extend_from_slice(key);
     let digest = hmac_sha1(&hmac_key, data);
-    digest[..OTA_MAC_LEN].try_into().unwrap()
+    digest[..OTA_MAC_LEN]
+        .try_into()
+        .unwrap_or([0u8; OTA_MAC_LEN])
 }
 
 fn chunk_mac(iv: &[u8], sequence: u32, data: &[u8]) -> [u8; OTA_MAC_LEN] {
@@ -709,7 +721,9 @@ fn chunk_mac(iv: &[u8], sequence: u32, data: &[u8]) -> [u8; OTA_MAC_LEN] {
     key.extend_from_slice(iv);
     key.extend_from_slice(&sequence.to_be_bytes());
     let digest = hmac_sha1(&key, data);
-    digest[..OTA_MAC_LEN].try_into().unwrap()
+    digest[..OTA_MAC_LEN]
+        .try_into()
+        .unwrap_or([0u8; OTA_MAC_LEN])
 }
 
 /// Client-side legacy Shadowsocks handshake.
@@ -1026,7 +1040,13 @@ impl AsyncRead for LegacyStream {
                     };
                     let tail = &filled[take..];
                     let mut data = tail.to_vec();
-                    self.read_state.as_mut().unwrap().apply(&mut data, true);
+                    let Some(st) = self.read_state.as_mut() else {
+                        return Poll::Ready(Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "missing legacy cipher state",
+                        )));
+                    };
+                    st.apply(&mut data, true);
                     if let Err(error) = self.decode_plain(&data) {
                         return Poll::Ready(Err(std::io::Error::new(
                             std::io::ErrorKind::InvalidData,
@@ -1035,7 +1055,13 @@ impl AsyncRead for LegacyStream {
                     }
                 } else {
                     let mut data = filled.to_vec();
-                    self.read_state.as_mut().unwrap().apply(&mut data, true);
+                    let Some(st) = self.read_state.as_mut() else {
+                        return Poll::Ready(Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "missing legacy cipher state",
+                        )));
+                    };
+                    st.apply(&mut data, true);
                     if let Err(error) = self.decode_plain(&data) {
                         return Poll::Ready(Err(std::io::Error::new(
                             std::io::ErrorKind::InvalidData,

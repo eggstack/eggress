@@ -141,7 +141,8 @@ impl tokio::io::AsyncWrite for H2StreamWrite {
         self.send_stream
             .send_data(Bytes::copy_from_slice(&buf[..len]), false)
             .map_err(std::io::Error::other)?;
-        self.capacity -= len;
+        debug_assert!(len <= self.capacity);
+        self.capacity = self.capacity.saturating_sub(len);
         Poll::Ready(Ok(len))
     }
 

@@ -10,6 +10,9 @@ use eggress_core::{BoxStream, TargetAddr, TargetHost};
 /// Send a SOCKS4/4a CONNECT request through a stream and return the
 /// upgraded stream on success.
 ///
+/// Timeout contract: no internal read/write deadline; callers must wrap
+/// this in a handshake timeout (slow-loris protection is caller-owned).
+///
 /// For IP targets, a standard SOCKS4 CONNECT request is sent.
 /// For domain targets, a SOCKS4a request is sent with IP 0.0.0.x
 /// and the domain appended after the NUL-terminated user ID.

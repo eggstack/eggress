@@ -99,7 +99,9 @@ pub fn compile_runtime_snapshot(
     }
 
     let router = Router::with_groups(rules, rt.default_action.clone(), groups);
-    let gen = previous.map(|p| p.generation + 1).unwrap_or(0);
+    let gen = previous
+        .map(|p| p.generation.saturating_add(1))
+        .unwrap_or(0);
 
     Ok(CompiledRuntimeSnapshot {
         generation: gen,

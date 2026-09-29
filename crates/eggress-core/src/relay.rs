@@ -42,9 +42,9 @@ pub struct RelayResult {
 }
 
 fn legacy_options() -> eggress_relay::RelayOptions {
+    const _: () = assert!(LEGACY_BUFFER_SIZE != 0);
     eggress_relay::RelayOptions {
-        buffer_size: NonZeroUsize::new(LEGACY_BUFFER_SIZE)
-            .expect("legacy relay buffer is non-zero"),
+        buffer_size: NonZeroUsize::new(LEGACY_BUFFER_SIZE).unwrap_or(NonZeroUsize::MIN),
         half_close: eggress_relay::HalfClosePolicy::DrainFor(LEGACY_HALF_CLOSE_DRAIN),
     }
 }

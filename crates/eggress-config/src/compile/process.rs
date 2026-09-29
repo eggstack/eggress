@@ -5,24 +5,26 @@ use crate::model::ConfigFile;
 use crate::validate::validate_duration;
 
 use super::model::*;
-use super::{parse_duration_opt, resolve_password};
+use super::resolve_password;
 
-pub(crate) fn compile_process(config: &ConfigFile) -> ProcessConfig {
+pub(crate) fn compile_process(config: &ConfigFile) -> Result<ProcessConfig, ConfigError> {
     let defaults = ProcessConfig::default();
     let process = config.process.as_ref();
 
-    ProcessConfig {
+    let shutdown_grace = match process.and_then(|p| p.shutdown_grace.as_ref()) {
+        Some(s) => super::parse_duration_opt(s)?,
+        None => defaults.shutdown_grace,
+    };
+
+    Ok(ProcessConfig {
         log_format: process
             .and_then(|p| p.log_format.clone())
             .unwrap_or(defaults.log_format),
         log_level: process
             .and_then(|p| p.log_level.clone())
             .unwrap_or(defaults.log_level),
-        shutdown_grace: process
-            .and_then(|p| p.shutdown_grace.as_ref())
-            .and_then(|s| parse_duration_opt(s))
-            .unwrap_or(defaults.shutdown_grace),
-    }
+        shutdown_grace,
+    })
 }
 
 pub(crate) fn compile_timeouts(config: &ConfigFile) -> Result<TimeoutConfig, ConfigError> {

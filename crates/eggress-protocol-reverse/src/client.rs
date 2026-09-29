@@ -70,7 +70,10 @@ impl ReverseClientConfig {
 impl Default for ReverseClientConfig {
     fn default() -> Self {
         Self {
-            server_addr: "127.0.0.1:0".parse().unwrap(),
+            server_addr: std::net::SocketAddr::new(
+                std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+                0,
+            ),
             auth_username: None,
             auth_password: None,
             reconnect_initial_ms: 1_000,

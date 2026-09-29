@@ -510,7 +510,11 @@ fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseE
         && endpoint_str.ends_with(']')
     {
         EndpointSpec {
-            host: endpoint_str[1..endpoint_str.len() - 1].to_string(),
+            host: endpoint_str
+                .strip_prefix('[')
+                .and_then(|s| s.strip_suffix(']'))
+                .unwrap_or(endpoint_str)
+                .to_string(),
             port: 22,
         }
     } else {

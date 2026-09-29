@@ -255,28 +255,28 @@ fn select_least_connections<F>(
 where
     F: Fn(&UpstreamRuntime) -> bool,
 {
-    // Two passes over the slice with no allocation: first the minimum load
-    // among eligible members, then the pick-th tied member in order.
+    // Snapshot loads once so concurrent health/load changes cannot make the
+    // pick pass disagree with the min pass (stale `None` on tied members).
     let mut min_load: Option<u64> = None;
-    for member in candidates.iter().filter(|m| eligible(m)) {
+    let mut loads: Vec<(usize, u64)> = Vec::new();
+    for (idx, member) in candidates.iter().enumerate() {
+        if !eligible(member) {
+            continue;
+        }
         let load = member.current_load();
+        loads.push((idx, load));
         min_load = Some(min_load.map_or(load, |min| min.min(load)));
     }
     let min_load = min_load?;
-    let mut tied_count = 0usize;
-    for member in candidates.iter().filter(|m| eligible(m)) {
-        if member.current_load() == min_load {
-            tied_count += 1;
-        }
-    }
+    let tied_count = loads.iter().filter(|(_, l)| *l == min_load).count();
     if tied_count == 0 {
         return None;
     }
     let mut pick = cursor.fetch_add(1, Ordering::Relaxed) as usize % tied_count;
-    for member in candidates.iter().filter(|m| eligible(m)) {
-        if member.current_load() == min_load {
+    for (idx, load) in loads {
+        if load == min_load {
             if pick == 0 {
-                return Some(member.clone());
+                return Some(candidates[idx].clone());
             }
             pick -= 1;
         }

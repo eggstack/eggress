@@ -221,7 +221,11 @@ fn decode_one(plugin: PproxyPlugin, input: &[u8]) -> Result<(Vec<u8>, usize), Sh
             if input.len() < length {
                 return Ok((Vec::new(), 0));
             }
-            let expected = u32::from_le_bytes(input[length - 4..length].try_into().unwrap());
+            let expected = u32::from_le_bytes(
+                input[length - 4..length]
+                    .try_into()
+                    .map_err(|_| ShadowsocksError::Other("invalid verify_simple tail".into()))?,
+            );
             let actual = !crc32(&input[..length - 4]);
             if expected != actual {
                 return Err(ShadowsocksError::DecryptionFailed(

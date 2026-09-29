@@ -69,11 +69,14 @@ impl std::error::Error for SyntaxError {}
 pub fn find_userinfo_separator(s: &str) -> Option<usize> {
     let mut last_at: Option<usize> = None;
     let mut bracket_depth = 0u32;
+    let mut brace_depth = 0u32;
     for (i, c) in s.char_indices() {
         match c {
-            '[' => bracket_depth += 1,
+            '[' => bracket_depth = bracket_depth.saturating_add(1),
             ']' => bracket_depth = bracket_depth.saturating_sub(1),
-            '@' if bracket_depth == 0 => last_at = Some(i),
+            '{' => brace_depth = brace_depth.saturating_add(1),
+            '}' => brace_depth = brace_depth.saturating_sub(1),
+            '@' if bracket_depth == 0 && brace_depth == 0 => last_at = Some(i),
             _ => {}
         }
     }
@@ -91,9 +94,9 @@ pub fn split_once_outside_brackets(input: &str, delimiter: char) -> (&str, Optio
     let mut brace = 0u32;
     for (idx, ch) in input.char_indices() {
         match ch {
-            '[' => bracket += 1,
+            '[' => bracket = bracket.saturating_add(1),
             ']' => bracket = bracket.saturating_sub(1),
-            '{' => brace += 1,
+            '{' => brace = brace.saturating_add(1),
             '}' => brace = brace.saturating_sub(1),
             _ => {}
         }
@@ -120,14 +123,14 @@ pub fn split_chain_hops(s: &str) -> Result<Vec<&str>, SyntaxError> {
     let mut i = 0;
     while i < bytes.len() {
         match bytes[i] as char {
-            '[' => bracket += 1,
+            '[' => bracket = bracket.saturating_add(1),
             ']' => {
                 if bracket == 0 {
                     return Err(SyntaxError::with_span("unmatched ']'", i));
                 }
                 bracket -= 1;
             }
-            '{' => brace += 1,
+            '{' => brace = brace.saturating_add(1),
             '}' => {
                 if brace == 0 {
                     return Err(SyntaxError::with_span("unmatched '}'", i));

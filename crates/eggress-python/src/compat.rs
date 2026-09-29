@@ -661,7 +661,8 @@ pub(crate) fn test_upstream_connect(
     let port = url.port().unwrap_or(match url.scheme() {
         "socks5" => 1080,
         "socks4" | "socks4a" => 1080,
-        "http" | "https" => 80,
+        "http" => 80,
+        "https" => 443,
         "ss" => 8388,
         "trojan" => 443,
         _ => 0,
@@ -675,19 +676,24 @@ pub(crate) fn test_upstream_connect(
     let has_auth = !url.username().is_empty() || url.password().is_some();
     dict.set_item("has_auth", has_auth)?;
 
-    // Redact for display
+    // Redact for display (bracket IPv6 literals).
+    let display_host = eggress_uri::syntax::format_host(&host);
     let redacted = if has_auth {
-        format!("{}://****@{}:{}", url.scheme(), host, port)
+        format!("{}://****@{display_host}:{port}", url.scheme())
     } else {
-        format!("{}://{}:{}", url.scheme(), host, port)
+        format!("{}://{display_host}:{port}", url.scheme())
     };
     dict.set_item("redacted_uri", &redacted)?;
 
+    if !(timeout_secs.is_finite() && timeout_secs > 0.0) {
+        return Err(PyValueError::new_err("timeout_secs must be finite and > 0"));
+    }
+    let std_duration = std::time::Duration::from_secs_f64(timeout_secs);
+    let deadline = std::time::Instant::now() + std_duration;
     // Attempt TCP connect
-    let addr_str = format!("{}:{}", host, port);
+    let addr_str = format!("{display_host}:{port}");
     let (connected, latency_us, last_error): (bool, Option<u64>, Option<String>) =
         py.detach(|| {
-            let std_duration = std::time::Duration::from_secs_f64(timeout_secs);
             let socket_addrs = match addr_str.to_socket_addrs() {
                 Ok(addrs) => addrs,
                 Err(e) => {
@@ -697,8 +703,13 @@ pub(crate) fn test_upstream_connect(
 
             let mut last_error: Option<String> = None;
             for addr in socket_addrs {
+                let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+                if remaining.is_zero() {
+                    last_error = Some("connect timed out (overall deadline)".to_string());
+                    break;
+                }
                 let start = std::time::Instant::now();
-                match std::net::TcpStream::connect_timeout(&addr, std_duration) {
+                match std::net::TcpStream::connect_timeout(&addr, remaining) {
                     Ok(_stream) => {
                         return (true, Some(start.elapsed().as_micros() as u64), None);
                     }

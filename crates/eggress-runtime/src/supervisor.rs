@@ -28,6 +28,7 @@ pub(crate) mod udp_runtime;
 
 pub(crate) use accounting::{handle_accept_error, ActiveConnectionGuard, ListenerConnectionSlot};
 #[cfg(feature = "quic")]
+#[allow(unused_imports)]
 pub(crate) use connection::PreparedQuicListener;
 pub(crate) use connection::{
     build_connection_config, wrap_tls_server, ConnectionBuildParams, InboundSecurity,
@@ -1266,6 +1267,7 @@ impl ServiceSupervisor {
                         let udp_svc = prepared_listener.udp_service.clone();
                         #[cfg(feature = "ssh")]
                         let conn_ssh_sessions = listener_ssh_sessions.clone();
+                        #[cfg_attr(not(feature = "extended"), allow(unused_variables))]
                         let stream_tasks = conn_tasks.clone();
                         conn_tasks.spawn(async move {
                             let _active_guard = ActiveConnectionGuard::new(active);

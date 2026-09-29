@@ -52,7 +52,10 @@ pub struct ReverseServerConfig {
 impl Default for ReverseServerConfig {
     fn default() -> Self {
         Self {
-            control_bind: "127.0.0.1:0".parse().unwrap(),
+            control_bind: std::net::SocketAddr::new(
+                std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+                0,
+            ),
             external_bind: None,
             auth_username: None,
             auth_password: None,

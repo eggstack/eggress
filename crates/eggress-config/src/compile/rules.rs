@@ -343,7 +343,13 @@ pub(crate) fn compile_leaf_matcher(
 
     match matchers.len() {
         0 => Ok(eggress_routing::MatchExpr::Any),
-        1 => Ok(matchers.into_iter().next().expect("len checked to be 1")),
+        1 => match matchers.into_iter().next() {
+            Some(m) => Ok(m),
+            None => Err(ConfigError::validation(
+                "rules",
+                "matcher list changed during compilation",
+            )),
+        },
         _ => Ok(eggress_routing::MatchExpr::All(matchers)),
     }
 }

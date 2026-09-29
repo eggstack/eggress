@@ -312,9 +312,10 @@ pub fn determine_request_body_kind(
             .iter()
             .any(|c| c.eq_ignore_ascii_case("chunked"));
         if has_chunked {
-            let last = transfer_encodings.last().unwrap();
-            if !last.eq_ignore_ascii_case("chunked") {
-                return Err(HttpError::ChunkedNotFinal);
+            if let Some(last) = transfer_encodings.last() {
+                if !last.eq_ignore_ascii_case("chunked") {
+                    return Err(HttpError::ChunkedNotFinal);
+                }
             }
         }
 

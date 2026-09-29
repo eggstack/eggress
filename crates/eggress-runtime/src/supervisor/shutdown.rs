@@ -37,17 +37,11 @@ pub(crate) struct ShutdownPlan {
 }
 
 /// Run the canonical shutdown sequence.
-///
-/// 1. readiness false (`/-/ready` reports 503 during drain)
-/// 2. stop listeners (no new connections accepted)
-/// 3. stop health probes
-/// 4. close all UDP associations
-/// 5. wait for UDP relay tasks (bounded by grace)
-/// 6. wait for listener accept loops to exit
-/// 7. drain active connections within grace, then force-cancel
-/// 8. wait for connection tasks
-/// 9. stop admin last; restore the OS proxy if `--sys` applied one.
+/// The total wall-clock budget is one `shutdown_grace` shared across all
+/// stages (single deadline), so worst-case shutdown ≈ grace, not 3–4× grace.
 pub(crate) async fn shutdown_ordered(plan: ShutdownPlan) -> Result<(), RuntimeError> {
+    let deadline = tokio::time::Instant::now() + plan.shutdown_grace;
+    let remaining = || deadline.saturating_duration_since(tokio::time::Instant::now());
     // 1. Set readiness false (admin /-/ready will report 503 during drain)
     plan.readiness.store(false, Ordering::Release);
 
@@ -62,12 +56,12 @@ pub(crate) async fn shutdown_ordered(plan: ShutdownPlan) -> Result<(), RuntimeEr
 
     // 5. Wait for UDP relay tasks to complete
     plan.state.udp_tasks.close();
-    let _ = tokio::time::timeout(plan.shutdown_grace, plan.state.udp_tasks.wait()).await;
+    let _ = tokio::time::timeout(remaining(), plan.state.udp_tasks.wait()).await;
 
     // 6. Wait for listener accept loops to exit so they cannot hand
     //    new connections to the connection tracker.
     plan.tasks.close();
-    if tokio::time::timeout(plan.shutdown_grace, plan.tasks.wait())
+    if tokio::time::timeout(remaining(), plan.tasks.wait())
         .await
         .is_err()
     {
@@ -79,7 +73,6 @@ pub(crate) async fn shutdown_ordered(plan: ShutdownPlan) -> Result<(), RuntimeEr
     //    can observe drain progress via /-/ready, /-/status, /metrics.
     tracing::info!("draining active connections");
 
-    let deadline = tokio::time::Instant::now() + plan.shutdown_grace;
     loop {
         let active = plan.active_connections.load(Ordering::Acquire);
         if active == 0 {
@@ -96,7 +89,7 @@ pub(crate) async fn shutdown_ordered(plan: ShutdownPlan) -> Result<(), RuntimeEr
 
     // 8. Wait for connection tasks (either drained naturally or force-cancelled)
     plan.connection_tasks.close();
-    if tokio::time::timeout(plan.shutdown_grace, plan.connection_tasks.wait())
+    if tokio::time::timeout(remaining(), plan.connection_tasks.wait())
         .await
         .is_err()
     {
@@ -111,7 +104,12 @@ pub(crate) async fn shutdown_ordered(plan: ShutdownPlan) -> Result<(), RuntimeEr
     //    503 since step 1.
     plan.admin_cancel.cancel();
     plan.admin_tasks.close();
-    plan.admin_tasks.wait().await;
+    if tokio::time::timeout(remaining(), plan.admin_tasks.wait())
+        .await
+        .is_err()
+    {
+        tracing::warn!("admin task drain timed out");
+    }
 
     #[cfg(feature = "operations")]
     if let Some(mut proxy) = plan.compatibility_system_proxy {

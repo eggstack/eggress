@@ -204,15 +204,38 @@ async fn connect_to_addrs(
     let mut last_error = None;
     for &addr in addrs {
         let result = if let Some(local) = local_bind {
-            let local = match local {
-                SocketAddr::V6(local) => local
-                    .ip()
-                    .to_ipv4_mapped()
-                    .map(|ip| SocketAddr::new(ip.into(), local.port()))
-                    .unwrap_or(local.into()),
-                local => local,
+            // Choose the socket family from the bind address (not the
+            // destination) so V6-bind/V4-dest and V4-bind/V6-dest fail
+            // closed with a clear skip instead of a bind error, while
+            // `[::]:0` stays on a dual-stack V6 socket.
+            let bind_addr = match local {
+                SocketAddr::V6(l)
+                    if addr.is_ipv4() && l.ip() != &std::net::Ipv6Addr::UNSPECIFIED =>
+                {
+                    match l.ip().to_ipv4_mapped() {
+                        Some(v4) => SocketAddr::new(v4.into(), l.port()),
+                        None => local,
+                    }
+                }
+                _ => local,
             };
-            let socket = match if addr.is_ipv4() {
+            if bind_addr.is_ipv4() != addr.is_ipv4()
+                && !(matches!(bind_addr, SocketAddr::V6(l) if l.ip() == &std::net::Ipv6Addr::UNSPECIFIED)
+                    && addr.is_ipv4())
+            {
+                last_error = Some(ConnectError::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("local bind {bind_addr} incompatible with destination {addr}"),
+                )));
+                continue;
+            }
+            let want_v4 = if matches!(bind_addr, SocketAddr::V6(l) if l.ip() == &std::net::Ipv6Addr::UNSPECIFIED && addr.is_ipv4())
+            {
+                false
+            } else {
+                bind_addr.is_ipv4()
+            };
+            let socket = match if want_v4 {
                 tokio::net::TcpSocket::new_v4()
             } else {
                 tokio::net::TcpSocket::new_v6()
@@ -223,7 +246,7 @@ async fn connect_to_addrs(
                     continue;
                 }
             };
-            if let Err(e) = socket.bind(local) {
+            if let Err(e) = socket.bind(bind_addr) {
                 last_error = Some(ConnectError::Io(e));
                 continue;
             }
@@ -281,10 +304,15 @@ async fn resolve_target(
                 ));
             }
             if enforce_dns_rebinding_check {
-                if let Some(reserved) = addrs.iter().find(|addr| is_dns_rebinding_risk(&addr.ip()))
-                {
-                    return Err(ConnectError::ReservedTarget(reserved.ip()));
+                let first_ip = addrs[0].ip();
+                let filtered: Vec<_> = addrs
+                    .into_iter()
+                    .filter(|addr| !is_dns_rebinding_risk(&addr.ip()))
+                    .collect();
+                if filtered.is_empty() {
+                    return Err(ConnectError::ReservedTarget(first_ip));
                 }
+                return Ok(filtered);
             }
             Ok(addrs)
         }

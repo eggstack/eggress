@@ -350,8 +350,15 @@ impl HealthManager {
     }
 
     pub fn stop_all(&mut self) {
+        // Abort probes; the cancellation token plus `JoinSet` drop/abort
+        // guarantees no probe survives replacement. Callers needing
+        // deterministic join should use `shutdown_async`.
         self.tasks.abort_all();
-        while self.tasks.try_join_next().is_some() {}
+    }
+
+    pub async fn shutdown_async(&mut self) {
+        self.tasks.abort_all();
+        while self.tasks.join_next().await.is_some() {}
     }
 }
 

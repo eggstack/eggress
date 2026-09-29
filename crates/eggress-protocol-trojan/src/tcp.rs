@@ -73,6 +73,10 @@ pub struct TrojanAcceptResult {
 /// Reads the Trojan handshake: `hash(56) + CRLF + CMD(1) + ATYP + addr + port(2) + CRLF`.
 /// Verifies the password hash and returns the parsed target address.
 ///
+/// Timeout contract: this function performs sequential `read_exact` calls
+/// with no internal deadline; callers must wrap it in a handshake timeout
+/// (slow-loris protection is caller-owned).
+///
 /// This function expects to receive a stream **after** TLS termination.
 /// The first 58 bytes (56-char SHA224 hash + `\r\n`) are the password hash,
 /// followed by the CONNECT command and target address.
@@ -163,7 +167,12 @@ pub async fn trojan_accept(
                     domain_len, MAX_TROJAN_DOMAIN_LEN
                 )));
             }
-            let mut domain_buf = vec![0u8; domain_len + 2]; // domain + port
+            let mut domain_buf = vec![
+                0u8;
+                domain_len.checked_add(2).ok_or_else(|| {
+                    TrojanError::Protocol("domain length overflows buffer".into())
+                })?
+            ]; // domain + port
             stream
                 .read_exact(&mut domain_buf)
                 .await

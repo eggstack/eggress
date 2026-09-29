@@ -99,13 +99,19 @@ pub(crate) struct PreparedTransparentListenerPlaceholder;
 fn build_listener_auth(
     auth_cfg: Option<&eggress_config::model::AuthConfig>,
     reuse: Option<Arc<eggress_server::accept::AuthReuseCache>>,
-) -> eggress_server::accept::InboundAuthentication {
+) -> Result<eggress_server::accept::InboundAuthentication, RuntimeError> {
     match auth_cfg {
         Some(cfg) => {
             if cfg.auth_type == "password" {
                 let username = cfg.username.clone().unwrap_or_default();
                 let password = cfg.password.clone().unwrap_or_default();
-                if let Some(reuse) = reuse {
+                if username.is_empty() || password.is_empty() {
+                    return Err(RuntimeError::Other(
+                        "listener auth_type=password requires non-empty username and password"
+                            .to_string(),
+                    ));
+                }
+                Ok(if let Some(reuse) = reuse {
                     eggress_server::accept::InboundAuthentication::UsernamePasswordWithReuse {
                         username,
                         password,
@@ -116,12 +122,12 @@ fn build_listener_auth(
                         username,
                         password,
                     }
-                }
+                })
             } else {
-                eggress_server::accept::InboundAuthentication::None
+                Ok(eggress_server::accept::InboundAuthentication::None)
             }
         }
-        None => eggress_server::accept::InboundAuthentication::None,
+        None => Ok(eggress_server::accept::InboundAuthentication::None),
     }
 }
 
@@ -150,7 +156,7 @@ pub(crate) async fn prepare_listener_set(
 
     for lcfg in listener_configs {
         let protocols: Vec<ProtocolId> = lcfg.protocols.to_vec();
-        let auth = build_listener_auth(lcfg.auth.as_ref(), compatibility_auth_reuse.clone());
+        let auth = build_listener_auth(lcfg.auth.as_ref(), compatibility_auth_reuse.clone())?;
 
         let connection_limit = lcfg.connection_limit.unwrap_or(1024) as usize;
         let prepared_tls = prepare_tls_server_config(lcfg.tls.as_ref()).map_err(|error| {
@@ -433,6 +439,7 @@ pub(crate) fn publish_listener_addresses(
         .iter()
         .map(|lcfg| addr_map.get(&lcfg.name).copied().flatten())
         .collect();
+    #[cfg(feature = "operations")]
     let admin_addrs = addrs.clone();
     match state_ref.listener_addrs.lock() {
         Ok(mut guard) => *guard = addrs,

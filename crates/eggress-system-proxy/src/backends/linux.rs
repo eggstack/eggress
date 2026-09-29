@@ -208,11 +208,11 @@ fn get_gsettings_value(
     }
 
     // Strip surrounding quotes from gsettings output
-    let value = if stdout.starts_with('\'') && stdout.ends_with('\'') {
-        stdout[1..stdout.len() - 1].to_string()
-    } else {
-        stdout
-    };
+    let value = stdout
+        .strip_prefix('\'')
+        .and_then(|s| s.strip_suffix('\''))
+        .map(str::to_string)
+        .unwrap_or(stdout);
 
     Ok(Some(value))
 }

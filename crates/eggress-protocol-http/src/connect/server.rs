@@ -116,7 +116,7 @@ async fn read_connect_request(stream: &mut BoxStream) -> Result<ConnectRequest, 
                 } else {
                     saw_request_line = true;
                 }
-                if header_count > MAX_HEADER_LINES {
+                if header_count >= MAX_HEADER_LINES {
                     return Err(HttpError::TooManyHeaders);
                 }
             }

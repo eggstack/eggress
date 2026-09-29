@@ -173,13 +173,19 @@ pub async fn route_explain(
     );
 
     let dial = endpoint.dial_addr();
-    let mut stream =
-        tokio::net::TcpStream::connect(&dial)
-            .await
-            .map_err(|e| AdminClientError::Connect {
-                addr: dial.clone(),
-                reason: e.to_string(),
-            })?;
+    let mut stream = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        tokio::net::TcpStream::connect(&dial),
+    )
+    .await
+    .map_err(|_| AdminClientError::Connect {
+        addr: dial.clone(),
+        reason: "connect timed out".to_string(),
+    })?
+    .map_err(|e| AdminClientError::Connect {
+        addr: dial.clone(),
+        reason: e.to_string(),
+    })?;
 
     stream
         .write_all(request.as_bytes())
@@ -193,16 +199,31 @@ pub async fn route_explain(
     // connection (`Connection: close`) and a write-half shutdown races the
     // response on some platforms, surfacing as an empty reply.
 
+    // Bound the response so a compromised server cannot OOM the CLI.
+    const MAX_ADMIN_RESPONSE: usize = 1024 * 1024;
     let mut response = Vec::new();
     loop {
         let mut buf = [0u8; 4096];
-        match stream.read(&mut buf).await {
-            Ok(0) => break,
-            Ok(n) => response.extend_from_slice(&buf[..n]),
-            Err(e) => {
+        match tokio::time::timeout(std::time::Duration::from_secs(10), stream.read(&mut buf)).await
+        {
+            Err(_) => {
+                return Err(AdminClientError::Transport(
+                    "response read timed out".to_string(),
+                ));
+            }
+            Ok(Err(e)) => {
                 return Err(AdminClientError::Transport(format!(
                     "failed to read response: {e}"
                 )));
+            }
+            Ok(Ok(0)) => break,
+            Ok(Ok(n)) => {
+                if response.len().saturating_add(n) > MAX_ADMIN_RESPONSE {
+                    return Err(AdminClientError::Transport(
+                        "admin response exceeds 1 MiB limit".to_string(),
+                    ));
+                }
+                response.extend_from_slice(&buf[..n]);
             }
         }
     }
@@ -210,11 +231,15 @@ pub async fn route_explain(
     let body_start = text.find("\r\n\r\n").map(|i| i + 4).unwrap_or(0);
     let body = text[body_start..].to_string();
     let status_line = text.lines().next().unwrap_or("");
-    let status = status_line
+    let Some(status) = status_line
         .split_whitespace()
         .nth(1)
         .and_then(|s| s.parse::<u16>().ok())
-        .unwrap_or(0);
+    else {
+        return Err(AdminClientError::Parse(format!(
+            "malformed status line: {status_line:?}"
+        )));
+    };
 
     if status != 200 {
         return Err(AdminClientError::Status { status, body });

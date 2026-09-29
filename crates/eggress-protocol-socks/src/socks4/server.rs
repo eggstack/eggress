@@ -41,6 +41,10 @@ pub struct Socks4Request {
 
 /// Read a SOCKS4/4a request from the stream.
 ///
+/// Timeout contract: byte-at-a-time NUL scans are length-bounded but have
+/// no internal read deadline; callers must wrap this in a handshake timeout
+/// (slow-loris protection is caller-owned).
+///
 /// Format:
 ///   +----+----+----+----+----+----+----+----+----+----+....+----+
 ///   | VN | CD | DSTPORT |      DSTIP        | USERID       |0x00|

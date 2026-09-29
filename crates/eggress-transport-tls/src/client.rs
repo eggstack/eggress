@@ -7,40 +7,53 @@ use rustls::ClientConfig;
 
 pub use crate::error::TlsError;
 
-static DEFAULT_CLIENT_CONFIG: OnceLock<Result<Arc<ClientConfig>, String>> = OnceLock::new();
-static DEFAULT_H2_CLIENT_CONFIG: OnceLock<Result<Arc<ClientConfig>, String>> = OnceLock::new();
+static DEFAULT_CLIENT_CONFIG: OnceLock<Arc<ClientConfig>> = OnceLock::new();
+static DEFAULT_H2_CLIENT_CONFIG: OnceLock<Arc<ClientConfig>> = OnceLock::new();
 
 /// Return the process-shared verified client configuration for ordinary TLS.
 ///
 /// The configuration contains only immutable public system roots and no
 /// destination-specific state. Callers that need custom roots, client
 /// identity, or a caller-owned override must continue to use the builder.
+///
+/// Only successful builds are cached; a transient root-load failure is
+/// returned without poisoning the cache so later calls can retry.
 pub fn default_client_config() -> Result<Arc<ClientConfig>, TlsError> {
-    DEFAULT_CLIENT_CONFIG
-        .get_or_init(|| {
-            TlsClientConfigBuilder::new()
-                .with_system_roots()
-                .and_then(|builder| builder.build())
-                .map_err(|error| error.to_string())
-        })
-        .as_ref()
-        .map(Arc::clone)
-        .map_err(|error| TlsError::Handshake(error.clone()))
+    if let Some(config) = DEFAULT_CLIENT_CONFIG.get() {
+        return Ok(Arc::clone(config));
+    }
+    let config: Arc<ClientConfig> = TlsClientConfigBuilder::new()
+        .with_system_roots()
+        .and_then(|builder| builder.build())?;
+    // On a concurrent-build race, return the winner so all callers share
+    // one Arc (the sharing is asserted by tests).
+    match DEFAULT_CLIENT_CONFIG.set(Arc::clone(&config)) {
+        Ok(()) => Ok(config),
+        Err(_) => Ok(Arc::clone(
+            DEFAULT_CLIENT_CONFIG
+                .get()
+                .expect("cache was just set by the race winner"),
+        )),
+    }
 }
 
 /// Return the process-shared verified client configuration for H2-capable TLS.
 pub fn default_h2_client_config() -> Result<Arc<ClientConfig>, TlsError> {
-    DEFAULT_H2_CLIENT_CONFIG
-        .get_or_init(|| {
-            TlsClientConfigBuilder::new()
-                .with_system_roots()
-                .map(|builder| builder.with_h2_alpn())
-                .and_then(|builder| builder.build())
-                .map_err(|error| error.to_string())
-        })
-        .as_ref()
-        .map(Arc::clone)
-        .map_err(|error| TlsError::Handshake(error.clone()))
+    if let Some(config) = DEFAULT_H2_CLIENT_CONFIG.get() {
+        return Ok(Arc::clone(config));
+    }
+    let config: Arc<ClientConfig> = TlsClientConfigBuilder::new()
+        .with_system_roots()
+        .map(|builder| builder.with_h2_alpn())
+        .and_then(|builder| builder.build())?;
+    match DEFAULT_H2_CLIENT_CONFIG.set(Arc::clone(&config)) {
+        Ok(()) => Ok(config),
+        Err(_) => Ok(Arc::clone(
+            DEFAULT_H2_CLIENT_CONFIG
+                .get()
+                .expect("cache was just set by the race winner"),
+        )),
+    }
 }
 
 /// Adapt an existing `Arc<rustls::ClientConfig>` to a requested ALPN list
@@ -83,45 +96,51 @@ pub fn client_config_with_alpn(
 }
 
 #[cfg(feature = "insecure-tls")]
-static DEFAULT_INSECURE_CLIENT_CONFIG: OnceLock<Result<Arc<ClientConfig>, String>> =
-    OnceLock::new();
+static DEFAULT_INSECURE_CLIENT_CONFIG: OnceLock<Arc<ClientConfig>> = OnceLock::new();
 
 #[cfg(feature = "insecure-tls")]
-static DEFAULT_INSECURE_H2_CLIENT_CONFIG: OnceLock<Result<Arc<ClientConfig>, String>> =
-    OnceLock::new();
+static DEFAULT_INSECURE_H2_CLIENT_CONFIG: OnceLock<Arc<ClientConfig>> = OnceLock::new();
 
 /// Return the process-shared insecure configuration used by compatibility
 /// `?insecure` hops. This remains feature-gated and is never used for a
 /// caller-supplied TLS override.
 #[cfg(feature = "insecure-tls")]
 pub fn default_insecure_client_config() -> Result<Arc<ClientConfig>, TlsError> {
-    DEFAULT_INSECURE_CLIENT_CONFIG
-        .get_or_init(|| {
-            TlsClientConfigBuilder::new()
-                .with_system_roots()
-                .map(|builder| builder.with_insecure())
-                .and_then(|builder| builder.build())
-                .map_err(|error| error.to_string())
-        })
-        .as_ref()
-        .map(Arc::clone)
-        .map_err(|error| TlsError::Handshake(error.clone()))
+    if let Some(config) = DEFAULT_INSECURE_CLIENT_CONFIG.get() {
+        return Ok(Arc::clone(config));
+    }
+    let config: Arc<ClientConfig> = TlsClientConfigBuilder::new()
+        .with_system_roots()
+        .map(|builder| builder.with_insecure())
+        .and_then(|builder| builder.build())?;
+    match DEFAULT_INSECURE_CLIENT_CONFIG.set(Arc::clone(&config)) {
+        Ok(()) => Ok(config),
+        Err(_) => Ok(Arc::clone(
+            DEFAULT_INSECURE_CLIENT_CONFIG
+                .get()
+                .expect("cache was just set by the race winner"),
+        )),
+    }
 }
 
 /// Return the process-shared insecure H2-capable configuration.
 #[cfg(feature = "insecure-tls")]
 pub fn default_insecure_h2_client_config() -> Result<Arc<ClientConfig>, TlsError> {
-    DEFAULT_INSECURE_H2_CLIENT_CONFIG
-        .get_or_init(|| {
-            TlsClientConfigBuilder::new()
-                .with_system_roots()
-                .map(|builder| builder.with_insecure().with_h2_alpn())
-                .and_then(|builder| builder.build())
-                .map_err(|error| error.to_string())
-        })
-        .as_ref()
-        .map(Arc::clone)
-        .map_err(|error| TlsError::Handshake(error.clone()))
+    if let Some(config) = DEFAULT_INSECURE_H2_CLIENT_CONFIG.get() {
+        return Ok(Arc::clone(config));
+    }
+    let config: Arc<ClientConfig> = TlsClientConfigBuilder::new()
+        .with_system_roots()
+        .map(|builder| builder.with_insecure().with_h2_alpn())
+        .and_then(|builder| builder.build())?;
+    match DEFAULT_INSECURE_H2_CLIENT_CONFIG.set(Arc::clone(&config)) {
+        Ok(()) => Ok(config),
+        Err(_) => Ok(Arc::clone(
+            DEFAULT_INSECURE_H2_CLIENT_CONFIG
+                .get()
+                .expect("cache was just set by the race winner"),
+        )),
+    }
 }
 
 /// Builder for constructing `rustls::ClientConfig` from declarative configuration.

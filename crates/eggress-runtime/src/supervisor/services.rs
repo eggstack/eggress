@@ -5,12 +5,17 @@
 //! baseline surfaced synchronously before readiness remain synchronous here;
 //! nothing is hidden behind detached tasks.
 
+#[allow(unused_imports)]
 use std::sync::Arc;
 
+#[allow(unused_imports)]
 use tokio_util::sync::CancellationToken;
+#[allow(unused_imports)]
 use tokio_util::task::TaskTracker;
 
+#[allow(unused_imports)]
 use super::state::RuntimeState;
+#[allow(unused_imports)]
 use crate::error::RuntimeError;
 
 /// Select the local HTTP/SOCKS5 listener for `--sys` (SOCKS5 preferred).
