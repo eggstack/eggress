@@ -112,9 +112,11 @@ impl OwnershipVerifier for SiblingPairVerifier {
 
 /// Map an Eggup commit receipt onto the updater outcome contract.
 ///
-/// `Committed` is success. `RolledBack` distinguishes whether anything was
-/// mutated (`rollback_performed`): pre-mutation failures leave the install
-/// untouched, post-mutation failures restore the previous pair.
+/// `Committed` is success; a finalize cleanup note (e.g. a Windows
+/// running-image backup the OS keeps locked) is reported as a suffix while
+/// keeping the success exit category. `RolledBack` distinguishes whether
+/// anything was mutated (`rollback_performed`): pre-mutation failures leave
+/// the install untouched, post-mutation failures restore the previous pair.
 /// `RecoveryRequired` is a hard failure that preserves the retained evidence
 /// path for the operator. Pure over its inputs so every branch is unit
 /// tested; the production path derives the inputs from the live receipt.
@@ -126,7 +128,13 @@ pub fn map_commit_outcome(
 ) -> Result<String, String> {
     let detail = failure_detail.unwrap_or("unknown update failure");
     match disposition {
-        TransactionDisposition::Committed => Ok(String::new()),
+        TransactionDisposition::Committed => match recovery_path {
+            None => Ok(String::new()),
+            Some(path) => Ok(format!(
+                " (note: {detail}; retained evidence at {})",
+                path.display()
+            )),
+        },
         TransactionDisposition::RolledBack if !rollback_performed => Err(format!(
             "{detail}; leaving the current installation untouched"
         )),
@@ -572,11 +580,23 @@ mod tests {
 
     #[test]
     fn commit_outcome_mapping_covers_every_disposition() {
-        // Success carries the empty suffix so the caller keeps its message.
+        // Clean success carries the empty suffix so the caller keeps its message.
         assert_eq!(
             map_commit_outcome(TransactionDisposition::Committed, false, None, None).unwrap(),
             ""
         );
+        // Success with a finalize cleanup note (e.g. a Windows
+        // running-image backup the OS keeps locked) stays success but
+        // reports the retained evidence instead of dropping it.
+        let outcome = map_commit_outcome(
+            TransactionDisposition::Committed,
+            false,
+            Some("removing backup set after commit: permission denied"),
+            Some(Path::new("/tmp/.eggup-backup-x")),
+        )
+        .unwrap();
+        assert!(outcome.contains("/tmp/.eggup-backup-x"), "{outcome}");
+        assert!(outcome.contains("retained evidence"), "{outcome}");
         // Pre-mutation failure: nothing was touched.
         let err = map_commit_outcome(
             TransactionDisposition::RolledBack,
