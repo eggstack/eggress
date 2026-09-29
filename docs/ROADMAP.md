@@ -55,15 +55,15 @@ CLI exit behavior, and no-fallback/no-elevation policy while replacing generic
 shell archive extraction plus the bespoke two-binary backup/rollback transaction
 with Eggup's qualified archive extraction and multi-artifact transaction.
 
-The plan is **READY** for final dependency cutover. Eggup Archive M001d is
-runtime-qualified (`eggstack/eggup@18d83de`, hosted run `36335233644`), and its
-post-M001d `eggup-core` API and `eggup-archive` are available as a compatible
-versioned registry package pair since 2026-09-28: `eggup-core 0.1.2` +
-`eggup-archive 0.1.2` (Eggup M009 closure, `eggstack/eggup@v0.1.2`).
-Immutable-revision qualification remains permitted before cutover; a permanent
-git/path dependency is not acceptable for the publishable Eggress workspace.
-This milestone does not authorize a 1.0.10 tag/publication and does not change
-pproxy compatibility claims.
+The plan is **LANDED AND CLOSED** (`plans/closure/delivery/003-status.md`).
+Eggup Archive M001d is runtime-qualified (`eggstack/eggup@18d83de`, hosted
+run `36335233644`), and its post-M001d `eggup-core` API and `eggup-archive`
+shipped as a compatible versioned registry package pair on 2026-09-28
+(`eggup-core 0.1.2` + `eggup-archive 0.1.2`, Eggup M009 closure,
+`eggstack/eggup@v0.1.2`) and were adopted with hosted Linux/macOS/Windows
+updater evidence on 2026-09-29. A permanent git/path dependency never entered
+the publishable Eggress workspace. This milestone does not authorize a 1.0.10
+tag/publication and does not change pproxy compatibility claims.
 
 ## Completed Milestones
 

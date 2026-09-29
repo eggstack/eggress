@@ -1,6 +1,6 @@
 # Delivery (CLI, Embed, Python, Release) Roadmap
 
-Status: active; M001-M002 closed, M003 Eggup archive/pair self-update adoption ready (Eggup 0.1.2 pair published 2026-09-28)
+Status: active; M001-M003 closed (M003 Eggup archive/pair adoption landed on registry eggup-core/archive 0.1.2 with hosted Linux/macOS/Windows updater evidence)
 
 Long-term references:
 
@@ -45,11 +45,11 @@ Architecture: `architecture/cli.md`, `architecture/admin.md`, `architecture/metr
 
 CLI cleanup/version/self-update, distribution docs/policy, embed/Python stabilization, PyPI matrix expansion, manual-publish simplification all complete. 1.0.10 prepared but unpublished; publication/tagging is maintainer-authorized, not planning-authorized.
 
-A newly qualified upstream convergence path is registered as M003: Eggup Archive M001d can replace Eggress's generic shell archive extraction and bespoke two-binary rollback transaction while Eggress retains GitHub/checksum/version/CLI policy. The implementation plan is complete and ready for dependency cutover: Eggup M009 published compatible versioned `eggup-core 0.1.2` and `eggup-archive 0.1.2` to the registry on 2026-09-28. Permanent git/path dependencies are not acceptable for the publishable workspace.
+A newly qualified upstream convergence path was registered as M003: Eggup Archive M001d can replace Eggress's generic shell archive extraction and bespoke two-binary rollback transaction while Eggress retains GitHub/checksum/version/CLI policy. The implementation plan is complete and landed: Eggup M009 published compatible versioned `eggup-core 0.1.2` and `eggup-archive 0.1.2` to the registry on 2026-09-28, and M003 adopted them with hosted updater qualification (closure `plans/closure/delivery/003-status.md`). Permanent git/path dependencies are not acceptable for the publishable workspace.
 
 ## 5. Target architecture
 
-One version, verified artifacts, manual-gated publication, with generic self-update archive/transaction mechanics delegated to Eggup while Eggress retains release and CLI policy. The existing release architecture is attained; updater-mechanism convergence is an active M003 extension.
+One version, verified artifacts, manual-gated publication, with generic self-update archive/transaction mechanics delegated to Eggup while Eggress retains release and CLI policy. The existing release architecture is attained; updater-mechanism convergence landed as M003.
 
 ## 6. Dependency graph
 
@@ -58,7 +58,7 @@ CLI surface (hard)
     +--> Embed facade (soft)
     +--> Python bindings/packaging (soft)
     +--> Release automation (operational: tags, PyPI env, crates.io manual)
-    `--> M003 Eggup updater convergence [READY: eggup-core/archive 0.1.2 on crates.io]
+    `--> M003 Eggup updater convergence [CLOSED with registry 0.1.2 pair]
 ```
 
 ## 7. Milestones
@@ -75,7 +75,7 @@ Class: polish/infrastructure. Objective: wheel matrix, publish helper, installer
 
 Plan: `plans/implementation/delivery/003-eggup-archive-pair-self-update-adoption.md`.
 
-Class: capability/delivery convergence. Status: ready — Eggup M009 published `eggup-core 0.1.2` + `eggup-archive 0.1.2` on 2026-09-28; registry dependency cutover permitted.
+Class: capability/delivery convergence. Status: closed — Eggup M009 published `eggup-core 0.1.2` + `eggup-archive 0.1.2` on 2026-09-28 and this milestone adopted them; see `plans/closure/delivery/003-status.md`.
 
 Objective: retain Eggress release discovery, target mapping, checksum, staged-version, CLI, and publication policy while replacing generic tar/zip extraction plus the bespoke `eggress`/`pproxy` backup/rollback transaction with Eggup's qualified archive extraction and multi-artifact transaction.
 
@@ -97,7 +97,7 @@ Tag-push discipline remains critical because both publish workflows fire on `v*`
 
 ## 11. Completion definition
 
-Existing delivery surfaces are qualified and 1.0.10 remains prepared/unpublished. M003 is an active convergence extension and closes only after the updater migration qualifies (the versioned Eggup dependency gate closed 2026-09-28); it does not authorize tagging/publication.
+Existing delivery surfaces are qualified and 1.0.10 remains prepared/unpublished. M003 landed the updater convergence with the versioned Eggup dependency gate closed 2026-09-28 and hosted qualification green; it does not authorize tagging/publication.
 
 ## 12. Milestone status
 
@@ -105,4 +105,4 @@ Existing delivery surfaces are qualified and 1.0.10 remains prepared/unpublished
 |---|---|---|---|---|
 | 1 | closed (historical) | archive CLI/embed/python records | archive + Git history | — |
 | 2 | closed | archive distribution records | registry control points | maintainer release action (out of planning scope) |
-| 3 | ready | `plans/implementation/delivery/003-eggup-archive-pair-self-update-adoption.md` | — | — (Eggup 0.1.2 pair on crates.io since 2026-09-28) |
+| 3 | closed | `plans/implementation/delivery/003-eggup-archive-pair-self-update-adoption.md` | `plans/closure/delivery/003-status.md` | — (registry 0.1.2 pair adopted; updater lanes green) |

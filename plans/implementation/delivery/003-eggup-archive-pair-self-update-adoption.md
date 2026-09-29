@@ -1,6 +1,6 @@
 # Delivery Milestone 003 — Eggup Archive/Pair Self-Update Adoption
 
-Status: ready — Eggup 0.1.2 registry gate satisfied 2026-09-28 (`eggup-core 0.1.2` + `eggup-archive 0.1.2` published to crates.io; Eggup M009 closed)
+Status: implemented; closed by `plans/closure/delivery/003-status.md` (registry 0.1.2 pair adopted, hosted Linux/macOS/Windows updater lanes green)
 
 Repository baseline: `8cb2caf3977e98c00569a551e9466b6ad1654c89`
 

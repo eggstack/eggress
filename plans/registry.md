@@ -34,13 +34,11 @@ Complementary authority: `docs/ROADMAP.md` (canonical roadmap), `docs/parity/ppr
 | Transports | closed | `plans/subsystems/transports-roadmap.md` | All milestones closed; SSH/QUIC remain feature-gated by design | None. |
 | Outbound chains and connectors | closed | `plans/subsystems/outbound-chains-roadmap.md` | All milestones closed; pooled-transport/H2/ALPN correctives qualified | None. |
 | Parity contract and compatibility translation | closed | `plans/subsystems/parity-compat-roadmap.md` | All milestones closed; manifest has no unresolved `gap` outside tiered boundaries | None. |
-| Delivery (CLI, embed, Python, release) | active | `plans/subsystems/delivery-roadmap.md` | M003 Eggup archive/pair self-update adoption | Ready: `eggup-core 0.1.2` + `eggup-archive 0.1.2` on crates.io since 2026-09-28; 1.0.10 publication remains separately maintainer-authorized. |
+| Delivery (CLI, embed, Python, release) | active | `plans/subsystems/delivery-roadmap.md` | M003 Eggup archive/pair self-update adoption landed | Closed 2026-09-29 (`plans/closure/delivery/003-status.md`); 1.0.10 publication remains separately maintainer-authorized. |
 
 ## Dependency-ready implementation plans
 
-| Subsystem | Milestone | Status | Plan | Dependencies |
-|---|---|---|---|---|
-| Delivery | M003 Eggup archive/pair self-update adoption | ready | `plans/implementation/delivery/003-eggup-archive-pair-self-update-adoption.md` | Eggup registry-package gate closed 2026-09-28 (`eggup-core 0.1.2` + `eggup-archive 0.1.2`); no git/path dependency permitted in the publishable workspace |
+None. Delivery M003 landed and closed 2026-09-29 (`plans/closure/delivery/003-status.md`).
 
 ## Current execution order and dependency gates
 
@@ -50,7 +48,7 @@ Complementary authority: `docs/ROADMAP.md` (canonical roadmap), `docs/parity/ppr
 
 **Verification gate:** `docs/CI_STATUS.md` owns verification policy; `docs/TESTING.md` owns the suite inventory. Ordinary changes use the narrowest test first, then the broad gate before merging substantial Rust changes.
 
-**Eggup updater-convergence gate (closed 2026-09-28):** Delivery M003 is registered at `plans/implementation/delivery/003-eggup-archive-pair-self-update-adoption.md`. Eggup Archive M001d is runtime-qualified (`eggstack/eggup@18d83de`, hosted run `36335233644`), and the required post-M001d APIs are now available as compatible registry packages: `eggup-core 0.1.2` + `eggup-archive 0.1.2` (Eggup M009 closure, `eggstack/eggup@v0.1.2`). Final Cargo dependency cutover may proceed against the registry versions. Eggress release/checksum/version/CLI policy remains local.
+**Eggup updater-convergence gate (closed 2026-09-28; consumer landed 2026-09-29):** Delivery M003 is registered at `plans/implementation/delivery/003-eggup-archive-pair-self-update-adoption.md` and closed in `plans/closure/delivery/003-status.md`. Eggup Archive M001d is runtime-qualified (`eggstack/eggup@18d83de`, hosted run `36335233644`), and the required post-M001d APIs shipped as compatible registry packages: `eggup-core 0.1.2` + `eggup-archive 0.1.2` (Eggup M009 closure, `eggstack/eggup@v0.1.2`). The final Cargo dependency cutover landed against the registry versions with hosted Linux/macOS/Windows updater evidence. Eggress release/checksum/version/CLI policy remains local.
 
 ## Blocked work
 
