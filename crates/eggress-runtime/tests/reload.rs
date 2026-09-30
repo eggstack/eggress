@@ -838,6 +838,10 @@ protocols = ["socks5"]
         socks5_connect_reply(listener_addr, echo_addr).await,
         [0x05, 0x00]
     );
+    // Capture the generation before triggering the reload: the signal loop
+    // can apply our SIGHUP before this task resumes, so reading it after
+    // `kill` races with our own reload and can miss the bump entirely.
+    let gen_before = state.generation();
 
     // Routing-only change: reject the echo port. Listeners are untouched.
     let config2 = format!(
@@ -872,9 +876,8 @@ reject = "blocked"
         .output()
         .ok();
     // A cross-delivered HUP from a sibling test can only advance the
-    // generation with this same routing file, so `>= 1` plus the behavior
-    // check below is the robust assertion.
-    let gen_before = state.generation();
+    // generation with this same routing file, so `> gen_before` plus the
+    // behavior check below is the robust assertion.
     for _ in 0..100 {
         if state.generation() > gen_before {
             break;

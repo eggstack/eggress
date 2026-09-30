@@ -95,45 +95,67 @@ impl PyUriInfo {
     }
 }
 
+fn uri_info(parsed: &eggress_pproxy_compat::uri::PproxyUri) -> PyUriInfo {
+    PyUriInfo {
+        scheme: parsed.scheme.clone(),
+        host: parsed.host.clone(),
+        port: parsed.port,
+        tls: parsed.tls,
+        ssl: parsed.ssl,
+        inbound: parsed.inbound,
+        backward_num: parsed.backward_num,
+        has_auth: parsed.username.is_some(),
+        has_rule: parsed.rule.is_some(),
+        is_reverse_listener: parsed.is_reverse_listener(),
+        redacted_display: parsed.redacted_display(),
+        error: None,
+    }
+}
+
+fn uri_error(message: &str) -> PyUriInfo {
+    PyUriInfo {
+        scheme: String::new(),
+        host: String::new(),
+        port: 0,
+        tls: false,
+        ssl: false,
+        inbound: false,
+        backward_num: 0,
+        has_auth: false,
+        has_rule: false,
+        is_reverse_listener: false,
+        redacted_display: String::new(),
+        error: Some(message.to_string()),
+    }
+}
+
 #[pyfunction]
 pub(crate) fn check_pproxy_uri(uri: &str) -> PyUriInfo {
     match eggress_pproxy_compat::uri::parse_pproxy_uri(uri) {
-        Ok(parsed) => PyUriInfo {
-            scheme: parsed.scheme.clone(),
-            host: parsed.host.clone(),
-            port: parsed.port,
-            tls: parsed.tls,
-            ssl: parsed.ssl,
-            inbound: parsed.inbound,
-            backward_num: parsed.backward_num,
-            has_auth: parsed.username.is_some(),
-            has_rule: parsed.rule.is_some(),
-            is_reverse_listener: parsed.is_reverse_listener(),
-            redacted_display: parsed.redacted_display(),
-            error: None,
-        },
-        Err(e) => PyUriInfo {
-            scheme: String::new(),
-            host: String::new(),
-            port: 0,
-            tls: false,
-            ssl: false,
-            inbound: false,
-            backward_num: 0,
-            has_auth: false,
-            has_rule: false,
-            is_reverse_listener: false,
-            redacted_display: String::new(),
-            error: Some(e.to_string()),
-        },
+        Ok(parsed) => uri_info(&parsed),
+        Err(single_err) => {
+            // pproxy applies chain splitting to every URI-bearing flag, so a
+            // `__` chain is reported via its head hop instead of as an error.
+            // Any other failure keeps the single-URI diagnostic.
+            match eggress_pproxy_compat::uri::parse_pproxy_chain(uri) {
+                Ok(chain) if chain.hops.len() > 1 => uri_info(&chain.hops[0]),
+                _ => uri_error(&single_err.to_string()),
+            }
+        }
     }
 }
 
 #[pyfunction]
 pub(crate) fn redact_pproxy_uri(uri: &str) -> PyResult<String> {
-    let parsed = eggress_pproxy_compat::uri::parse_pproxy_uri(uri)
-        .map_err(|e| UnsupportedFeatureError::new_err(format!("invalid pproxy URI: {e}")))?;
-    Ok(parsed.redacted_display())
+    match eggress_pproxy_compat::uri::parse_pproxy_uri(uri) {
+        Ok(parsed) => Ok(parsed.redacted_display()),
+        Err(single_err) => match eggress_pproxy_compat::uri::parse_pproxy_chain(uri) {
+            Ok(chain) if chain.hops.len() > 1 => Ok(chain.redacted_display()),
+            _ => Err(UnsupportedFeatureError::new_err(format!(
+                "invalid pproxy URI: {single_err}"
+            ))),
+        },
+    }
 }
 
 // --- diagnostics ---
@@ -582,9 +604,10 @@ pub(crate) fn route_explain(py: Python<'_>, toml_str: &str, target: &str) -> PyR
                         })?;
                         members.push(member.clone());
                     }
-                    if members.is_empty() {
-                        return Err(format!("group '{}' has no valid members", g.id.0));
-                    }
+                    // Explain is diagnostic: an empty group still reports its
+                    // match (with no eligible/selected upstream) instead of
+                    // failing like the serving path does. Unknown member
+                    // references stay an error.
                     let fallback = match g.fallback {
                         eggress_config::compile::GroupFallback::Reject => UpstreamFallback::Reject,
                         eggress_config::compile::GroupFallback::Direct => UpstreamFallback::Direct,
@@ -879,23 +902,37 @@ pub(crate) fn translate_pproxy_uri(
     local: &str,
     remotes: Option<&Bound<'_, PySequence>>,
 ) -> PyResult<PyTranslationResult> {
-    let local_uri = eggress_pproxy_compat::uri::parse_pproxy_uri(local)
+    let local_chain = eggress_pproxy_compat::uri::parse_pproxy_chain(local)
         .map_err(|e| UnsupportedFeatureError::new_err(format!("invalid local URI: {e}")))?;
+    // A local `__` chain listens on its head hop and chains the tail hops
+    // as leading remotes, matching pproxy (`-l a__b` behaves like `-l a -r b`).
+    let mut local_hops = local_chain.hops.into_iter();
+    let local_uri = local_hops.next().ok_or_else(|| {
+        UnsupportedFeatureError::new_err("invalid local URI: empty chain".to_string())
+    })?;
+    let local_tail: Vec<_> = local_hops.collect();
 
-    let remote_chains: Vec<eggress_pproxy_compat::PproxyChain> = match remotes {
-        Some(seq) => {
-            let len = seq.len()?;
-            (0..len)
-                .map(|i| {
-                    let s: String = seq.get_item(i)?.extract()?;
-                    eggress_pproxy_compat::uri::parse_pproxy_chain(&s).map_err(|e| {
-                        UnsupportedFeatureError::new_err(format!("invalid remote URI: {e}"))
-                    })
-                })
-                .collect::<PyResult<_>>()?
+    let mut remote_chains: Vec<eggress_pproxy_compat::PproxyChain> = Vec::new();
+    if !local_tail.is_empty() {
+        let raw = local_tail
+            .iter()
+            .map(|hop| hop.redacted_display())
+            .collect::<Vec<_>>()
+            .join("__");
+        remote_chains.push(eggress_pproxy_compat::PproxyChain {
+            raw,
+            hops: local_tail,
+        });
+    }
+    if let Some(seq) = remotes {
+        let len = seq.len()?;
+        for i in 0..len {
+            let s: String = seq.get_item(i)?.extract()?;
+            remote_chains.push(eggress_pproxy_compat::uri::parse_pproxy_chain(&s).map_err(
+                |e| UnsupportedFeatureError::new_err(format!("invalid remote URI: {e}")),
+            )?);
         }
-        None => Vec::new(),
-    };
+    }
 
     let output = py
         .detach(|| {
@@ -1029,9 +1066,9 @@ pub(crate) fn run_pproxy_test(
         .map_err(PyValueError::new_err)?
         .to_string();
     if config.upstreams.is_empty() {
-        return Err(ConfigError::new_err(
-            "pproxy config error: no upstreams to test",
-        ));
+        // Listener-only compiles to no upstreams: there is nothing to probe,
+        // so report success before any network I/O or listener startup.
+        return Ok(0);
     }
     Ok(py.detach(|| {
         eggress_cli::run_upstream_test(&config, Some(&target), Duration::from_secs(10), false)

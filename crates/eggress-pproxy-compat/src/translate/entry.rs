@@ -15,19 +15,13 @@ use crate::warnings::TranslationOutput;
 
 /// Translate pproxy-style arguments into Eggress TOML configuration.
 pub fn translate_pproxy_args(args: &PproxyArgs) -> Result<TranslationOutput, CompatError> {
-    let local_uris = args.parse_local_uris()?;
+    // Local `-l` values accept pproxy `__` chains: the head hop of each
+    // local chain is the listener, tail hops become leading remote chains.
+    let (local_uris, mut remote_chains) = args.parse_local_chains_split()?;
 
     // Parse remote URIs as chains (supports __ hop separator)
-    let mut remote_chains = Vec::new();
+    remote_chains.extend(args.parse_remote_chains()?);
     let mut chain_warnings = TranslationOutput::new(String::new());
-    for raw_remote in args.remotes.iter() {
-        match crate::uri::parse_pproxy_chain(raw_remote) {
-            Ok(chain) => remote_chains.push(chain),
-            Err(e) => {
-                return Err(e);
-            }
-        }
-    }
 
     // Validate chain hops for unsupported protocols
     for chain in &remote_chains {
@@ -111,18 +105,14 @@ impl CombinedTranslation {
 pub fn translate_pproxy_args_to_native(
     args: &PproxyArgs,
 ) -> Result<CombinedTranslation, CompatError> {
-    let local_uris = args.parse_local_uris()?;
+    // Local `-l` values accept pproxy `__` chains: the head hop of each
+    // local chain is the listener, tail hops become leading remote chains.
+    let (local_uris, mut remote_chains) = args.parse_local_chains_split()?;
 
-    let mut remote_chains = Vec::new();
+    // Parse remote URIs as chains (supports __ hop separator)
+    remote_chains.extend(args.parse_remote_chains()?);
+
     let mut chain_unsupported = Vec::new();
-    for raw_remote in args.remotes.iter() {
-        match crate::uri::parse_pproxy_chain(raw_remote) {
-            Ok(chain) => remote_chains.push(chain),
-            Err(error) => {
-                return Err(error);
-            }
-        }
-    }
 
     for chain in &remote_chains {
         let unsupported = crate::uri::validate_chain_hops(chain);

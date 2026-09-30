@@ -90,8 +90,13 @@ fn handle_pproxy_check(args: &PproxyCheck) -> i32 {
         }
     };
 
-    let local_uris = pproxy_args.parse_local_uris();
-    let remote_chains = pproxy_args.parse_remote_chains();
+    // Listener display uses local chain heads (`-l a__b` listens on `a`);
+    // the remotes display covers local chain tails plus `-r` chains so
+    // check output matches the translation.
+    let local_uris = pproxy_args
+        .parse_local_chains_split()
+        .map(|(heads, _)| heads);
+    let remote_chains = pproxy_args.parse_effective_remote_chains();
 
     if args.json {
         let listeners = match &local_uris {

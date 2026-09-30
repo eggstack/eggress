@@ -594,12 +594,56 @@ impl PproxyArgs {
             .collect()
     }
 
-    /// Parse all remote URIs into chain representations (supports `__` separators).
+    /// Parse all local URIs into chain representations (supports `__` separators).
     pub fn parse_remote_chains(&self) -> Result<Vec<PproxyChain>, CompatError> {
         self.remotes
             .iter()
             .map(|s| crate::uri::parse_pproxy_chain(s))
             .collect()
+    }
+
+    /// Parse local URIs as chains, matching pproxy (which applies
+    /// `proxies_by_uri` chain splitting to `-l` as well as `-r`).
+    ///
+    /// Returns `(listeners, chained_remotes)`: the head hop of each local
+    /// chain is the listener; non-empty tail hops become leading remote
+    /// chains, so `-l a__b` behaves like `-l a -r b`.
+    pub fn parse_local_chains_split(
+        &self,
+    ) -> Result<(Vec<PproxyUri>, Vec<PproxyChain>), CompatError> {
+        let mut listeners = Vec::new();
+        let mut chained_remotes = Vec::new();
+        for raw in &self.local {
+            let chain = crate::uri::parse_pproxy_chain(raw)?;
+            let mut hops = chain.hops.into_iter();
+            let Some(head) = hops.next() else {
+                return Err(CompatError::InvalidUri {
+                    message: "empty local chain in '-l' argument".to_string(),
+                });
+            };
+            listeners.push(head);
+            let tail: Vec<PproxyUri> = hops.collect();
+            if !tail.is_empty() {
+                // `raw` is redacted display by construction (hop displays
+                // never carry secrets), so joining it leaks nothing.
+                let raw = tail
+                    .iter()
+                    .map(|hop| hop.redacted_display())
+                    .collect::<Vec<_>>()
+                    .join("__");
+                chained_remotes.push(PproxyChain { raw, hops: tail });
+            }
+        }
+        Ok((listeners, chained_remotes))
+    }
+
+    /// Parse effective remote chains: local `-l` chain tails first, then
+    /// `-r` chains. Surfaces that display or consume the post-translation
+    /// remote set should use this so `-l a__b` shows `b` as a remote.
+    pub fn parse_effective_remote_chains(&self) -> Result<Vec<PproxyChain>, CompatError> {
+        let (_, mut tails) = self.parse_local_chains_split()?;
+        tails.extend(self.parse_remote_chains()?);
+        Ok(tails)
     }
 }
 
