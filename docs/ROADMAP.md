@@ -46,16 +46,19 @@ Qualification record (archive phase-records retain their original
 crates.io, GitHub Release with the five prebuilt CLI archives +
 installers).
 
-### 1.0.11 — release in progress (patch)
+### 1.0.11 — qualified and published (patch)
 
 Patch rollup of post-1.0.10 work: actionable `bugs.md` findings resolution,
 pproxy chain parity restoration after fail-closed validation, Eggup
 registry-pair self-update adoption follow-ups (`eggup-core`/`eggup-archive`
 0.1.2) with the CLI SSH-threading unwind that unblocked `cargo package`,
 plus docs/architecture refresh and planning-convention adoption. No
-compatibility-claim changes (manifest plus matrix unchanged). The workspace
-is at 1.0.11; publication follows the lockstep procedure in
-`docs/release/RELEASE_PROCESS.md`.
+compatibility-claim changes (manifest plus matrix unchanged).
+
+`v1.0.11` was tagged and published 2026-09-30 (PyPI `eggress 1.0.11`,
+crates.io, GitHub Release with the five prebuilt CLI archives +
+installers). The workspace is at 1.0.11; the next version bump follows
+the lockstep procedure in `docs/release/RELEASE_PROCESS.md`.
 
 ### Active maintenance — Eggup archive/pair self-update convergence
 
