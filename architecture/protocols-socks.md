@@ -15,11 +15,11 @@ version sniffers.
 | `socks4/test_server.rs` | Test-only synthetic SOCKS4 server | — |
 | `socks5/mod.rs` | Submodule root for the SOCKS5 implementation | — |
 | `lib.rs` | `Socks5Detector`: version byte 0x05, confidence 100; re-exports | `Socks5Detector` (:21) |
-| `socks4/server.rs` | `read_socks4_request` / `write_socks4_reply`; 4a domain when IP=`0.0.0.x`(x!=0); USERID<=255; BIND rejected | `MAX_USER_ID_LEN` (`socks4/mod.rs:9`), `read_socks4_request` (:52), `write_socks4_reply` (:143) |
-| `socks4/client.rs` | `socks4_connect`: IP->SOCKS4, domain->SOCKS4a (IP=0.0.0.1); IPv6 rejected | `socks4_connect` (:16) |
+| `socks4/server.rs` | `read_socks4_request` / `write_socks4_reply`; 4a domain when IP=`0.0.0.x`(x!=0); USERID<=255; BIND rejected | `MAX_USER_ID_LEN` (`socks4/mod.rs:9`), `read_socks4_request` (:56), `write_socks4_reply` (:147) |
+| `socks4/client.rs` | `socks4_connect`: IP->SOCKS4, domain->SOCKS4a (IP=0.0.0.1); IPv6 rejected | `socks4_connect` (:19) |
 | `socks5/server.rs` | Full handshake: method neg -> RFC 1929 auth -> CONNECT; `SocksAddr`; REP=0x07 for unsupported cmds; sync parse fns for fuzzing | `parse_method_negotiation` (:119), `parse_connect_request` (:140), `parse_socks5_request` (:200), `read_auth_request` (:312), `handle_socks5_handshake` (:498) |
 | `socks5/client.rs` | `socks5_connect`: greeting + auth + CONNECT + reply | `socks5_connect` (:31) |
-| `socks5/udp_codec.rs` | `decode_socks5_udp_datagram` / `encode_socks5_udp_datagram`: RSV=0x0000, FRAG=0x00, ATYP valid, domain<=255, payload<=65535 | `decode_socks5_udp_datagram` (:30), `MAX_UDP_DATAGRAM_SIZE` (:3) |
+| `socks5/udp_codec.rs` | `decode_socks5_udp_datagram` / `encode_socks5_udp_datagram` (plus `decode_socks5_udp_request` / `encode_socks5_udp_response` aliases): RSV=0x0000, FRAG=0x00, ATYP valid, domain<=255, payload<=65535 | `decode_socks5_udp_datagram` (:30), `MAX_UDP_DATAGRAM_SIZE` (:3) |
 | `error.rs` | Shared `Socks5Error` with `display_hex` for diagnostics | `Socks5Error` (:3), `display_hex` (:61) |
 
 ## Public API surface
@@ -98,14 +98,14 @@ zero rejected.
 
 ### SOCKS4 accept flow
 
-1. `read_socks4_request` (:52) reads 8-byte header, validates version/command.
-2. USERID read byte-by-byte bounded at 255 (:75-76).
-3. If DSTIP=`0.0.0.x`(x!=0), reads domain (:94-123).
+1. `read_socks4_request` (:56) reads 8-byte header, validates version/command.
+2. USERID read byte-by-byte bounded at 255 (:79).
+3. If DSTIP=`0.0.0.x`(x!=0), reads domain (:97-123).
 4. Returns `Socks4Request` with `addr` and optional `domain`.
 
 ### SOCKS4 client flow
 
-1. `socks4_connect` (:16) validates USERID length.
+1. `socks4_connect` (:19) validates USERID length.
 2. IPv4: standard SOCKS4. Domain: SOCKS4a IP=0.0.0.1, domain appended after
    USERID. IPv6: `UnsupportedAddressType`.
 3. Reads 8-byte reply, maps status.
@@ -129,22 +129,24 @@ RSV=0x0000, FRAG=0x00, encoded target, and payload.
 ## Error and failure model
 
 **Socks4Error** (`socks4/error.rs`): `InvalidVersion`, `UnsupportedCommand`,
-`UserIdTooLong`, `ConnectionFailed`(CD=91), `FailedNoIdent`(CD=92),
+`UserIdTooLong`, `ConnectionRefused`, `ConnectionFailed`(CD=91), `FailedNoIdent`(CD=92),
 `FailedDifferentUser`(CD=93), `UnknownStatus`, `DomainTooLong`,
-`UnsupportedAddressType`(IPv6), `MalformedRequest`.
+`UnsupportedAddressType`(IPv6), `MalformedRequest` (plus `Io` via `From`).
 
 **Socks5Error** (`error.rs`): `UnsupportedVersion`, `UnsupportedCommand`,
 `UnsupportedAddressType`, `UnsupportedAuthMethod`, `AuthFailed`,
-`CredentialsTooLong`, `MethodNegotiationFailed`, `InvalidReservedByte`,
-`DomainTooLong`, `MalformedMessage`. `display_hex` (:61) formats
+`CredentialsTooLong`, `ConnectionRefused` (proxy-reported destination refusal,
+REP 0x05), `ConnectionFailed` (other non-zero REPs, code preserved),
+`MethodNegotiationFailed`, `InvalidReservedByte`, `DomainTooLong`, `AddressTooLong`,
+`UnexpectedEof`, `MalformedMessage` (plus `Io` via `From`). `display_hex` (:61) formats
 version/cmd/atyp in hex. `From<Socks5Error> for io::Error` (:50).
 
 ## Security notes
 
 | Resource | Limit | Enforced at |
 |---|---|---|
-| SOCKS4 USERID | 255 B | `socks4/server.rs:75`, `socks4/client.rs:22` |
-| SOCKS4a domain | 255 B | `socks4/server.rs:99` |
+| SOCKS4 USERID | 255 B | `socks4/server.rs:79`, `socks4/client.rs:25` |
+| SOCKS4a domain | 255 B | `socks4/server.rs:97-123` (empty rejected at `:119`) |
 | SOCKS5 username/password | 255 B | `server.rs:323`/`330`, `client.rs:85` |
 | SOCKS5 domain (all paths) | 255 B | `server.rs:398`, `:97`, `client.rs:131` |
 | UDP datagram | 65535 B | `udp_codec.rs:37` |
@@ -153,7 +155,7 @@ version/cmd/atyp in hex. `From<Socks5Error> for io::Error` (:50).
 (:server.rs:338-346). SOCKS4 user_id is clear-text, not a credential.
 
 **Validation**: RSV must be 0x00 in CONNECT and UDP. FRAG must be 0x00.
-Empty SOCKS4a domain rejected (:server.rs:117-121). `send_method_selection`
+Empty SOCKS4a domain rejected (:server.rs:119). `send_method_selection`
 never downgrades password-required to no-auth (:server.rs:285-288).
 
 ## Test coverage
@@ -189,10 +191,10 @@ never downgrades password-required to no-auth (:server.rs:285-288).
    `read_connect_request`. The latter returns the error; the former catches
    `UnsupportedCommand` and sends the RFC reply (:server.rs:522-528).
 4. **SOCKS4a sentinel is `0.0.0.x`(x!=0)**: Domain extension triggers
-   when last octet is non-zero (:server.rs:95). IP=0.0.0.0 is normal
+   when last octet is non-zero (:server.rs:97). IP=0.0.0.0 is normal
    (invalid) IPv4.
 5. **Domain encode checks byte length, not char length**: `encode_reply`
-   (`socks5/server.rs:87`, domain check at `:95`) compares `domain.len()` (UTF-8 bytes) against 255.
+   (`socks5/server.rs:87`, domain check at `:97`) compares `domain.len()` (UTF-8 bytes) against 255.
    Multi-byte chars can cause a visually-short domain to exceed the limit.
 6. **Sync vs async parse**: `parse_method_negotiation` and
    `parse_connect_request` are sync (`&[u8]` -> `Result`) for fuzzing.

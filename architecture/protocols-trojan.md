@@ -94,14 +94,14 @@ No optional features. Dependencies: `sha2`, `subtle`, `rustls`, `tokio-rustls`, 
 |---|---|---|
 | KAT (password hash) | `hash.rs:31-46` | Known SHA224 hex for "password" and "" |
 | Constant-time property | `hash.rs:77-119` | Single-bit difference detection, `ct_eq` delegation |
-| Request encoding layout | `tcp.rs:302-425` | Domain, IPv4-as-domain, IPv6-as-domain, ATYP 0x03 enforcement, length boundaries (255 OK, 256 reject, empty reject) |
-| Accept roundtrip | `tcp.rs:654-711` | IPv4, domain, IPv6: encode then accept, verify target normalization |
-| Auth failure paths | `tcp.rs:714-772` | Wrong password, bad ATYP, non-CONNECT command |
-| CRLF oracle resistance | `tcp.rs:995-1040` | Missing CRLF, corrupt CRLF after correct hash both return `AuthFailed` |
-| TLS integration | `tcp.rs:428-514` | Self-signed cert, full connect/accept roundtrip through TLS |
-| TLS SNI mismatch | `tcp.rs:777-825` | Wrong server name fails TLS verification |
-| Custom CA trust | `tcp.rs:830-904` | CA-signed cert chain validation |
-| Oversized/malformed | `tcp.rs:908-1103` | Truncated hash, oversized ATYP, non-UTF8 domain, empty domain, empty stream |
+| Request encoding layout | `tcp.rs:311-435` | Domain, IPv4-as-domain, IPv6-as-domain, ATYP 0x03 enforcement, length boundaries (255 OK, 256 reject, empty reject) |
+| Accept roundtrip | `tcp.rs:664-722` | IPv4, domain, IPv6: encode then accept, verify target normalization |
+| Auth failure paths | `tcp.rs:723-784` | Wrong password, bad ATYP, non-CONNECT command |
+| CRLF oracle resistance | `tcp.rs:1005-1050` | Missing CRLF, corrupt CRLF after correct hash both return `AuthFailed` |
+| TLS integration | `tcp.rs:437-514` | Self-signed cert, full connect/accept roundtrip through TLS |
+| TLS SNI mismatch | `tcp.rs:786-837` | Wrong server name fails TLS verification |
+| Custom CA trust | `tcp.rs:839-916` | CA-signed cert chain validation |
+| Oversized/malformed | `tcp.rs:918-1113` | Truncated hash, oversized ATYP, non-UTF8 domain, empty domain, empty stream |
 | Diagnostic codes | `error.rs:9-62` | 5 `TrojanError` variants map to 5 of 6 `TrojanDiagnosticCode` codes (`InvalidTarget` is display-only, unreachable via `diagnostic_code()`), display is snake_case |
 | Property tests | `tests/request_properties.rs` | 6 proptest properties: hash length, hex-only, deterministic, distinct inputs, even length |
 | Fuzz smoke | `tests/fuzz_smoke.rs` | Request encode, password hash, accept parser |
@@ -113,7 +113,7 @@ No optional features. Dependencies: `sha2`, `subtle`, `rustls`, `tokio-rustls`, 
 2. **Domain normalization on accept**: `trojan_accept` parses ATYP 0x03 domains and normalizes numeric strings back to IP (`tcp.rs:174-177`). A request encoded with an IP-as-domain will be accepted as an IP target.
 3. **CRLF after hash is security-critical**: the check at `tcp.rs:106-111` must return `AuthFailed` (not `Protocol`) to prevent hash-validity oracles.
 4. **`OnceLock` is not `get_or_init`**: the code uses `get()` then `set()` separately (`tcp.rs:238-247`). A race between two threads could result in both building configs, but only one being cached. This is harmless.
-5. **`trojan_accept` reads exactly 58 bytes first**: if the stream is shorter than 58 bytes, the error is `TrojanError::Io` (unexpected EOF), not `AuthFailed`. This is tested at `tcp.rs:909-924`.
+5. **`trojan_accept` reads exactly 58 bytes first**: if the stream is shorter than 58 bytes, the error is `TrojanError::Io` (unexpected EOF), not `AuthFailed`. This is tested at `tcp.rs:918-934`.
 
 ## See also
 

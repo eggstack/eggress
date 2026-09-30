@@ -146,7 +146,7 @@ Semaphore exhaustion in `RawTunnelListener` is not an error variant -- the conne
 | `test_websocket_echo` | Basic binary frame echo through adapter |
 | `test_max_message_size_enforced` | Oversized binary frame returns error |
 | `test_close_frame_yields_eof` | Close frame terminates read as clean EOF |
-| `test_ping_pong_skipped` | Ping/pong frames do not reach the reader |
+| `test_ping_pong_skipped` | Ping answered with explicit Pong (same payload); Pong/text frames do not reach the reader |
 | `test_text_frame_skipped` | Text frames are skipped with warning |
 | `test_partial_read_buffering` | Multi-frame reads with internal buffer |
 | `test_accept_upgrade_with_config` | Explicit `WebSocketConfig` passed through |
@@ -166,6 +166,7 @@ Semaphore exhaustion in `RawTunnelListener` is not an error variant -- the conne
 | `test_relay_bidirectional` | Full byte relay through tunnel |
 | `test_upstream_connect_failure` | Upstream unreachable produces zero-byte read |
 | `test_multiple_concurrent_connections` | 3 concurrent relays through semaphore |
+| `test_reserved_literal_target_is_rejected` | Reserved/private literal IP target rejected via DNS-rebinding check |
 
 ### Fuzz target
 

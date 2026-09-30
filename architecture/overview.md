@@ -1,6 +1,6 @@
 # Eggress Architecture Overview
 
-> Maintained review index. Last verified against the 1.0.10 tree on 2026-09-25:
+> Maintained review index. Last verified against the 1.0.10 tree on 2026-09-30:
 > 28 workspace crates, 26 files in this directory (this overview + 25 deep
 > dives), 11 fuzz targets, 5 Criterion benches, 4 GitHub workflows.
 
@@ -385,8 +385,8 @@ summary of the discrete pieces:
   (base/`toml`/`pproxy-compat`/`ssh`/`ssh,pproxy-compat`/`udp`), OpenSSH-backed
   embed SSH regression, fuzz-target
   compilation), `python-test.yml` (path-scoped 3.12 wheel smoke),
-  `publish-python.yml` (fires on every `v*` tag push — tags publish to PyPI;
-  manual dispatch targets TestPyPI by default with a PyPI option),
+  `publish-python.yml` (fires on every `v*` tag push — tags publish to PyPI
+  via the protected `pypi` env; there is no TestPyPI path),
   `release-binaries.yml` (fires on every `v*` tag push or manual dispatch
   against an existing tag — preflight gate, five target archives with native
   smoke, then a `contents: write` assemble job attaching archives, SHA-256

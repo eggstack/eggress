@@ -115,7 +115,7 @@ Bridged UDP decode errors are incremented per `kind` label AND aggregated as `ki
 
 ## Configuration and features
 
-- The `extended` feature gates `ShadowsocksMetrics` bridging and the `ss_*` metric fields. Without it, all Shadowsocks metrics are compiled out and never appear in Prometheus output. (`default = full → extended`; `common` is an empty no-op.)
+- The `extended` feature gates `ShadowsocksMetrics` bridging (`set_shadowsocks_metrics`) and the `shadowsocks` bridge module. Without it, the `ss_*` registry families are still registered but never fed by a bridge (they stay at zero). (`default = full → extended`; `common` is an empty no-op.)
 - No runtime configuration is needed; all metrics are registered in `MetricsRegistry::new()`.
 
 ## Security notes
@@ -161,7 +161,7 @@ Verify: `cargo test -p eggress-metrics`
 2. **H2 active counts are derived, not bridged.** `h2_connections_active = connections_opened - connections_closed`. If an `opened` atomic is incremented but the render happens before `closed` is incremented, the active count is correct for that scrape but the `total` counter may lag by one delta.
 3. **`record_session` decrements `connections_active`.** This means `connections_active` is incremented by `record_session_start` and decremented by `record_session`. If `record_session` is never called (crash before session end), `connections_active` leaks upward until restart.
 4. **`saturating_sub` can mask counter resets.** If a `AtomicU64` counter is reset to 0 (not expected in production), `saturating_sub` produces 0 delta instead of panicking. The Prometheus counter will appear to stall rather than underflow.
-5. **Shadowsocks metrics are feature-gated.** Without `extended`, the `ss_*` family is never registered. PromQL queries targeting these metrics will 404 unless the build includes the feature.
+5. **Shadowsocks bridge is feature-gated, not the families.** Without `extended`, the `ss_*` families are still registered (name-stability test asserts them) but no bridge feeds them. PromQL queries targeting these metrics will return zeros unless the build includes the feature.
 6. **`decode_errors` is both per-kind and aggregated.** The bridge increments a `kind="total"` label during delta promotion (`src/udp.rs`) AND direct `record_udp_decode_error(kind)` calls create per-kind series. Both appear in Prometheus output; the `total` is the sum of all kinds seen since last render.
 7. **H2 stream labels use a fixed `upstream_id: "h2"`.** The bridge does not carry per-upstream identity because `H2_PROTOCOL_METRICS` is a global singleton, not per-connection.
 8. **Transparent proxy has a bridged path and direct fallbacks.** Production uses supervisor atomics via `set_transparent_counters` + delta promotion. The direct `record_transparent_*` methods feed the same counters for unbridged contexts only; calling both for the same event would double-count (same rule now enforced for UDP associations in `RuntimeUdpService`, which records via the relay subsystem counter only).

@@ -99,7 +99,7 @@ local_bind  = <ip-addr>                   -- e.g. @127.0.0.1
 ```
 
 Key parsing rules:
-- `__` separates hops; any `_` run of length >= 3 outside `[]` is rejected as `DuplicateHopSeparator`
+- `__` separates hops; the shared `syntax::split_chain_hops` splitter is purely lexical (bracket/brace-aware, fails closed on unmatched), and the native `split_hops` wrapper rejects leading/trailing `__` and any empty segment (e.g. `a____b`) as `DuplicateHopSeparator`. A bare `___` inside a hop is left for per-hop parsing, matching compat which only rejects `____` and rejoins non-scheme segments.
 - `+` stacks protocols within one hop; `tls` in the scheme sets `hop.tls = true`
 - Credentials are percent-decoded: invalid `%ZZ`/trailing `%` sequences are kept verbatim; invalid UTF-8 or NUL in decoded credentials returns `InvalidFormat` (no lossy fallback)
 - The userinfo separator is the **last** unbracketed `@` after `://` (`syntax::find_userinfo_separator`) -- a password containing `@` is preserved correctly
@@ -125,6 +125,9 @@ credentials from arbitrary URI-like strings in logs, diagnostics, redacted
 TOML, and oracle transcripts. It is scheme-agnostic (keyed on `://`, last
 unbracketed `@` wins via `syntax::find_userinfo_separator`) and returns
 `scheme://****@host`, or the input unchanged when no userinfo is present.
+Inputs without `://` are also scrubbed: `user:pass@host` (or any `@` outside
+brackets) becomes `****@host` so decoded blobs never leak through the
+`unwrap_or_else(|_| redact_proxy_uri(uri))` fallback.
 `eggress-embed` (`to_redacted_toml`) and `eggress-testkit` (oracle transcript
 scrubbing) both delegate to it instead of maintaining scheme whitelists.
 Compat structured displays (`PproxyUri::redacted_display`) use the shared
@@ -162,10 +165,12 @@ Error messages include hop context (e.g. `"hop 1: missing scheme"`).
 
 ## How it works (control flow)
 
-1. `parse_proxy_chain(uri)` calls `split_hops()` — a native `any _ run >= 3` pre-check (`lib.rs:347-349`) plus the shared
-    `syntax::split_chain_hops` (bracket/brace-aware, unmatched fails closed; `syntax.rs:114`)
+1. `parse_proxy_chain(uri)` calls `split_hops()` — the shared
+    `syntax::split_chain_hops` (bracket/brace-aware, unmatched fails closed) plus the native
+    empty-segment policy: any empty segment from leading/trailing/doubled `__` is rejected as
+    `DuplicateHopSeparator`
 2. Each hop string is passed to `parse_hop()` which:
-    - Detects trailing local-bind modifier (private `find_last_at_outside_scheme` helper in `lib.rs:397`; userinfo itself uses the shared `syntax::find_userinfo_separator` `@` scan)
+    - Detects trailing local-bind modifier (private `find_last_at_outside_scheme` helper in `lib.rs`; userinfo itself uses the shared `syntax::find_userinfo_separator` `@` scan)
    - Extracts scheme, calls `parse_protocols()` (`+` split, `tls` modifier, `ProtocolSpec::parse_name`)
    - Extracts `#auth_prefix` fragment
    - Extracts credentials (shared `find_userinfo_separator` scan, strict native percent-decode)
@@ -230,7 +235,7 @@ Error messages include hop context (e.g. `"hop 1: missing scheme"`).
 - The `+` separator is for protocol stacking within a scheme; `__` is for hop chaining. Do not confuse with URI path separators.
 - `syntax::find_userinfo_separator` finds the **last** unbracketed `@` after `://`. This is critical for passwords containing `@`. (Hop splitting itself is `syntax::split_chain_hops`.)
 - Port 0 is rejected for all protocols except single-protocol Unix (where port is always 0).
-- The native pre-check (not the shared splitter) rejects any `_` run >= 3 as `DuplicateHopSeparator`; `syntax::split_chain_hops` itself is the bracket/brace-aware splitter that fails closed on unmatched brackets.
+- Only empty segments from leading/trailing/doubled `__` are rejected as `DuplicateHopSeparator`; `syntax::split_chain_hops` itself is the bracket/brace-aware splitter that fails closed on unmatched brackets, and a bare `___` inside a hop is left for per-hop parsing.
 - The `plugins` path segment is parsed from the URI path after the endpoint (e.g. `socks5://host:1080/plugin1,plugin2`). Leading commas are trimmed.
 
 ## See also

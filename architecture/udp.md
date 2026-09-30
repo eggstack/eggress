@@ -191,12 +191,12 @@ primitives (no hidden SOCKS listener):
 |---|---|
 | Empty hops | `UnsupportedProtocol { "direct" }` |
 | Single SOCKS5 | `SupportedSocks5` |
-| Single Shadowsocks (with creds) | `SupportedShadowsocks { method, password }` |
+| Single Shadowsocks (with creds) | `SupportedShadowsocks { method, password }` (missing creds → `UnsupportedProtocol { "Shadowsocks (missing credentials)" }`; SSR → `UnsupportedProtocol { "ShadowsocksR" }`) |
 | Single non-UDP protocol | `UnsupportedProtocol { name }` |
-| Multi-hop all SOCKS5/Shadowsocks | `SupportedComposed` |
+| Multi-hop all SOCKS5/Shadowsocks-with-creds | `SupportedComposed` |
 | Multi-hop any non-UDP | `UnsupportedMultiHop` |
 
-Unsupported chains are explicitly rejected with metrics. No silent fallback to direct -- fallback is routing-engine policy.
+Unsupported chains are explicitly rejected with metrics. No silent fallback to direct -- fallback is routing-engine policy. `udp_capability_from_chain()` is the `classify_upstream_chain`-backed alias of `udp_capability()`.
 
 ## Metrics Bridge
 
@@ -225,7 +225,7 @@ Bridged via `MetricsRegistry::set_udp_metrics()` (`eggress-metrics/src/udp.rs`);
 
 ### Runtime Tests (`crates/eggress-runtime/tests/`)
 
-`udp.rs` (26 tests): full runtime SOCKS5 UDP ASSOCIATE lifecycle, standalone modes, registry cleanup, metrics, advertise IP. `udp_upstream.rs` (10 tests): upstream SOCKS5 flow, shutdown drain, composed chain, target idle timeout.
+`udp.rs` (26 tests): full runtime SOCKS5 UDP ASSOCIATE lifecycle, standalone modes, registry cleanup, metrics, advertise IP. `udp_upstream.rs` (9 tests): upstream SOCKS5 flow, shutdown drain, composed chain, target idle timeout.
 
 ## Reviewer Gotchas
 

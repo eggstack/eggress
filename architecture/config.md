@@ -17,7 +17,7 @@ state after compilation.
 | `src/compile/` | Compilation by domain (`mod.rs` facade + `compile_config`/`load_and_compile`/`resolve_password`/`parse_duration_opt`); `model.rs` (RuntimeConfig + compiled DTOs), `listeners.rs` (listener/TLS/UDP/transparent/unix), `upstreams.rs` (chains/groups/health/H2), `rules.rs` (matchers/actions/rules), `reverse.rs` (reverse server/client + TLS), `process.rs` (process/timeouts/admin). Reuses `validate/`; no validation duplicated. `parse -> validate -> compile` stays one-way |
 | `src/validate/` | `mod.rs` (`validate_config` orchestrator) + `composition.rs` (protocol matrix), `listeners.rs` (bindings/auth/TLS/UDP), `upstreams.rs` (chains/health/H2/groups/transports), `rules.rs` (matchers/group refs), `core.rs` (durations/timeouts/process/admin), `security.rs` (dangerous-combination + alias warnings) |
 | `src/validate/tests.rs` | Security-warning + composition-matrix tests (21) |
-| `src/file.rs` | Bounded file loading (1 MB limit with TOCTOU guard) |
+| `src/file.rs` | Bounded file loading (1 MB limit with TOCTOU guard) for configs (`load_config_file`) and compat rules files (`load_rules_file`) |
 | `src/error.rs` | `ConfigError` and `ConfigWarning` types |
 
 ## Public API surface
@@ -169,6 +169,7 @@ Non-fatal warnings emitted during `validate_config_security()`:
 - Non-loopback listener bind without auth (and not shadowsocks/ssr/trojan)
 - Non-loopback admin bind without auth
 - Non-loopback reverse server control_bind without auth
+- Omitted `version` field (`validate_and_compile_toml_with_warnings` only): reminds operators to add `version = 1` to make the schema contract explicit
 
 ## Configuration/features
 

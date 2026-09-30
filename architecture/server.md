@@ -57,8 +57,8 @@ pub trait UdpService: Send + Sync { /* create_association, is_enabled, active_co
 
 ## How it works — `serve_connection` pipeline
 
-1. **Metrics start** — `record_session_start()` if metrics configured (`lib.rs:132-134`).
-2. **Handshake with timeout** — `tokio::time::timeout(handshake_timeout, accept_with_fixed_target_for_peer(...))` wraps the entire accept phase (`lib.rs:136-149`). Timeout → `HandshakeTimedOut`.
+1. **Metrics start** — `record_session_start()` if metrics configured (`lib.rs:134-136`).
+2. **Handshake with timeout** — `tokio::time::timeout(handshake_timeout, accept_with_fixed_target_for_peer(...))` wraps the entire accept phase (`lib.rs:138-151`). Timeout → `HandshakeTimedOut`.
 3. **Protocol detection** (`accept/`) — first byte: `0x05` → SOCKS5, `0x04` → SOCKS4, otherwise → HTTP method detection via `detect_http_method()` (16-byte method/prefix cap). Single-protocol listeners (Shadowsocks, Trojan, Raw, Echo) skip detection.
 4. **Authentication** — per-connection or `AuthReuseCache` lookup. SOCKS5/4/HTTP use `subtle::ConstantTimeEq`.
 5. **Dispatch** — `execute()` on `AcceptedSession`: Tunnel → `execute_tunnel`, HttpForward → `execute_http_forward`, UdpAssociate → `execute_udp_associate`, Echo → `execute_echo`.
@@ -68,7 +68,7 @@ pub trait UdpService: Send + Sync { /* create_association, is_enabled, active_co
    `eggress-relay`: 64 KiB buffers, one-second bounded post-half-close drain;
    any directional I/O failure collapses to legacy `TerminationReason::Error`).
 9. **Failure reply** — `send_tunnel_failure()` (`reply.rs:58`) maps `SessionOpenError` to per-protocol codes.
-10. **Metrics end** — exactly one `record_session(&report)` before returning (`lib.rs:192`ff). Every code path reaches this block.
+10. **Metrics end** — exactly one `record_session(&report)` before returning (`lib.rs:201`ff). Every code path reaches this block.
 
 ## Error & failure model
 
@@ -175,21 +175,21 @@ Trojan, WebSocket] (extended), [ShadowsocksR] (pproxy-legacy), Raw, Unix,
 - **AuthReuseCache**: IP-keyed, max 4096, lazy expiry, LRU eviction (`accept/mod.rs:41,57`). pproxy-compat only; native listeners authenticate every connection.
 - **Header limits**: 32 KiB head (`MAX_HEAD_SIZE`), 128 lines (`MAX_HEADER_LINES`) (`accept/forward.rs:240-243`).
 - **Transparent unsafe**: workspace's single `unsafe` block — `getsockopt(SO_ORIGINAL_DST)` FFI. Three `#[allow(unsafe_code)]` annotations in `listener/transparent.rs`: `query_original_dst` (sockaddr init + getsockopt), `parse_sockaddr` (sockaddr_in/in6 reinterpretation with length validation), plus tests.
-- **Unix socket safety**: `UnixListener::bind()` refuses to unlink non-socket files or symlinks (`listener/unix.rs:96-122`); only `FileType::is_socket()` passes.
+- **Unix socket safety**: `UnixListener::bind()` refuses to unlink non-socket files or symlinks (`listener/unix.rs:74-95`); only `FileType::is_socket()` passes.
 - **Trojan fallback**: on password mismatch, if `fallback` is set, relay to fallback target instead of rejecting (`accept/`).
 - **H2/WS listener auth**: `serve_h2_connection()` and `serve_websocket_connection()` perform per-stream/per-connection auth with the same CT comparison.
 
 ## Concurrency & lifecycle
 
-- **Exactly-once metrics**: `record_session_start()` at entry, exactly one `record_session(&report)` before every return. Enforced structurally and by `metrics_lifecycle_tests` (`lib.rs:1232+`).
+- **Exactly-once metrics**: `record_session_start()` at entry, exactly one `record_session(&report)` before every return. Enforced structurally and by `metrics_lifecycle_tests` (`lib.rs:1242+`).
 - **Handshake timeout**: wraps `accept_with_fixed_target_for_peer()` — detection, auth, handshake all bounded.
 - **Connect timeout**: wraps `open_route()` but NOT HTTP body upload (`execute/mod.rs`).
 - **Deferred success replies**: sent only after `open_route()` succeeds (`execute/mod.rs`).
 - **HTTP forward keep-alive**: loops over requests; breaks on `Connection: close`, upstream close, client EOF, or malformed request.
-- **H2 listener** (`advanced.rs:56`): per-stream `TaskTracker` spawn with child-token cancellation.
-- **WebSocket listener** (`advanced.rs:163`): single WS upgrade with fixed target.
+- **H2 listener** (`advanced.rs:57`): per-stream `TaskTracker` spawn with child-token cancellation.
+- **WebSocket listener** (`advanced.rs:193`): single WS upgrade with fixed target.
 - **UDP ASSOCIATE** (`execute/mod.rs`): TCP control held alive; ends on client close or cancel. `connect_timeout` also bounds `create_association()`.
-- **Shadowsocks metrics**: `record_tcp_session_closed()` + `record_tcp_flow_close()` after standard finalization (`lib.rs:196-202`).
+- **Shadowsocks metrics**: `record_tcp_session_closed()` + `record_tcp_flow_close()` after standard finalization (`lib.rs:205-211`).
 
 ## Test coverage map
 

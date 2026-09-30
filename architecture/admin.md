@@ -9,7 +9,7 @@ routing decisions), UDP association status, and reverse server state.
 | File | Role |
 |------|------|
 | `src/lib.rs` | `AdminError` enum (Bind, Accept, Server); re-exports public types |
-| `src/client.rs` | Route-explain HTTP/1.1 client (`AdminEndpoint`, `parse_admin_url`, `AdminClientError`) |
+| `src/client.rs` | Route-explain HTTP/1.1 client (`AdminEndpoint`, `parse_admin_url`, `route_explain()`, `AdminClientError`); HTTP/1.1-only (TLS URLs rejected), default port 9090, `MAX_ADMIN_RESPONSE = 1 MiB` response cap |
 | `src/server.rs` | `AdminServer` accept loop, `AdminState`, `AdminSnapshotProvider` trait, `AdminSnapshot`, `StaticAdminSnapshot`, `ListenerInfo`, bearer/basic auth via constant-time compare, per-IP auth-failure limiter (5 fails/60 s → 30 s block), `MAX_ADMIN_CONNECTIONS = 64`, 30 s connection timeout |
 | `src/routes.rs` | Router + all endpoint handlers; `MAX_ADMIN_BODY = 16 KiB`, `MAX_IDENTITY_LEN = 256`, streaming body collection via `collect_limited()` |
 | `src/pac.rs` | PAC generation with `js_escape()` (quotes, backslashes, C0 controls, U+2028/U+2029 line separators) |
@@ -35,6 +35,7 @@ pub struct AdminState {
 
 pub trait AdminSnapshotProvider: Send + Sync + 'static {
     fn snapshot(&self) -> AdminSnapshot;
+    fn generation(&self) -> u64 { self.snapshot().generation } // default: full snapshot just to read one field
 }
 
 pub struct AdminSnapshot {
@@ -55,7 +56,7 @@ pub struct StaticAdminSnapshot { pub snapshot: AdminSnapshot }
 |------|--------|---------|
 | `/-/health` | GET | Liveness — always `200 "ok"` when serving |
 | `/-/ready` | GET | Readiness gate — `200 "ready"` or `503 "not ready"` |
-| `/-/status` | GET | JSON: version, generation, uptime, active connections, listeners (with mode, capability_status, original_dst_support, unix_socket fields) |
+| `/-/status` | GET | JSON: version, generation, uptime, active connections, listeners (name, bind, local_addr, protocols, udp_enabled, plus optional mode, capability_status, original_dst_support, unix_socket fields) |
 | `/-/routes` | GET | JSON: compiled rules with IDs and actions, default action, rule count |
 | `/-/upstreams` | GET | JSON: upstream groups with members, protocols, health, eligibility, scheduler, active/in_flight counts, tcp_connect/udp_associate capability |
 | `/-/config` | GET | JSON: config summary counts + listener names |
@@ -69,11 +70,11 @@ pub struct StaticAdminSnapshot { pub snapshot: AdminSnapshot }
 ## How it works — request handling pipeline
 
 1. **Accept** — `AdminServer::run()` loops on `self.listener.accept()`. Each connection acquires a semaphore permit from a pool of 64 (`server.rs:176-187`). If no permit is available, the connection is dropped immediately.
-2. **Auth check** — before dispatching, `authorized()` (`server.rs:109`) checks `AdminState.auth`:
+2. **Auth check** — before dispatching, `authorized()` (`server.rs:111`) checks `AdminState.auth`:
    - **Bearer**: `Authorization: Bearer <token>` compared via `subtle::ConstantTimeEq`
    - **Basic**: `Authorization: Basic <base64>` decoded, split on `:`, CT-compared
-   - On failure: `401` with `WWW-Authenticate: Bearer, Basic` header
-3. **Timeout** — each HTTP/1.1 connection is wrapped in `tokio::time::timeout(Duration::from_secs(30), conn)` (`server.rs:241`).
+   - On failure: `401 "unauthorized"` with `WWW-Authenticate: Bearer, Basic` header; once an IP trips the failure limiter (5 fails/60 s → 30 s block), further attempts get `429 "too many authentication failures"` with a `Retry-After` header until the block lapses
+3. **Timeout** — each HTTP/1.1 connection is wrapped in `tokio::time::timeout(Duration::from_secs(30), conn)` (`server.rs:243`).
 4. **Snapshot** — handlers call `state.snapshot()` which delegates to `AdminSnapshotProvider::snapshot()`. A fresh snapshot is fetched per request, so reloads are immediately visible without restarting admin.
 5. **Dispatch** — `handle_request()` (`routes.rs:15`) pattern-matches on path. Body-consuming endpoints (`/-/route-explain`) use `collect_limited()` to enforce the 16 KiB limit.
 6. **Non-loopback warning** — `AdminServer::new()` logs a warning when bound to a non-loopback address (`server.rs:157-170`).
@@ -107,9 +108,10 @@ Thread-safe registry (`RwLock<HashMap<ReverseServerId, ReverseServerEntry>>`). R
 - **Snapshot freshness**: handlers fetch a fresh `AdminSnapshot` from the provider per request, so config reloads are immediately visible.
 - **Non-loopback warning**: binding to a non-loopback address emits a tracing warning; auth is recommended (401 with `WWW-Authenticate: Bearer, Basic` otherwise).
 - **Readiness flips before drain**: readiness must become `false` before connection drain begins (tested invariant: `lib.rs:456`).
-- **Auth constant-time**: both Bearer token and Basic username/password comparisons use `subtle::ConstantTimeEq` to prevent timing side-channels (`server.rs:115,134-139`).
+- **Auth constant-time**: both Bearer token and Basic username/password comparisons use `subtle::ConstantTimeEq` to prevent timing side-channels (`server.rs:117,137-139`).
 - **Auth per-request**: auth is checked inside the service_fn closure per request, not per-connection, so keep-alive connections are still gated.
-- **Body limit streaming**: `collect_limited()` rejects bodies exceeding 16 KiB chunk-by-chunk, avoiding unbounded memory allocation (`routes.rs:388-413`).
+- **Body limit streaming**: `collect_limited()` rejects bodies exceeding 16 KiB chunk-by-chunk, avoiding unbounded memory allocation (`routes.rs:387`).
+- **Auth rate-limit**: the Nth failure that trips the per-IP limiter is itself a `429` (record-then-check); successes clear the IP's failure count.
 - **Identity validation**: empty identity rejected; identity over 256 bytes rejected; non-`None` identity wrapped as `ClientIdentity::Username` (`routes.rs:316-335`).
 
 ## Security notes
@@ -131,8 +133,12 @@ Thread-safe registry (`RwLock<HashMap<ReverseServerId, ReverseServerEntry>>`). R
 | Status | Valid JSON with version, generation, uptime |
 | Metrics | Prometheus format with expected metric names (`eggress_connections_active`, `eggress_connections_total`) |
 | Auth rejection | Configured auth returns 401 with "unauthorized" body |
+| Auth rate-limit | 5 failures/60 s per IP → 30 s block: further attempts return 429 with `Retry-After`; success clears the count |
 | Routes | JSON with rules, default_action, rule_count |
 | Upstreams | JSON array of groups |
+| Config | JSON summary counts + listener names |
+| UDP | JSON association/target-flow/upstream-flow gauges, per-listener counts |
+| Route-explain | POST-only (GET → 405); dry-run routing decision for `{target, listener, protocol, source?, identity?}` |
 | Reverse | Empty when no servers; reports registered server state (active_control, active_streams, denied_bind, dropped counters) |
 | PAC | Generated when configured, 404 when not; escaping of quotes, backslashes, line separators, C0 controls; host sorting; no-fallback mode |
 | Static content | Correct content type and body |
@@ -149,7 +155,9 @@ Run: `cargo test -p eggress-admin`
 5. `StaticAdminSnapshot` is a test helper that returns a fixed snapshot — it does not reflect live reloads.
 6. `ReverseRegistry` uses `std::sync::RwLock` (not Tokio), which is fine because `snapshot()` is fast and non-async.
 7. Auth checking happens inside the service_fn closure, not at the accept layer, so an unauthenticated request still holds a connection slot for the duration of the 30 s timeout.
-8. `AdminState::generation()` (`server.rs:341-343`) calls `provider.snapshot().generation` — a convenience method that allocates a full snapshot just to read one field.
+8. `AdminState::generation()` (`server.rs:343`) calls `provider.snapshot().generation` — a convenience method that allocates a full snapshot just to read one field.
+9. `build_response()` (`server.rs:369`) never emits an invalid status or injectable content type: out-of-range status falls back to 500, unparseable content type to `application/octet-stream`.
+10. The `client.rs` route-explain client is HTTP/1.1-only: `https://` admin URLs are rejected, the default port is 9090, and responses over 1 MiB (`MAX_ADMIN_RESPONSE`) fail as transport errors.
 
 ## See also
 

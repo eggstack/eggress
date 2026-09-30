@@ -10,7 +10,7 @@ diagnostics, and the fail-closed startup gate.
 
 | File | Role |
 |---|---|
-| `lib.rs` | Primary entry points (selected): `PproxyArgs`, `translate_pproxy_args`, `translate_from_uris`, `classify_aggregate_tier`, `evaluate_execution_gate`, `ManifestTier`, `DiagnosticCode`, `StructuredDiagnostic`, `CompatIssue`, `IssueSeverity`, `CompatRegex`, `PproxyRuleFile` (full list in `lib.rs:14-30`) |
+| `lib.rs` | Primary entry points (selected): `PproxyArgs`, `translate_pproxy_args`, `translate_from_uris`, `classify_aggregate_tier`, `evaluate_execution_gate`, `ManifestTier`, `DiagnosticCode`, `StructuredDiagnostic`, `CompatIssue`, `IssueSeverity`, `CompatRegex`, `PproxyRuleFile` (full list in `lib.rs:15-33`) |
 | `args.rs` | `PproxyArgs`: frozen pproxy 2.7.9 flag parser; strict violations for unknown flags/values |
 | `uri.rs` | `PproxyUri`/`PproxyChain`/`PproxyPluginSpec` — compat grammar over shared `eggress-uri::syntax` primitives; native tokens delegate to `ProtocolSpec::parse_name`, compat-only tokens stay explicit |
 | `translate/` | Split by semantic area: `entry` (arg-level entry points + `CombinedTranslation`), `intermediates` (shared semantic builder), `mod` (module re-exports), `model` (TOML structs shared by builder/renderers), `rules` (patterns/rule files), `toml_render` (presentation-only TOML), `native` (native compilation + `NativeTranslation`), `tests` (renderer unit tests) |
@@ -85,9 +85,9 @@ optional `tier`, `message`, optional `suggestion`.
 
 ### Unsupported feature classification (`diagnostics.rs:382`)
 
-`classify_unsupported_feature` is the single canonical table mapping feature
-strings to `(DiagnosticCode, tier, suggestion)` triples (code/tier helpers
-delegate to it). Key mappings:
+`classify_unsupported_feature` (private, :382) is the single canonical table mapping feature
+strings to `(DiagnosticCode, tier, suggestion)` triples (`classify_unsupported_feature_code` at :484 and
+`classify_unsupported_feature_tier` at :493 delegate to it). Key mappings:
 
 | Feature | Code | Tier |
 |---|---|---|

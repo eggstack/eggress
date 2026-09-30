@@ -12,7 +12,7 @@ shell-style strings, preserving names with spaces.
 |------|------|
 | `src/lib.rs` | Crate root; re-exports (`plan_apply`, `apply_*`, `AppliedProxy`, `ApplyPlan`, `Command`, `CompatibilityProxyKind`, `RollbackState`, plus capability/command-runner/inspection re-exports: `check_system_proxy_capability`, `system_proxy_platform_info`, `SystemProxyCapabilityReport`, `SystemProxyStatus`, `CommandRunner`, `MockCommandRunner`, `RealCommandRunner`, `inspect_system_proxy`, `InspectionResult`, `SystemProxySettings` — see `lib.rs:8-17`) |
 | `src/apply.rs` | `plan_apply()` (dry-run), `ApplyPlan`, `apply_compatibility_proxy[_with_runner]()`, `AppliedProxy` (RAII rollback), `RollbackState`, `Command`, `CompatibilityProxyKind`; `create_rollback` / `execute_apply` / `generate_revert_commands` are `pub` in `apply.rs` but NOT re-exported at crate root (refer to them as `apply::…`) |
-| `src/capability.rs` | `SystemProxyCapability` (9 variants), `SystemProxyStatus`, `check_system_proxy_capability[_with_overrides]()`, `system_proxy_platform_info()` |
+| `src/capability.rs` | `SystemProxyCapability` (9 variants), `SystemProxyStatus`, `check_system_proxy_capability[_with_overrides]()`, `system_proxy_platform_info()`, `format_system_proxy_capability_report()` |
 | `src/backends/mod.rs` | Backend module declarations |
 | `src/backends/macos.rs` | `networksetup` inspect/apply/disable; `list_network_services`, `inspect_macos_proxy`, `generate_macos_apply_commands`, `generate_macos_disable_commands` |
 | `src/backends/linux.rs` | GNOME `gsettings` inspect/apply/disable; `inspect_gnome_proxy`, `generate_gnome_apply_commands`, `generate_gnome_disable_commands` |
@@ -20,7 +20,7 @@ shell-style strings, preserving names with spaces.
 | `src/backends/env.rs` | `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`/`NO_PROXY` env-var fallback; `inspect_environment`, `generate_env_exports` |
 | `src/command_runner.rs` | `CommandRunner` trait + `RealCommandRunner` + `MockCommandRunner` |
 | `src/inspection.rs` | `inspect_system_proxy[_with_runner]()`, `detect_platform`, `InspectionResult`, `SystemProxySettings` |
-| `src/redaction.rs` | `redact_proxy_uri`, `redact_proxy_settings` — strips credentials |
+| `src/redaction.rs` | `redact_proxy_uri` (re-exported from `eggress-uri`), `redact_proxy_settings`, `redact_proxy_uris` — strips credentials; lives under `redaction::`, NOT re-exported at crate root |
 
 ## Public API
 
@@ -29,10 +29,12 @@ shell-style strings, preserving names with spaces.
 | `plan_apply` | `(platform, service, http, https, socks, no_proxy, current_settings) -> ApplyPlan` |
 | `apply_compatibility_proxy` | `(kind, address) -> Result<AppliedProxy, String>` |
 | `apply_compatibility_proxy_with_runner` | Same with `&dyn CommandRunner` |
-| `AppliedProxy::restore` | `(&mut self) -> Result<(), String>` — idempotent |
+| `AppliedProxy::restore` | `(&mut self) -> Result<(), String>` — idempotent (takes the rollback state; second call is a no-op) |
+| `AppliedProxy::restore_with_runner` | Same with `&dyn CommandRunner` (test seam; production `restore()` uses `RealCommandRunner`) |
 | `inspect_system_proxy` | `() -> InspectionResult` |
-| `inspect_system_proxy_with_runner` | Same with `&dyn CommandRunner` |
+| `inspection::inspect_system_proxy_with_runner` | Same with `&dyn CommandRunner` (NOT re-exported at crate root) |
 | `check_system_proxy_capability` | `(cap) -> SystemProxyStatus` |
+| `capability::check_system_proxy_capability_with_overrides` | Same with override map (NOT re-exported at crate root) |
 
 ## Inspect path
 
@@ -74,7 +76,8 @@ restores the full previous state.
 | `MockCommandRunner` | Tests: pre-programmed responses, records all calls |
 
 `MockCommandRunner`: `add_response(program, args, result)`,
-`add_always(program, result)`, `calls()` for assertion. Tests never shell
+`add_always(program, result)`, `calls()` for assertion. Both `add_*`
+helpers are builder-style (consume and return `Self`). Tests never shell
 out.
 
 ## Capability checks
@@ -148,7 +151,7 @@ Applied in `inspect_system_proxy_with_runner` for safe logging.
 
 ## Test coverage
 
-55 tests via `cargo test -p eggress-system-proxy --lib`:
+56 tests via `cargo test -p eggress-system-proxy --lib`:
 
 | Module | Key tests |
 |--------|-----------|

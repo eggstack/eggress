@@ -10,9 +10,9 @@ proxy-usable HTTP from other protocols by method/response shape.
 | File | Role | Key lines |
 |---|---|---|
 | `connect/server.rs` | `handle_connect`: bounded CONNECT head, Basic auth constant-time compare, 200/407 | `MAX_HEAD_SIZE` (:10), `MAX_HEADER_LINES` (:13), `handle_connect` (:35), `parse_authority` (:177), `parse_basic_auth` (:259) |
-| `connect/client.rs` | `http_connect`: CONNECT authority/request via `eggfetch-http-connect`, local byte-preserving reply parse; `validate_credentials` rejects control chars | `HttpConnectLimits`, `validate_credentials`, `http_connect`, `parse_status_code` (compat helper); private: `connect_target` (Eggress validation adapter), `build_connect_request`, `map_connect_error`, `read_response_status` (intentionally local, Outcome B) |
-| `forward/server.rs` | Absolute-to-origin form, hop-by-hop filter, body framing, chunk caps, informational bound | `BodyCopyLimits` (:7), `determine_request_body_kind` (:269), `filter_hop_by_hop` (:398), `forward_response` (:647), `parse_header_line` (:1085) |
-| `h2_connect.rs` | H2 CONNECT client/server/relay; `H2ConnectionPool`/`H2PoolRegistry` keyed by endpoint + SHA-256 cred hash; `H2_PROTOCOL_METRICS` | `h2_connect_relay` (:168), `H2PoolKey` (:442), `H2ConnectionPool` (:550), `h2_connect_client_pooled_in_registry` (:884) |
+| `connect/client.rs` | `http_connect`: CONNECT authority/request via `eggfetch-http-connect`, local byte-preserving reply parse; `validate_credentials` rejects control chars | `HttpConnectLimits`, `validate_credentials`, `http_connect`, `parse_status_code` (compat helper); private: `connect_target` (Eggress validation adapter), `build_connect_request`, `map_connect_error`, `parse_status_from_bytes`, `read_response_status` (intentionally local, Outcome B) |
+| `forward/server.rs` | Absolute-to-origin form, hop-by-hop filter, body framing, chunk caps, informational bound | `BodyCopyLimits` (:7), `determine_request_body_kind` (:269), `filter_hop_by_hop` (:399), `forward_response` (:648), `parse_header_line` (:1086) |
+| `h2_connect.rs` | H2 CONNECT client/server/relay; `H2ConnectionPool`/`H2PoolRegistry` keyed by endpoint + SHA-256 cred hash; `H2_PROTOCOL_METRICS` | `h2_connect_relay` (:169), `H2PoolKey` (:443), `H2ConnectionPool` (:552), `h2_connect_client_pooled_in_registry` (:885) |
 | `detect.rs` | `HttpDetector`: confidence 100 for methods, 95 for responses | `HttpDetector` (:7), `HTTP_METHODS` (:9) |
 | `error.rs` | `HttpError` with `status_code()` mapping | `HttpError` (:3), `status_code` (:82) |
 | `connect/test_server.rs` | Synthetic CONNECT proxy (Success/AuthRequired/Forbidden/MalformedStatus/SlowResponse/HeadersTooLarge) | `ProxyMode` (:7) |
@@ -139,13 +139,13 @@ capacity-aware `AsyncWrite`.
 
 ### H2 connect flow
 
-1. `h2_connect_client` (:363): H2 handshake + CONNECT with optional Basic auth.
-2. `h2_connect_client_pooled` (:815): acquires from pool or creates new.
-   Pool key includes SHA-256 of credentials (:475-482); the
+1. `h2_connect_client` (:372): H2 handshake + CONNECT with optional Basic auth.
+2. `h2_connect_client_pooled` (:869): acquires from pool or creates new.
+   Pool key includes SHA-256 of credentials (:477-490); the
    `..._in_registry` variant takes an explicit registry for chain-scoped
    pooling.
-3. `H2PoolGuard` (:778) releases on drop.
-4. `h2_connect_relay` (:168): domain targets checked against DNS rebinding;
+3. `H2PoolGuard` (:832) releases on drop.
+4. `h2_connect_relay` (:169): domain targets checked against DNS rebinding;
    IP literals connect directly (NOT a policy boundary, see :152-166).
 
 ## Error and failure model
@@ -166,7 +166,7 @@ and `DnsRebinding`.
 | Forward headers | 128 lines | `:899`, `:548` |
 | Client CONNECT status | 1024 B | `HttpConnectLimits` (:21) |
 | Client CONNECT headers | 32 KiB / 100 lines | `:22`, `:23` |
-| Informational responses | 8 | `forward_response` (:647) |
+| Informational responses | 8 | `forward_response` (:648) |
 | Request/response chunk | 64 MiB | `BodyCopyLimits`, `:352` |
 | Request/response trailers | 32/64 KiB | `BodyCopyLimits` (:22), `:356` |
 
@@ -234,21 +234,21 @@ default and restrictive limits.
 ## Reviewer gotchas
 
 1. **Two `parse_header_line` fns**: `connect/server.rs:249` (public, no
-   control-char check, for fuzzing) vs `forward/server.rs:1085` (private,
+   control-char check, for fuzzing) vs `forward/server.rs:1086` (private,
    rejects NUL/CR/LF). Different contexts.
 2. **Request vs response trailer limits differ**: request-side 32 KiB
    (`BodyCopyLimits`, :22) vs response-side 64 KiB (:356). Both chunk-size
    limits are 64 MiB.
 3. **`parse_authority` implies a default port**: the CONNECT server's
    version maps a missing port to `DEFAULT_CONNECT_PORT` (443); use
-   `parse_authority_with_default` (:forward/server.rs:979) only when a
+   `parse_authority_with_default` (:forward/server.rs:1012) only when a
    caller-specific default is needed.
 4. **H2 relay is NOT a policy boundary**: checks DNS rebinding for domains
    but NOT IP literals (:152-166). Callers must screen IPs.
-5. **EOF framing**: No CL and no TE (:forward/server.rs:739) means body read
+5. **EOF framing**: No CL and no TE (:forward/server.rs:794) means body read
    until close; marks `upstream_alive = false`.
 6. **HTTP/1.0 keep-alive**: Default is close; alive only with explicit
-   non-empty `Keep-Alive` (:forward/server.rs:762-765).
+   non-empty `Keep-Alive` (:forward/server.rs:787-791).
 
 ## See also
 [Overview](overview.md), [Server](server.md), [UDP](udp.md),

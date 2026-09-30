@@ -11,7 +11,7 @@ direct connector with DNS-rebinding protection, and the multi-hop
 | File | Role |
 |---|---|
 | `src/lib.rs` | Core types: `BoxStream`, `TargetAddr`/`TargetHost`, `ClientIdentity`, `SessionContext`, `ProtocolId` (+ `from_protocol_spec` disposition, `ProtocolConversionError`), `UpstreamId`, `RejectReason`, `RouteAction`; error enums (`ConnectError`, `ProtocolError`, `AuthError`, `RelayError`); `AsyncStream` blanket trait; crate re-exports |
-| `src/listener.rs` | `TcpListener`: semaphore-bounded accept via `PermitStream` wrapper that holds the permit until the connection drops |
+| `src/listener.rs` | `TcpListener`: semaphore-bounded accept via `PermitStream` wrapper that holds the permit until the connection drops; `ListenerCancelled` / `is_listener_cancelled()` typed cancellation signal |
 | `src/connector.rs` | `DirectConnector` with `ConnectOptions`; `is_reserved_or_private_ip` / `is_dns_rebinding_risk` for all IPv4 and IPv6 private/reserved/special-use ranges including IPv4-mapped v6 |
 | `src/relay.rs` | `relay()` compatibility facade over `eggress-relay`: explicit legacy options (64 KiB, one-second bounded drain), rich-to-legacy termination mapping, debug logging for directional failures; preserves `RelayResult`/`TerminationReason` unchanged |
 | `src/replay.rs` | `ReplayStream`: bounded sniff buffer (default 8 KiB, 2048-byte stack read chunks) that replays consumed bytes so detection is single-pass |
@@ -60,7 +60,7 @@ direct connector with DNS-rebinding protection, and the multi-hop
 
 - `LocalConnector` trait (dyn-compatible `Connector: Send` variant via `trait_variant`): `connect(&self, target: &TargetAddr) -> Result<BoxStream, ConnectError>`
 - `DirectConnector::connect_with_options()`: optional local_bind, optional DNS-rebinding check (`enforce_dns_rebinding_check` for DNS answers) plus `enforce_literal_ip_check` (also screens literal IPs)
-- `is_reserved_or_private_ip()`: covers loopback, link-local, private, unspecified, multicast, broadcast, documentation (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24, 192.88.99.0/24), benchmarking (198.18.0.0/15), reserved-future (240.0.0.0/4), this-network (0.0.0.0/8), IPv6 loopback/link-local/unique-local/unspecified/multicast/documentation/discard; IPv4-mapped v6 addresses are translated and checked against v4 ranges. Domain lookups are rejected if any returned address is reserved, even when the same response also contains a public address; this conservative split-horizon policy prevents an unsafe answer from being selected during DNS rebinding checks.
+- `is_reserved_or_private_ip()`: covers loopback, link-local, private, unspecified, multicast, broadcast, documentation (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24, 192.88.99.0/24), benchmarking (198.18.0.0/15), reserved-future (240.0.0.0/4), this-network (0.0.0.0/8), IPv6 loopback/link-local/unique-local/unspecified/multicast/documentation/discard; IPv4-mapped v6 addresses are translated and checked against v4 ranges. Domain lookups filter reserved addresses out of the DNS answer and only reject (`ReservedTarget`, carrying the first resolved IP) when every returned address is reserved; a mixed answer connects to the remaining public addresses.
 
 ### Relay facade (`relay.rs`)
 
@@ -109,8 +109,8 @@ direct connector with DNS-rebinding protection, and the multi-hop
 ### Chain (`chain.rs`)
 
 - `HopHandler` trait (dyn-compatible): `protocol()`, `open()` (optional, for QUIC/H3), `handshake(stream, target, hop, hop_index)`
-- `ChainExecutor::new(handlers)`, `with_tls_wrapper()`, `with_shared_tls_config()`, `with_insecure_shared_tls_config()`
-- `execute(chain, target) -> Result<BoxStream, ChainError>`
+- `ChainExecutor::new(handlers)`, `with_tls_wrapper()`, `with_shared_tls_config()`, `with_insecure_shared_tls_config()` (plus `shared_tls_config()` / `insecure_shared_tls_config()` getters)
+- `execute(chain, target) -> Result<BoxStream, ChainError>`; `execute_with_metadata(chain, target)` additionally returns the first-hop TCP `ConnectionMetadata` (empty for non-TCP first hops; cleared when hop-zero SSH/H2 reuse discards the candidate socket)
 - Execution flow: pre-flight handler validation, connect to hop 0 (TCP/QUIC/Unix), then for each hop: TLS wrap if `hop.tls` → application handshake → next hop
 - TLS wrapping: uses `hop.server_name` (defaults to endpoint host), sets H2 ALPN for Http2 protocol
 - `ChainError`: EmptyChain, ConnectFailed{hop_index, endpoint, source}, HandshakeFailed{hop_index, protocol, source}, InvalidChain{reason}
@@ -122,7 +122,7 @@ direct connector with DNS-rebinding protection, and the multi-hop
 
 - `classify_upstream_chain(chain: &ProxyChainSpec) -> UpstreamCapabilities`
 - `UpstreamCapabilities`: tcp_connect + udp_associate, each a `CapabilityResult` (Supported / UnsupportedProtocol{protocol} / UnsupportedChain{reason})
-- Single-hop rules: HTTP/Socks4/Trojan/H2/H3/WebSocket/Raw/Ssh/Unix = TCP only; Socks5/Shadowsocks = TCP + UDP; SSR = TCP only; QUIC alone = no TCP. (Raw/Ssh/Unix share one match arm, and their UDP-unsupported verdict is always labeled with the shared `"Raw"` reason label (`capability.rs:181-186`).
+- Single-hop rules: HTTP/Socks4/Trojan/H2/H3/WebSocket = TCP only; Socks5/Shadowsocks = TCP + UDP; SSR = TCP only; QUIC alone = no TCP. Each single protocol labels its own UDP-unsupported verdict (`"Http"`, `"Socks4"`, `"ShadowsocksR"`, `"Trojan"`, `"Http2"`, `"Http3"`, `"WebSocket"`, `"Raw"`, `"Ssh"`, `"Unix"` — `Raw`/`Ssh`/`Unix` are separate match arms, not a shared `"Raw"` label).
 - Multi-hop: TCP supported; UDP supported only when every hop is single-protocol Socks5 or Shadowsocks
 - QUIC at first hop: TCP supported, UDP unsupported. The multi-hop first-hop-QUIC reason is `"QUIC UDP stream mapping is only supported at the first hop"`; the shorter `"QUIC UDP stream mapping"` string is only the single-hop stacked case (`capability.rs:73-78` vs `:90-97`)
 - Zero hops (direct): both unsupported ("direct")
@@ -174,14 +174,14 @@ direct connector with DNS-rebinding protection, and the multi-hop
 |---|---|---|
 | `lib.rs` | 10 | TargetAddr display/FromStr, IPv6 bracketing, RejectReason display |
 | `listener.rs` | 4 | Accept, cancellation, connection_limit held until drop, SO_REUSEPORT |
-| `connector.rs` | 27 | Echo connect, DNS-rebinding for domains, reserved IPv4/IPv6 ranges (loopback, private, link-local, multicast, broadcast, documentation, benchmarking, reserved-future, this-network, discard prefix, IPv4-mapped) |
+| `connector.rs` | 30 | Echo connect, first-hop socket metadata (peer/local addr, local_bind port, IPv6 loopback), DNS-rebinding for domains, address fallback to next resolved address, mapped-IPv6 local bind, reserved IPv4/IPv6 ranges (loopback, private, link-local, multicast, broadcast, documentation, benchmarking, reserved-future, this-network, discard prefix, IPv4-mapped) |
 | `relay.rs` | 8 | Facade compatibility: echo, client/server half-close first-close reasons, hanging-peer bounded drain, I/O-error→`Error`, cancellation, legacy option pinning + drain-timeout mapping |
 | `replay.rs` | 10 | Buffer during sniff, partial reads, into_inner, write delegation, finish_sniff, custom max_buffer, empty read |
 | `detect.rs` | 6 | Prefix match/no-match, need-more, empty input, exact match, custom min_length |
 | `dispatch.rs` | 11 | HTTP/Socks5/SSH detection, no-match, timeout, buffer overflow, ordered detection, fragmented, stream close |
-| `chain.rs` | ~30 | Empty/invalid chains, missing handlers, connect/handshake failures, domain preservation through 1-3 hops, credentials, handler selection, error indexing, TLS wrapping |
+| `chain.rs` | 32 | Empty/invalid chains, missing handlers, connect/handshake failures, domain preservation through 1-3 hops, credentials, handler selection, error indexing, TLS wrapping, `execute_with_metadata` socket retention/clearing, chain validation + error display |
 | `capability.rs` | 9 | Per-protocol classification, multi-hop, empty chain, QUIC at first hop, reason label stability |
-| **Total** | **115** | |
+| **Total** | **120** | |
 
 ## Reviewer gotchas
 

@@ -50,7 +50,10 @@ post-compilation checks, and reload maps failures to `Reload` + metrics.
 | `status()` | :457 | `ServiceStatus`: generation, readiness, connections, uptime, listeners |
 | `metrics_text()` | :497 | Prometheus metrics text |
 | `reload_toml_str(input)` | :511 | Hot-reload routing/upstream/groups/health; rejects startup-captured listener changes |
+| `reload_compiled(compiled)` | :546 | Native hot-reload from an already-compiled `RuntimeConfig` (no TOML string) |
 | `reload_toml_file(path)` | :568 | File-based reload |
+| `cancel()` | :580 | Signal shutdown without consuming the handle |
+| `cancel_and_cleanup()` | :591 | Signal shutdown and release run-thread resources (`&mut self`) |
 | `shutdown()` async | :597 | Cancel token + join runtime |
 | `shutdown_blocking()` | :615 | Blocking shutdown |
 
@@ -221,10 +224,10 @@ private `connect_tcp_inner()` with the legacy methods and return
 - No temp config file exists (in-memory startup); plaintext credentials never
   touch the filesystem via embed startup. Retained source TOML (ancillary
   display state) stays in memory only.
-- `to_redacted_toml()` walks the TOML tree generically (`REDACTED_SECRET_KEYS` at :754, `redact_toml_value[_inner]` at :779-799):
+- `to_redacted_toml()` walks the TOML tree generically (`REDACTED_SECRET_KEYS` at :768, `redact_toml_value[_inner]` at :793-797):
   - Keys matching `REDACTED_SECRET_KEYS` (`password`, `password_env`,
-    `secret`, `secret_ref`, `token`, `api_key`, `apikey`, `credentials`,
-    `bearer`, `bearer_token`, `bearer_token_env`)
+    `secret`, `secret_ref`, `token`, `bearer`, `bearer_token`,
+    `bearer_token_env`, `api_key`, `apikey`, `credentials`)
     have their string values replaced with `****`.
   - Strings containing `://` are passed through the canonical tolerant
     redactor `eggress_uri::redact_proxy_uri()`, which strips `user:pass@`

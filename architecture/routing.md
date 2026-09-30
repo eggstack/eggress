@@ -78,7 +78,7 @@ fn route(&self, request: &RouteRequest) -> Result<SelectedRoute, RouteError> {
 
 `normalize_host_for_exact()` at `src/matcher.rs`:
 - Strips trailing `.` (e.g. `example.com.` -> `example.com`).
-- If parseable as `IpAddr`, canonicalizes via `ip.to_string()` (lowercases IPv6 hex, collapses padding). So `FE80::1` equals `fe80::1` and `fe80:0:0:0:0:0:0:1`.
+- If parseable as `IpAddr`, canonicalizes via `ip.to_string()` (lowercases IPv6 hex, collapses padding). So `FE80::1` equals `fe80::1` and `fe80:0:0:0:0:0:0:1`. IPv4-mapped IPv6 literals canonicalize to plain IPv4, so `::ffff:192.168.1.1` matches `192.168.1.1`.
 - Otherwise, `to_ascii_lowercase()`.
 
 `HostSuffix` also strips trailing dots and lowercases before suffix comparison; it requires a label boundary (full match or `.` prefix in the suffix) so `notexample.com` does not match suffix `example.com`.
@@ -95,7 +95,7 @@ Six states in `HealthState` (`src/health.rs:12-19`):
 | `Healthy` | Stay `Healthy` | `Suspect` (below threshold); `Unhealthy` at threshold |
 | `Suspect` | `Healthy` only once `consecutive_successes >= successes_to_healthy` (default 2), else stays `Suspect` | Stay `Suspect` (below threshold); `Unhealthy` at threshold |
 | `Unhealthy` | `Recovering` | Stay `Unhealthy` |
-| `Recovering` | Stay `Recovering` until `consecutive_successes >= successes_to_healthy`, then `Healthy` | `Unhealthy` (any failure) |
+| `Recovering` | Stay `Recovering` until `consecutive_successes >= successes_to_healthy`, then `Healthy` | Stay `Recovering` below threshold; `Unhealthy` at threshold |
 | `Disabled` | `Disabled` | `Disabled` |
 
 Defaults (`HealthConfig::default()` at `src/health.rs:42-52`):
@@ -103,19 +103,19 @@ Defaults (`HealthConfig::default()` at `src/health.rs:42-52`):
 - `failures_to_unhealthy`: 3, `successes_to_healthy`: 2.
 - `initial_state`: `Unknown`.
 
-Jitter: each probe delay is `interval +/- 20%` via `fastrand::f64()` (`jittered_delay` at `src/health.rs:257`, sampled at `src/health.rs:301`). Probe concurrency bounded by a 10-permit semaphore (`src/health.rs:280`).
+Jitter: each probe delay is `interval +/- 20%` via `fastrand::f64()` (`jittered_delay` at `src/health.rs:270`, sampled at `src/health.rs:314`). Probe concurrency bounded by a 10-permit semaphore (`src/health.rs:293`).
 
 ### Eligibility
 
-`is_eligible()` at `src/health.rs:239-250` returns `true` when `upstream.is_enabled()` AND state is `Unknown | Healthy | Suspect | Recovering`. `Unhealthy` and `Disabled` are excluded.
+`is_eligible()` at `src/health.rs:249-263` returns `true` when `upstream.is_enabled()` AND state is `Unknown | Healthy | Suspect | Recovering`. `Unhealthy` and `Disabled` are excluded.
 
 ### Lease RAII lifecycle
 
-`PendingLease::new()` at `src/lease.rs:23-29`: increments `in_flight` atomically. On drop (connection rejected or abandoned), `in_flight` is decremented.
+`PendingLease::new()` at `src/lease.rs:24`: increments `in_flight` atomically. On drop (connection rejected or abandoned), `in_flight` is decremented.
 
-`PendingLease::established()` at `src/lease.rs:31-39`: sets state to `Transferred`, decrements `in_flight`, increments `active`. Returns `ActiveLease`.
+`PendingLease::established()` at `src/lease.rs:32-38`: sets state to `Transferred`, decrements `in_flight`, increments `active`. Returns `ActiveLease`.
 
-`ActiveLease::drop()` at `src/lease.rs:64-67`: decrements `active`.
+`ActiveLease::drop()` at `src/lease.rs:65-67`: decrements `active`.
 
 This two-phase design means `in_flight` tracks route-selection-to-upstream-open latency while `active` tracks the live relay session. `UpstreamRuntime::current_load()` returns `active + in_flight`.
 
@@ -176,9 +176,9 @@ No Cargo features gate routing functionality (all routing code is always compile
 |---|---|---|
 | MatchExpr | `src/matcher.rs` (unit-test-free; covered by `src/lib.rs` tests) | 30+ tests: host exact/suffix/regex, CIDR IPv4/v6, port exact/range/set, source CIDR/port, listener, protocol, identity, composite All/AnyOf/Not, empty All/AnyOf |
 | Router decide/select | `src/router.rs` (unit-test-free; covered by `src/lib.rs` tests) | first-match-wins, default action, upstream group, reject, accessor methods |
-| Health state machine | `src/health.rs:308-630` | 15+ tests: every state transition, thread safety (100 threads), eligibility, timestamps, failure resets counter, Disabled terminal |
-| Jitter | `src/health.rs:598-616` | 1000 iterations, validates +/- 20% range |
-| Probe | `src/health.rs:563-596` | TCP probe success, failure, timeout |
+| Health state machine | `src/health.rs:366-710` | 15+ tests: every state transition, thread safety (100 threads), eligibility, timestamps, failure resets counter, Disabled terminal |
+| Jitter | `src/health.rs:678` | 1000 iterations, validates +/- 20% range |
+| Probe | `src/health.rs:643-661` | TCP probe success, failure, timeout |
 | Schedulers | `src/scheduler.rs:346-428` | FirstAvailable order, disabled skip, RoundRobin, Random determinism, LeastConnections |
 | Lease RAII | `src/lease.rs` + `src/lib.rs` tests | PendingLease decrement on drop, established->active, ActiveLease decrement on drop |
 | CompatRegexRule | `src/compat.rs` + `src/lib.rs` tests | Parse valid/invalid, file parsing, line numbers, hostname:port matching |

@@ -64,7 +64,7 @@ custom TLS policies survive H2 ALPN adaptation. A caller-supplied
 ### Executor (`src/executor.rs`)
 
 ```rust
-// Signatures are cfg-gated per feature; see src/executor.rs:112-119 verbatim:
+// Signatures are cfg-gated per feature; see src/executor.rs:98-108 verbatim:
 pub struct OutboundExecutorOptions {
     pub tls_override: Option<Arc<rustls::ClientConfig>>,
     #[cfg(feature = "extended")]

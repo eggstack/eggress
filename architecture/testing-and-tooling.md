@@ -11,7 +11,7 @@ Test-only library consumed as dev-dependency.
 
 | Module | Role |
 |---|---|
-| `lib.rs` | `get_free_port()`, `start_echo_server()`, `start_half_close_server()` — async test servers and port allocation |
+| `lib.rs` | `get_free_port()`, `start_echo_server()`, `start_half_close_server()`, `start_http_origin_server()` — async test servers and port allocation |
 | `bin/strict_report.rs` | Strict-report binary (manifest/observation report generation) |
 | `oracle/` | Scenario/supervisor/observation helpers for the frozen oracle |
 | `differential.rs` | Differential test harness plumbing + oracle interpreter resolution: `$EGRESS_ORACLE_PYTHON` -> legacy `$EGRESS_PYTHON_BIN` -> `find_oracle_python` discovery |
@@ -137,7 +137,7 @@ cannot shadow the installed wheel's compiled `_eggress` extension.
 |---|---|---|
 | `ci.yml` | push/PR to main | Ubuntu Rust smoke: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --locked`, bounded optional-compat compile check (`full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon --bins`, no `insecure-quic`), no-default embed `ssh`, `pproxy-compat`, and combined compile checks, six no-default `eggress-outbound` feature slices (base, `toml`, `pproxy-compat`, `ssh`, `ssh,pproxy-compat`, `udp`), required local OpenSSH embed runtime regression, fuzz-target compilation |
 | `python-test.yml` | PR + push to `main`, path-scoped to `crates/eggress-embed/**`, `crates/eggress-python/**`, `python/**`, `tests/compat/**`, `Cargo.toml`, `Cargo.lock`, plus the workflow file itself | Ubuntu Python 3.12 smoke: build wheel with maturin, install `eggress-pproxy-compat`, run pytest |
-| `publish-python.yml` | `v*` tag push or manual dispatch | Validate tag/version coherence, build 5-platform wheels + sdist, smoke test, publish to PyPI via protected `pypi` environment (TestPyPI via manual dispatch only) |
+| `publish-python.yml` | `v*` tag push or manual dispatch | Validate tag/version coherence, build 10-family `cp39-abi3` wheels + sdist, smoke test, publish to PyPI via protected `pypi` environment (no TestPyPI path; the only manual-dispatch target is `pypi`) |
 | `release-binaries.yml` | `v*` tag push or manual dispatch against an existing tag | Preflight tag/version gate, five target `eggress`+`pproxy` archives with native smoke + SHA-256, then a `contents: write` assemble job attaching archives and installers |
 
 Policy docs: `docs/CI_STATUS.md`, `docs/TESTING.md`.

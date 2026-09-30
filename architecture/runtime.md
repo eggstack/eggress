@@ -9,7 +9,7 @@ health probes, reverse routing gate, and ordered shutdown.
 | File | Role |
 |------|------|
 | `src/supervisor.rs` | Orchestration facade: `ServiceSupervisor` public API (`start`/`start_from_config`/`start_from_config_with_compatibility` + deprecated legacy `start_from_config_with_options` shim/`run()`/`reload_config()`), `CompatibilityRuntimeHooks` + legacy `CompatibilityOptions` adapter + `SystemProxyRequest`, run-phase orchestration (health → listeners → UDP/accept loops → auxiliary → signals → shutdown) |
-| `src/supervisor/startup.rs` | `init_supervisor()` (feature gates, bind pre-validation, metrics/UDP/health wiring, `RuntimeState` assembly), `resolve_udp_global_limit()`, `build_ssh_sessions(allow_insecure_host_keys: bool)` |
+| `src/supervisor/startup.rs` | `init_supervisor()` (feature gates, bind pre-validation, metrics/UDP/health wiring, `RuntimeState` assembly), `validate_startup_config()`, `resolve_udp_global_limit()`, `build_ssh_sessions(allow_insecure_host_keys: bool)` |
 | `src/supervisor/state.rs` | `RuntimeState` (snapshot, routing, session + runtime metrics, readiness, accounting, UDP registry, health, reverse state) + canonical `apply_compiled_config` transaction |
 | `src/lib.rs` | Crate root / public re-exports |
 | `src/supervisor/reload.rs` | `ReloadResult`, `classify_listeners()` (crate-private) + `classify_reload_config()` (restart-required contract) |
@@ -18,7 +18,7 @@ health probes, reverse routing gate, and ordered shutdown.
 | `src/supervisor/services.rs` | Private auxiliary-service phase: `apply_compatibility_proxy()` (`--sys` select/apply, fail-closed without `operations`), `spawn_reverse_services()` (`reverse` servers/clients from snapshot), `prebind_and_spawn_admin()` (`operations` pre-bind before readiness, spawn last-shutdown task) |
 | `src/supervisor/signals.rs` | Private readiness/signal phase: `run_signal_loop()` (readiness after signal install, cancel/CTRL-C/SIGTERM, file-backed SIGHUP via `apply_compiled_config`, reload metrics) |
 | `src/supervisor/udp_runtime.rs` | `RuntimeUdpService` (`UdpService` impl), listener-generation `make_udp_service()`, `compute_advertise_ip()`, `prepare_shadowsocks_udp_relay()` |
-| `src/supervisor/operations.rs` | `RuntimeAdminListenerInfos` (`AdminSnapshotProvider` over the live snapshot) |
+| `src/supervisor/operations.rs` | `RuntimeAdminListenerInfos` + `RuntimeAdminState` (`AdminSnapshotProvider` over the live snapshot) |
 | `src/supervisor/accounting.rs` | `ListenerConnectionSlot` (per-listener limits), `ActiveConnectionGuard` (exactly-once global accounting), accept-error backoff |
 | `src/supervisor/shutdown.rs` | `ShutdownPlan` + `shutdown_ordered()` (single ordered shutdown authority: readiness false, listener stop, drain, admin last) |
 | `src/snapshot.rs` | `CompiledRuntimeSnapshot { generation, upstreams, router, timeouts, listeners, admin, reverse_servers, reverse_clients }`; `compile_runtime_snapshot(config, previous)` reuses unchanged upstream `Arc`s via ptr-identity when chain+health are identical; increments generation monotonically |
@@ -37,6 +37,8 @@ health probes, reverse routing gate, and ordered shutdown.
 | `CompatibilityRuntimeHooks::from_legacy_options(options)` | Canonical legacy conversion; `auth_timeout`/`system_proxy`/`compatibility_mode` become narrow hooks, `debug`/`verbose_level` ignored (facade-owned logging) |
 | `ServiceSupervisor::start_from_config_with_options(cfg, path, options)` | Deprecated legacy source-compatible shim; converts via `from_legacy_options` then delegates to the canonical path (`start_from_config` when empty, otherwise `start_from_config_with_compatibility`); emits one warning for non-default legacy logging fields |
 | `ServiceSupervisor::run(&mut self)` | Blocking; owns signal loop and shutdown sequence |
+| `ServiceSupervisor::state(&self)` | Borrows the live `Arc<RuntimeState>` (snapshot, routing, metrics) |
+| `ServiceSupervisor::with_tls_client_config(config)` | Builder override for the outbound TLS client config (used by tests/embedders); consumes and returns `Self` |
 | `ServiceSupervisor::reload_config(&mut self)` | Load-and-swap without blocking signal loop |
 | `ServiceSupervisor::shutdown_token()` | Exposes master cancel for external callers |
 | `RuntimeState::generation()` | Reads `snapshot.load().generation` |
@@ -110,7 +112,9 @@ precedence.
 
 ## Shutdown ordering
 
-Ordering implemented by `shutdown_ordered()` (`src/supervisor/shutdown.rs`):
+Ordering implemented by `shutdown_ordered()` (`src/supervisor/shutdown.rs`).
+The total wall-clock budget is a single shared `shutdown_grace` deadline
+across all stages (worst case ≈ grace, not grace per stage):
 
 | Step | Action | Effect |
 |------|--------|--------|
@@ -190,6 +194,7 @@ Startup failures are structured `Result` errors, never panics.
 | `legacy-crypto` | Legacy Shadowsocks ciphers via `extended` + SSR `legacy-crypto` |
 | `pproxy-legacy` | SSR framing (requires `extended`) |
 | `ssh` | `SshSessionCache`, SSH session shutdown |
+| `pproxy-compat` | Compatibility SSH host-key behavior via `eggress-transport-ssh?/pproxy-compat` (only meaningful with `ssh`) |
 | `quic` | QUIC/HTTP3 listener binding |
 | `insecure-quic` | Test-only QUIC cert bypass (never in the product gate) |
 
