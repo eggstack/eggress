@@ -43,7 +43,7 @@ Architecture: `architecture/cli.md`, `architecture/admin.md`, `architecture/metr
 
 ## 4. Current state
 
-CLI cleanup/version/self-update, distribution docs/policy, embed/Python stabilization, PyPI matrix expansion, manual-publish simplification all complete. 1.0.10 prepared but unpublished; publication/tagging is maintainer-authorized, not planning-authorized.
+CLI cleanup/version/self-update, distribution docs/policy, embed/Python stabilization, PyPI matrix expansion, manual-publish simplification all complete. 1.0.10 is published as `v1.0.10` (2026-09-24); the next version bump/publication is maintainer-authorized, not planning-authorized.
 
 A newly qualified upstream convergence path was registered as M003: Eggup Archive M001d can replace Eggress's generic shell archive extraction and bespoke two-binary rollback transaction while Eggress retains GitHub/checksum/version/CLI policy. The implementation plan is complete and landed: Eggup M009 published compatible versioned `eggup-core 0.1.2` and `eggup-archive 0.1.2` to the registry on 2026-09-28, and M003 adopted them with hosted updater qualification (closure `plans/closure/delivery/003-status.md`). Permanent git/path dependencies are not acceptable for the publishable workspace.
 
@@ -97,7 +97,7 @@ Tag-push discipline remains critical because both publish workflows fire on `v*`
 
 ## 11. Completion definition
 
-Existing delivery surfaces are qualified and 1.0.10 remains prepared/unpublished. M003 landed the updater convergence with the versioned Eggup dependency gate closed 2026-09-28 and hosted qualification green; it does not authorize tagging/publication.
+Existing delivery surfaces are qualified and 1.0.10 is published as `v1.0.10` (2026-09-24). M003 landed the updater convergence with the versioned Eggup dependency gate closed 2026-09-28 and hosted qualification green.
 
 ## 12. Milestone status
 

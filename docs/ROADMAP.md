@@ -25,25 +25,27 @@ Known boundaries:
 See `docs/parity/README.md` and `crates/eggress-pproxy-compat/src/tier.rs`
 for the tier taxonomy (`docs/PPROXY_PARITY_SPEC.md` is historical provenance only).
 
-### 1.0.10 qualification — complete, prepared, unpublished
+### 1.0.10 — qualified and published
 
-The 1.0.10 runtime/TLS implementation, package dry-run, and CI are
-qualified. The final evidence corrective has landed: the two-valid-policy
-H2 isolation regression now counts successful server-side H2 handshakes
+The 1.0.10 runtime/TLS implementation, package dry-run, and CI were
+qualified. The final evidence corrective landed: the two-valid-policy
+H2 isolation regression counts successful server-side H2 handshakes
 after `h2::server::handshake` (two TLS accepts plus exactly two H2
 handshakes), with mutation sensitivity proven by the shared-registry
-control. No active 1.0.10 blocker remains.
+control.
 
-Recently completed:
+Qualification record (archive phase-records retain their original
+"prepared, unpublished" wording as provenance — they predate the release):
 
 1. [H2 Physical Session Evidence Corrective](../plans/archive/phase-records/H2_PHYSICAL_SESSION_EVIDENCE_CORRECTIVE.md) — **IMPLEMENTED AND QUALIFIED**. Physical H2 isolation proven by handshake counts; supported 28-crate dry-run green; Rust CI `36032622797` success on `c5826b3`.
-2. [1.0.10 Closure and Evidence Reconciliation Pass](../plans/archive/phase-records/ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md) — **IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED**.
-3. [H2 TLS Override ALPN Preservation and 1.0.10 Qualification Corrective](../plans/archive/phase-records/H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md) — **IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED**.
-4. [Pooled Transport Policy Identity and 1.0.10 Roll-Forward Corrective](../plans/archive/phase-records/POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md) — **IMPLEMENTED AND QUALIFIED — 1.0.10 PREPARED, UNPUBLISHED**.
+2. [1.0.10 Closure and Evidence Reconciliation Pass](../plans/archive/phase-records/ONE_ZERO_TEN_CLOSURE_EVIDENCE_PASS.md) — **IMPLEMENTED, QUALIFIED, AND PUBLISHED as v1.0.10**.
+3. [H2 TLS Override ALPN Preservation and 1.0.10 Qualification Corrective](../plans/archive/phase-records/H2_TLS_OVERRIDE_ALPN_PRESERVATION_AND_1_0_10_QUALIFICATION_CORRECTIVE.md) — **IMPLEMENTED, QUALIFIED, AND PUBLISHED as v1.0.10**.
+4. [Pooled Transport Policy Identity and 1.0.10 Roll-Forward Corrective](../plans/archive/phase-records/POOLED_TRANSPORT_POLICY_IDENTITY_AND_1_0_10_ROLLFORWARD.md) — **IMPLEMENTED, QUALIFIED, AND PUBLISHED as v1.0.10**.
 
-The workspace remains 1.0.10, prepared but unpublished. No v1.0.10 tag or
-publication is authorized by these plans; publication/tagging remains a
-separate maintainer-authorized release action.
+`v1.0.10` was tagged and published 2026-09-24 (PyPI `eggress 1.0.10`,
+crates.io, GitHub Release with the five prebuilt CLI archives +
+installers). The workspace remains at 1.0.10; the next version bump
+follows the lockstep procedure in `docs/release/RELEASE_PROCESS.md`.
 
 ### Active maintenance — Eggup archive/pair self-update convergence
 
@@ -55,15 +57,14 @@ CLI exit behavior, and no-fallback/no-elevation policy while replacing generic
 shell archive extraction plus the bespoke two-binary backup/rollback transaction
 with Eggup's qualified archive extraction and multi-artifact transaction.
 
-The plan is **LANDED AND CLOSED** (`plans/closure/delivery/003-status.md`).
+The plan is **LANDED AND CLOSED** (`plans/closure/delivery/003-status.md`; the M003 work shipped in the published `v1.0.10`).
 Eggup Archive M001d is runtime-qualified (`eggstack/eggup@18d83de`, hosted
 run `36335233644`), and its post-M001d `eggup-core` API and `eggup-archive`
 shipped as a compatible versioned registry package pair on 2026-09-28
 (`eggup-core 0.1.2` + `eggup-archive 0.1.2`, Eggup M009 closure,
 `eggstack/eggup@v0.1.2`) and were adopted with hosted Linux/macOS/Windows
 updater evidence on 2026-09-29. A permanent git/path dependency never entered
-the publishable Eggress workspace. This milestone does not authorize a 1.0.10
-tag/publication and does not change pproxy compatibility claims.
+the publishable Eggress workspace. This milestone does not change pproxy compatibility claims.
 
 ## Completed Milestones
 

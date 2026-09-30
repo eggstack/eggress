@@ -145,6 +145,7 @@ settings on shutdown or failed startup. Test rollback paths with
 ```bash
 cargo test -p eggress-cli --test cli_exit_codes
 cargo test -p eggress-cli --test cli_tests
+cargo test -p eggress-cli --locked --bin eggress update::  # self-update unit path (CI also runs this on macos/windows)
 cargo test -p eggress-cli --test version
 cargo test -p eggress-cli --test release_contract
 bash packaging/tests/test-install.sh

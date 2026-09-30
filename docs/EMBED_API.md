@@ -199,9 +199,8 @@ Contract:
   requesting the Eggress per-hop insecure mode, otherwise remove
   `tls_override` and use Eggress's feature-gated insecure policy. There
   is no separate insecure-override field.
-  The socket metadata correction shipped in immutable `v1.0.9`; the pooled
-  transport policy corrective is qualified on `1.0.10` (prepared but
-  unpublished).
+   The socket metadata correction shipped in immutable `v1.0.9`; the pooled
+   transport policy corrective shipped in `v1.0.10`.
 
 ### Listener-free UDP (`associate_udp`)
 

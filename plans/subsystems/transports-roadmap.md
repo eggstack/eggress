@@ -43,7 +43,7 @@ Architecture: `architecture/transports-tls.md`, `architecture/transports-ssh-qui
 
 ## 4. Current state
 
-H2 physical-session evidence, ALPN preservation, and pooled-transport policy-identity correctives qualified on the 1.0.10 line (prepared, unpublished). SSH/QUIC remain intentionally feature-gated.
+H2 physical-session evidence, ALPN preservation, and pooled-transport policy-identity correctives shipped in published `v1.0.10`. SSH/QUIC remain intentionally feature-gated.
 
 ## 5. Target architecture
 
