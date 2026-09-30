@@ -34,7 +34,7 @@ Complementary authority: `docs/ROADMAP.md` (canonical roadmap), `docs/parity/ppr
 | Transports | closed | `plans/subsystems/transports-roadmap.md` | All milestones closed; SSH/QUIC remain feature-gated by design | None. |
 | Outbound chains and connectors | closed | `plans/subsystems/outbound-chains-roadmap.md` | All milestones closed; pooled-transport/H2/ALPN correctives qualified | None. |
 | Parity contract and compatibility translation | closed | `plans/subsystems/parity-compat-roadmap.md` | All milestones closed; manifest has no unresolved `gap` outside tiered boundaries | None. |
-| Delivery (CLI, embed, Python, release) | active | `plans/subsystems/delivery-roadmap.md` | M003 Eggup archive/pair self-update adoption landed and shipped in published `v1.0.10` | Closed 2026-09-29 (`plans/closure/delivery/003-status.md`); next version bump is a separate maintainer-authorized release action. |
+| Delivery (CLI, embed, Python, release) | active | `plans/subsystems/delivery-roadmap.md` | M003 Eggup archive/pair self-update adoption landed and shipped in published `v1.0.10` | Closed 2026-09-29 (`plans/closure/delivery/003-status.md`); `v1.0.11` patch release in progress (maintainer-authorized). |
 
 ## Dependency-ready implementation plans
 
