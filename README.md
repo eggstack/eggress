@@ -7,274 +7,49 @@
 [![PyPI](https://img.shields.io/pypi/v/eggress.svg)](https://pypi.org/project/eggress/)
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/eggress?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/eggress)
 
-A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
-
-## Design goals
-
-- Nearly identical common CLI usage to `pproxy`
-- Mixed-protocol listeners
-- Arbitrary compatible multi-hop proxy chains
-- TCP and UDP
-- Secure defaults with explicit legacy compatibility
-- Embeddable Rust library
-- Pure Rust dependencies wherever practical
-- Differential interoperability tests against Python `pproxy`
-- Linux, macOS, and Windows support where the underlying capability exists
+A Rust-native, embeddable, multi-protocol proxy framework and CLI with practical compatibility with Python `pproxy`.
 
 ## Installation
 
-### Python / pproxy migration (primary Python distribution)
+```bash
+pip install eggress                              # Python package
+curl -fsSL https://github.com/eggstack/eggress/releases/latest/download/install.sh | bash   # standalone eggress + pproxy binaries
+cargo install eggress-cli --locked               # Rust/developer build (MSRV 1.89)
+```
+
+Details (platforms, Python versions, checksums, troubleshooting): [docs/INSTALLATION.md](https://github.com/eggstack/eggress/blob/main/docs/INSTALLATION.md).
+
+## Quickstart
+
+Start a SOCKS5 listener and send traffic through it:
 
 ```bash
-pip install eggress
-```
-
-See [INSTALLATION.md](https://github.com/eggstack/eggress/blob/main/docs/INSTALLATION.md) for cipher extras, the opt-in top-level `pproxy` compatibility distribution, and supported Python versions/platforms.
-
-### Standalone CLI (prebuilt binaries)
-
-```bash
-curl -fsSL https://github.com/eggstack/eggress/releases/latest/download/install.sh | bash
-```
-
-This installs both the `eggress` and `pproxy` binaries from a version-aligned GitHub Release archive (default `eggress-cli` features). Windows uses `install.ps1`; pinned versions, custom directories, checksums, and troubleshooting live in [INSTALLATION.md](https://github.com/eggstack/eggress/blob/main/docs/INSTALLATION.md).
-
-Verify with `eggress version` and `pproxy --version`. Standalone installs
-self-update with `eggress update` (GitHub Release binaries only; Python
-users update with `pip`).
-
-### Cargo / source build (Rust/developer alternative)
-
-```bash
-cargo install eggress-cli --locked
-```
-
-For Rust users, unsupported prebuilt targets, Cargo-managed provenance, and custom features (e.g. `ssh`, `quic`, `legacy-crypto`). The workspace declares Rust **MSRV 1.89**. From a repository checkout: `cargo install --path crates/eggress-cli`. Lean and feature-gated build examples live in [INSTALLATION.md](https://github.com/eggstack/eggress/blob/main/docs/INSTALLATION.md).
-
-### Rust library
-
-```toml
-[dependencies]
-eggress-embed = "1"
-```
-
-From a repository checkout, substitute `eggress-embed = { path = "crates/eggress-embed" }`.
-
-For listener-free outbound chains without the full service, depend directly
-on `eggress-outbound` (`eggress_embed::outbound::*` re-exports the same API
-for full-service consumers):
-
-```toml
-[dependencies]
-eggress-outbound = "1"
-```
-
-Enable `ssh` for native/TOML SSH upstreams. The `pproxy-compat` feature
-enables `OutboundConnector::from_pproxy_uri()`; pproxy-style SSH requires
-both features. The connector owns SSH session state internally and keeps
-native known-host verification separate from the explicit pproxy
-compatibility policy.
-
-The embed SSH regression uses a temporary local OpenSSH server. Run it with
-`EGRESS_REQUIRE_OPENSSH_TESTS=1` when validating an SSH-enabled build; CI
-installs `openssh-server` and treats fixture setup failures as test failures.
-The listener-free SSH `OutboundConnector` correction is available beginning
-with `v1.0.7`. Downstreams pinned to older releases must keep any SSH
-fallback until they upgrade to `v1.0.7` or newer.
-
-For TCP connects, `OutboundInfo.local_addr` and `peer_addr` report addresses
-from the socket actually established. Direct routes describe the target
-socket; proxy chains describe hop 0, including the local socket address and
-the actual peer selected for that hop. Non-TCP first hops may have no
-`SocketAddr` metadata. These optional fields are observational and do not
-change connection success or routing behavior.
-The socket metadata correction shipped in immutable `v1.0.9`. The follow-up
-policy-isolation corrective shipped in lockstep patch `v1.0.10`: it scopes H2 pooling to the executor's TLS policy and disables SSH/H2 reuse
-when an explicit source bind would otherwise be bypassed. Nested SSH/H2 stays
-unpooled.
-
-### Python package
-
-```bash
-pip install eggress
-
-# For AEAD cipher support:
-pip install "eggress[cipher-api]"
-```
-
-The `eggress` wheel provides only the `eggress` package. For a bounded, Eggress-backed top-level `pproxy` import, additionally install the opt-in compatibility distribution from a repository checkout:
-
-```bash
-pip install ./python-pproxy-compat
-```
-
-Never install upstream `pproxy` and `eggress-pproxy-compat` together because they provide the same import namespace; uninstall upstream `pproxy` first.
-
-Supported Python versions: 3.9, 3.10, 3.11, 3.12, 3.13, 3.14, 3.15 (3.15 RC-qualified; final-release evidence lands with final 3.15). One `cp39-abi3` wheel per platform covers all of them. Prebuilt wheels are available for Linux x86_64/aarch64/armv7l (GNU + musl), macOS x86_64/arm64, and Windows x86_64/ARM64.
-
-## CLI usage
-
-```text
-eggress -l http://:8080
-eggress -l socks4://:1080
 eggress -l socks5://:1080
-eggress -l http+socks4+socks5://:8080
-eggress -l http+socks5://user:pass@:8080
-eggress -r http://proxy.example:8080
-eggress -r socks5://proxy.example:1080
-eggress -r socks5://hop1:1080__http://hop2:8080
+curl -x socks5://127.0.0.1:1080 http://example.com/
 ```
 
-SSH upstreams (opt-in, requires `ssh` feature):
+Mixed-protocol listeners, authenticated listeners, and upstream chains:
 
 ```bash
-cargo run -p eggress-cli --features ssh -- -r ssh://user:password@ssh.example:22
-cargo run -p eggress-cli --features ssh -- -r ssh://user::/path/to/id_ed25519@ssh.example
+eggress -l http+socks5://:8080
+eggress -l http+socks5://user:pass@:8080
+eggress -l socks5://:1080 -r http://proxy.example:8080
+eggress -l socks5://:1080 -r socks5://hop1:1080__http://hop2:8080
 ```
 
-The `pproxy` compatibility binary is also available:
+Verify with `eggress version`. Standalone installs self-update with `eggress update`.
+
+The `pproxy` compatibility binary ships alongside `eggress`:
 
 ```bash
 pproxy -l http://:8080 -r socks5://proxy:1080
-eggress pproxy translate -- -l http://:8080 -r socks5://proxy:1080
-eggress pproxy check -- -l socks5://:1080 -r http://proxy:8080
+eggress pproxy translate -- -l http://:8080 -r socks5://proxy:1080   # print TOML, start nothing
+eggress pproxy check -- -l socks5://:1080 -r http://proxy:8080       # compatibility report
 ```
 
-See the [operations guide](https://github.com/eggstack/eggress/blob/main/docs/OPERATIONS.md) for full CLI reference, TOML configuration, reload behavior, admin endpoints, and system-proxy integration.
+Full CLI reference, TOML config, reload, admin, and system-proxy: [docs/OPERATIONS.md](https://github.com/eggstack/eggress/blob/main/docs/OPERATIONS.md).
 
-## Rust library
-
-Use `eggress-embed` to embed the proxy in another Rust application.
-
-### Blocking usage
-
-```rust
-use eggress_embed::{EggressService, EggressConfig};
-
-let config = EggressConfig::from_toml_str(r#"
-    version = 1
-
-    [[listeners]]
-    name = "socks"
-    bind = "127.0.0.1:0"
-    protocols = ["socks5"]
-"#)?;
-
-let handle = EggressService::new(config).start_blocking()?;
-let addrs = handle.bound_addresses();
-println!("SOCKS5 listening on {}", addrs.listener("socks").unwrap());
-handle.shutdown_blocking()?;
-```
-
-### Async usage
-
-```rust
-use eggress_embed::{EggressService, EggressConfig};
-
-let config = EggressConfig::from_toml_str(r#"
-    version = 1
-
-    [[listeners]]
-    name = "http"
-    bind = "127.0.0.1:0"
-    protocols = ["http"]
-"#)?;
-
-let handle = EggressService::new(config).start().await?;
-println!("generation: {}", handle.status().generation);
-handle.shutdown().await?;
-```
-
-### Hot-reload
-
-```rust
-match handle.reload_toml_str(new_config) {
-    Ok(eggress_embed::ReloadOutcome::Applied { generation, upstreams }) => {
-        println!("reloaded: generation={generation}, upstreams={upstreams}");
-    }
-    Err(e) => eprintln!("reload failed: {e}"),
-}
-```
-
-### Listener-free outbound chains
-
-```rust
-let connector = eggress_embed::outbound::OutboundConnector::from_pproxy_uri(
-    "socks5://127.0.0.1:1080__http://127.0.0.1:8080"
-)?;
-
-let (stream, info) = connector.connect_tcp("api.example.com", 443).await?;
-assert_eq!(info.hop_count, 2);
-```
-
-`from_pproxy_uri()` accepts canonical `__` multi-hop expressions, executes
-them in-process with no listener, and fails closed on unsupported hops.
-Requires the `pproxy-compat` feature. Native chains need no translation
-features: `OutboundConnector::from_chain(eggress_uri::parse_proxy_chain(..)?)`
-and `OutboundConnector::direct()` are available in the base profile
-(ordinary HTTP/SOCKS TCP).
-
-For stable failure categories without parsing strings, use the detailed
-surface (`connect_tcp_detailed()` / `connect_tcp_timeout_detailed()`),
-which reports `OutboundConnectErrorKind` (`Timeout`, `Dns`,
-`ConnectionRefused`, `Authentication`, `Tls`, `Protocol`, `Policy`, …)
-plus `HopConnect` vs `HopHandshake` stage and hop provenance. Ordinary
-`connect_tcp()` stays source-compatible.
-
-Listener-free UDP (`associate_udp`) supports fixed-target direct and
-single-hop SOCKS5 relay over IPv4/IPv6 with idempotent close;
-composed/Shadowsocks UDP in this surface fail with structured errors.
-Native reverse control channels
-support opt-in server-authenticated TLS with optional mTLS
-(`[[reverse_servers.tls]]` / `[[reverse_clients.tls]]`); `pproxy_compat` wire
-remains plaintext.
-
-### Runtime performance model
-
-The runtime reuses immutable default outbound TLS client configurations,
-prepares inbound listener TLS state and UDP services once per listener
-generation, and keeps the generic relay/standalone UDP hot paths efficient
-without changing public protocol behavior. Informational Criterion coverage
-is split into setup-inclusive and steady-state relay cases, route selection,
-actual local UDP relay flows, TLS construction, and HTTP CONNECT upstream
-lifecycle:
-
-```bash
-cargo bench --bench tcp_relay
-cargo bench --bench route_match
-cargo bench --bench udp_relay
-cargo bench --bench tls_setup
-cargo bench --bench http_connect_upstream
-```
-
-These benchmarks are not CI timing gates; use same-host before/after runs for
-performance decisions.
-
-### Raw stream relay
-
-```toml
-[dependencies]
-eggress-relay = "1"
-```
-
-For applications that only need to shuttle bytes between two
-already-connected Tokio duplex streams — no listeners, routing, TLS, or
-protocol handling — `eggress-relay` provides a small generic engine with an
-explicit half-close policy (`HalfClosePolicy::Drain` default) and
-directional errors. `eggress-embed` above remains the recommended way to
-embed a full proxy service.
-
-The published Rust surface is classified in
-[docs/RUST_API.md](https://github.com/eggstack/eggress/blob/main/docs/RUST_API.md).
-Use `eggress-embed` for lifecycle ownership, `eggress-outbound` for
-listener-free chains, and `eggress-relay` for protocol-neutral byte relay;
-`eggress_embed::outbound::*` remains a source-compatible re-export.
-
-See the [Embed API reference](https://github.com/eggstack/eggress/blob/main/docs/EMBED_API.md) for full API docs, lifecycle details, feature groups, and limitations.
-
-## Python library
-
-### Context manager (recommended)
+## Python
 
 ```python
 from eggress import EggressService
@@ -290,64 +65,54 @@ protocols = ["socks5"]
 
 with EggressService.from_toml(toml).start() as handle:
     print("Listening on", handle.bound_addresses)
-# service is shut down automatically
 ```
 
-### Starting from pproxy arguments
+pproxy-shaped helpers (`start_pproxy`, `eggress.pproxy.PPProxyService`) and the opt-in top-level `pproxy` distribution (`pip install ./python-pproxy-compat`, never alongside upstream `pproxy`):
 
 ```python
 from eggress import start_pproxy
 
 with start_pproxy(["-l", "socks5://:1080", "-r", "http://proxy:8080"]) as handle:
     print(handle.bound_addresses)
-```
 
-### pproxy compatibility API
+from eggress.pproxy import Server
 
-```python
-from eggress.pproxy import PPProxyService, Server
-
-with PPProxyService.from_args(["-l", "socks5://:1080", "-r", "http://proxy:8080"]) as handle:
-    print(handle.bound_addresses)
-
-server = Server(listen="socks5://:1080", remote="http://proxy:8080")
+server = Server(listen=["socks5://:1080"], remote=["http://proxy:8080"])
 server.start()
 server.close()
 ```
 
-See the [Python bindings reference](https://github.com/eggstack/eggress/blob/main/docs/PYTHON_BINDINGS.md) for full API docs, async support, Connection object, protocol/cipher objects, error model, and type stubs.
+Full reference: [docs/PYTHON_BINDINGS.md](https://github.com/eggstack/eggress/blob/main/docs/PYTHON_BINDINGS.md).
+
+## Rust
+
+```toml
+[dependencies]
+eggress-embed = "1"
+```
+
+```rust
+use eggress_embed::{EggressService, EggressConfig};
+
+let config = EggressConfig::from_toml_str(r#"
+    version = 1
+
+    [[listeners]]
+    name = "socks"
+    bind = "127.0.0.1:0"
+    protocols = ["socks5"]
+"#)?;
+
+let handle = EggressService::new(config).start_blocking()?;
+println!("SOCKS5 listening on {}", handle.bound_addresses().listener("socks").unwrap());
+handle.shutdown_blocking()?;
+```
+
+For listener-free outbound chains use `eggress-outbound` directly (`eggress_embed::outbound::*` re-exports the same API); for raw byte relay use `eggress-relay`. Full reference: [docs/EMBED_API.md](https://github.com/eggstack/eggress/blob/main/docs/EMBED_API.md). The published surface is classified in [docs/RUST_API.md](https://github.com/eggstack/eggress/blob/main/docs/RUST_API.md).
 
 ## pproxy compatibility
 
-eggress maintains a behavior-oriented compatibility contract against the pinned
-`pproxy==2.7.9` oracle (`09d4752f17ed6787e1a073c93980eec019887ee3`). Per-feature
-truth lives in the [compatibility matrix](https://github.com/eggstack/eggress/blob/main/docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
-and [capability manifest](https://github.com/eggstack/eggress/blob/main/docs/parity/pproxy_capability_manifest.toml);
-this section is a high-level summary only. Native Eggress capability does not
-automatically imply exact pproxy compatibility — the manifest/matrix status
-(`matched`, `supported_difference`, `platform_limited`,
-`intentional_non_parity`) is authoritative.
-
-The bundled `eggress.pproxy` module provides URI-mode translation, CLI flag translation, compatibility routing, structured diagnostics, and differential tests. The optional `eggress-pproxy-compat` distribution provides the bounded top-level `pproxy` package backed by Eggress adapters.
-
-### Key boundaries
-
-- **Trojan** — client and server roles implemented natively; see the matrix for the status
-- **`--daemon`** — Linux opt-in behind the `pproxy-daemon` feature; fails closed otherwise
-- **`--sys`** — supported with warning; applies the bound local listener and restores prior settings
-- **SSH listeners** — upstream-only; requires opt-in `ssh` feature
-- **QUIC/HTTP/3** — optional behind `quic` feature
-- **SSR** — bounded TCP framing plus six built-in plugins behind opt-in `pproxy-legacy`
-- **Legacy ciphers** — `cast5-cfb`, `idea-cfb`, `rc2-cfb`, `seed-cfb` are excluded; other legacy ciphers require `legacy-crypto`
-- **SOCKS4/SOCKS5 BIND** — refused (pproxy 2.7.9 also requires CONNECT)
-- **TLS interception** — HTTPS uses CONNECT tunneling, not MITM
-- **macOS PF transparent proxy** — intentional non-parity
-
-See the [pproxy migration guide](https://github.com/eggstack/eggress/blob/main/docs/PPROXY_MIGRATION.md), [compatibility matrix](https://github.com/eggstack/eggress/blob/main/docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md), and [capability manifest](https://github.com/eggstack/eggress/blob/main/docs/parity/pproxy_capability_manifest.toml).
-
-## Capabilities
-
-See the [full capability checklist](https://github.com/eggstack/eggress/blob/main/docs/CAPABILITIES.md) for protocol, routing, UDP, TLS, Shadowsocks, Trojan, WebSocket, HTTP/2, reverse proxy, administration, and security status.
+Behavioral compatibility targets pinned `pproxy==2.7.9`. Per-feature truth lives in the [compatibility matrix](https://github.com/eggstack/eggress/blob/main/docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md) and [capability manifest](https://github.com/eggstack/eggress/blob/main/docs/parity/pproxy_capability_manifest.toml) (`matched` / `supported_difference` / `platform_limited` / `intentional_non_parity`). Notable boundaries: SSH and QUIC/HTTP/3 are opt-in features, SSR and legacy ciphers are opt-in compat paths, `--daemon` is Linux-only, SOCKS BIND is refused, HTTPS uses CONNECT tunneling (no MITM). Migrating: [docs/PPROXY_MIGRATION.md](https://github.com/eggstack/eggress/blob/main/docs/PPROXY_MIGRATION.md).
 
 ## Project structure
 
@@ -369,25 +134,13 @@ eggress/
 
 | Topic | Link |
 |-------|------|
-| Architecture (maintained deep dives) | [architecture/overview.md](https://github.com/eggstack/eggress/blob/main/architecture/overview.md) |
-| Architecture (earlier snapshot) | [docs/ARCHITECTURE.md](https://github.com/eggstack/eggress/blob/main/docs/ARCHITECTURE.md) |
+| Installation | [docs/INSTALLATION.md](https://github.com/eggstack/eggress/blob/main/docs/INSTALLATION.md) |
+| Operations (CLI, config, reload, admin) | [docs/OPERATIONS.md](https://github.com/eggstack/eggress/blob/main/docs/OPERATIONS.md) |
 | Embed API | [docs/EMBED_API.md](https://github.com/eggstack/eggress/blob/main/docs/EMBED_API.md) |
 | Python bindings | [docs/PYTHON_BINDINGS.md](https://github.com/eggstack/eggress/blob/main/docs/PYTHON_BINDINGS.md) |
 | pproxy migration | [docs/PPROXY_MIGRATION.md](https://github.com/eggstack/eggress/blob/main/docs/PPROXY_MIGRATION.md) |
-| pproxy parity spec (historical provenance) | [docs/PPROXY_PARITY_SPEC.md](https://github.com/eggstack/eggress/blob/main/docs/PPROXY_PARITY_SPEC.md) |
-| Config reference | [docs/CONFIG_REFERENCE.md](https://github.com/eggstack/eggress/blob/main/docs/CONFIG_REFERENCE.md) |
-| URI grammar | [docs/URI_GRAMMAR.md](https://github.com/eggstack/eggress/blob/main/docs/URI_GRAMMAR.md) |
-| Testing | [docs/TESTING.md](https://github.com/eggstack/eggress/blob/main/docs/TESTING.md) |
-| Metrics | [docs/METRICS.md](https://github.com/eggstack/eggress/blob/main/docs/METRICS.md) |
-| Operations | [docs/OPERATIONS.md](https://github.com/eggstack/eggress/blob/main/docs/OPERATIONS.md) |
-| Installation | [docs/INSTALLATION.md](https://github.com/eggstack/eggress/blob/main/docs/INSTALLATION.md) |
-| Failure semantics | [docs/FAILURE_SEMANTICS.md](https://github.com/eggstack/eggress/blob/main/docs/FAILURE_SEMANTICS.md) |
-| Security review | [docs/SECURITY_REVIEW.md](https://github.com/eggstack/eggress/blob/main/docs/SECURITY_REVIEW.md) |
-| Secure configuration | [docs/security/SECURE_CONFIGURATION.md](https://github.com/eggstack/eggress/blob/main/docs/security/SECURE_CONFIGURATION.md) |
-| Threat model | [docs/security/THREAT_MODEL.md](https://github.com/eggstack/eggress/blob/main/docs/security/THREAT_MODEL.md) |
-| Dependency policy | [docs/DEPENDENCY_POLICY.md](https://github.com/eggstack/eggress/blob/main/docs/DEPENDENCY_POLICY.md) |
-| Capabilities | [docs/CAPABILITIES.md](https://github.com/eggstack/eggress/blob/main/docs/CAPABILITIES.md) |
-| Compatibility matrix | [docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md](https://github.com/eggstack/eggress/blob/main/docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md) |
-| Capability manifest | [docs/parity/pproxy_capability_manifest.toml](https://github.com/eggstack/eggress/blob/main/docs/parity/pproxy_capability_manifest.toml) |
-| Release process | [docs/release/RELEASE_PROCESS.md](https://github.com/eggstack/eggress/blob/main/docs/release/RELEASE_PROCESS.md) |
-| Roadmap | [docs/ROADMAP.md](https://github.com/eggstack/eggress/blob/main/docs/ROADMAP.md) |
+| Compatibility matrix / manifest | [docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md](https://github.com/eggstack/eggress/blob/main/docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md) |
+| Config reference / URI grammar | [docs/CONFIG_REFERENCE.md](https://github.com/eggstack/eggress/blob/main/docs/CONFIG_REFERENCE.md) / [docs/URI_GRAMMAR.md](https://github.com/eggstack/eggress/blob/main/docs/URI_GRAMMAR.md) |
+| Architecture deep dives | [architecture/overview.md](https://github.com/eggstack/eggress/blob/main/architecture/overview.md) |
+| Testing / metrics / security | [docs/TESTING.md](https://github.com/eggstack/eggress/blob/main/docs/TESTING.md) / [docs/METRICS.md](https://github.com/eggstack/eggress/blob/main/docs/METRICS.md) / [docs/SECURITY_REVIEW.md](https://github.com/eggstack/eggress/blob/main/docs/SECURITY_REVIEW.md) |
+| Release process / roadmap | [docs/release/RELEASE_PROCESS.md](https://github.com/eggstack/eggress/blob/main/docs/release/RELEASE_PROCESS.md) / [docs/ROADMAP.md](https://github.com/eggstack/eggress/blob/main/docs/ROADMAP.md) |

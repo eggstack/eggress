@@ -12,7 +12,7 @@ Use `eggress-protocol-http` directly when building custom HTTP proxy logic. Most
 
 - [Workspace README](https://github.com/eggstack/eggress/blob/main/README.md)
 - [Protocols overview](https://github.com/eggstack/eggress/blob/main/docs/protocols/)
-- [HTTP CONNECT](https://github.com/eggstack/eggress/blob/main/docs/protocols/http_connect.md)
+- [HTTP CONNECT](https://github.com/eggstack/eggress/blob/main/docs/protocols/HTTP_CONNECT.md)
 - [Release process](https://github.com/eggstack/eggress/blob/main/docs/release/RELEASE_PROCESS.md)
 
 ## License
