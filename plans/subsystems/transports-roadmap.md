@@ -1,6 +1,6 @@
 # Transports Roadmap
 
-Status: closed
+Status: active — M003 downstream-safe bounded WebSocket composition API ready
 
 Long-term references:
 
@@ -43,11 +43,13 @@ Architecture: `architecture/transports-tls.md`, `architecture/transports-ssh-qui
 
 ## 4. Current state
 
-H2 physical-session evidence, ALPN preservation, and pooled-transport policy-identity correctives shipped in published `v1.0.10`. SSH/QUIC remain intentionally feature-gated.
+H2 physical-session evidence, ALPN preservation, and pooled-transport policy-identity correctives shipped in published `v1.0.10`. The workspace and published line are now `v1.0.11`. SSH/QUIC remain intentionally feature-gated.
+
+A downstream audit in Eggtunnel found one concrete remaining WebSocket ownership leak: consumers that require an explicit frame/message ceiling must currently pass `tokio_tungstenite::WebSocketConfig` into Eggress's `*_with_config` methods. Eggtunnel therefore carries a direct Tungstenite dependency solely to preserve its 1 MiB hostile-input bound. M003 adds a small implementation-independent bounded WebSocket configuration seam so downstream consumers can remain behind the Eggress adapter boundary.
 
 ## 5. Target architecture
 
-Policy-scoped, trust-preserving transport upgrades behind the boxed boundary — attained.
+Policy-scoped, trust-preserving transport upgrades remain behind the boxed boundary. For WebSocket tunnel composition, downstream callers that only need finite transport bounds should not need to name Tungstenite implementation types. M003 closes that remaining public composition seam without changing existing methods or defaults.
 
 ## 6. Dependency graph
 
@@ -55,7 +57,8 @@ Policy-scoped, trust-preserving transport upgrades behind the boxed boundary —
 TLS upgrade (hard)
     +--> SSH upstream compat [feature-gated] (soft)
     +--> QUIC/H3 roles [feature-gated] (soft)
-    `--> H2 pool/ALPN correctives (hard for 1.0.10)
+    +--> H2 pool/ALPN correctives (closed for 1.0.10)
+    `--> M003 bounded WebSocket composition seam (ready; additive)
 ```
 
 ## 7. Milestones
@@ -67,6 +70,18 @@ Class: capability. Objective: TLS/SSH/QUIC-H3 roles with rejection paths. Exit: 
 ### Milestone 2 — 1.0.10 transport correctives
 
 Class: invariant. Objective: physical H2 isolation, ALPN trust preservation, pool policy identity + roll-forward. Exit: handshake-count evidence with shared-registry control; full suite/Clippy/fmt green. Status: closed. Evidence: archive `H2_*`, `POOLED_TRANSPORT_*` records; implementation `c5826b3`; Rust CI `36032622797`.
+
+### Milestone 3 — Downstream-safe bounded WebSocket composition API
+
+Class: infrastructure / polish. Status: ready.
+
+Implementation plan:
+
+- `plans/implementation/transports/003-downstream-safe-bounded-websocket-composition-api.md`
+
+Objective: let downstream consumers select finite WebSocket message/frame ceilings through an Eggress-owned API without importing `tokio_tungstenite::WebSocketConfig`.
+
+Exit: additive client/server over-stream bounded APIs, oversize/backpressure/Ping/close regressions green, downstream-shaped compile evidence with no direct Tungstenite import, broad Rust gates green. Source closure does not imply a release; publication remains a separate maintainer-authorized action.
 
 ## 8. Cross-cutting requirements
 
@@ -90,3 +105,4 @@ Transport upgrades trust-preserving and policy-scoped with 1.0.10 evidence — a
 |---|---|---|---|---|
 | 1 | closed (historical) | archive phase records | archive phase records | — |
 | 2 | closed | archive H2/pool/ALPN records | §Controlling evidence in `plans/registry.md` | — |
+| 3 | ready | `plans/implementation/transports/003-downstream-safe-bounded-websocket-composition-api.md` | pending | Published v1.0.11 baseline; no hard blocker. |
