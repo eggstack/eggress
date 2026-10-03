@@ -79,6 +79,23 @@ shipped as a compatible versioned registry package pair on 2026-09-28
 updater evidence on 2026-09-29. A permanent git/path dependency never entered
 the publishable Eggress workspace. This milestone does not change pproxy compatibility claims.
 
+### Active maintenance — bounded WebSocket downstream composition
+
+Transports M003 is dependency-ready at
+[`plans/implementation/transports/003-downstream-safe-bounded-websocket-composition-api.md`](../plans/implementation/transports/003-downstream-safe-bounded-websocket-composition-api.md).
+
+The scope is deliberately small and additive: `egress-protocol-websocket`
+already owns the WebSocket tunnel adapter, but callers that need explicit
+underlying message/frame ceilings currently have to pass a concrete
+`tokio_tungstenite::WebSocketConfig`. M003 adds an Eggress-owned finite
+limits/options seam for client and server over-stream composition, preserving
+existing methods, defaults, Ping/Pong/close/backpressure behavior and
+compatibility claims. Eggtunnel is the first identified downstream consumer;
+its M019 remains blocked until the new API is published in a normal
+maintainer-authorized Eggress release.
+
+Source implementation/closure does not itself authorize a version bump or tag.
+
 ## Completed Milestones
 
 ### Phase 1: Core TCP proxy foundation
