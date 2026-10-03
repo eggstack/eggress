@@ -31,20 +31,26 @@ Complementary authority: `docs/ROADMAP.md` (canonical roadmap), `docs/parity/ppr
 | Server, runtime lifecycle, and configuration | closed | `plans/subsystems/server-runtime-config-roadmap.md` | All milestones closed | None. |
 | Routing, health, metrics, and admin | closed | `plans/subsystems/routing-health-observability-roadmap.md` | All milestones closed | None. |
 | Edge protocols | closed | `plans/subsystems/protocols-edge-roadmap.md` | All milestones closed | None. |
-| Transports | closed | `plans/subsystems/transports-roadmap.md` | All milestones closed; SSH/QUIC remain feature-gated by design | None. |
+| Transports | active | `plans/subsystems/transports-roadmap.md` | M003 downstream-safe bounded WebSocket composition API | Ready on published v1.0.11; additive downstream API seam. |
 | Outbound chains and connectors | closed | `plans/subsystems/outbound-chains-roadmap.md` | All milestones closed; pooled-transport/H2/ALPN correctives qualified | None. |
 | Parity contract and compatibility translation | closed | `plans/subsystems/parity-compat-roadmap.md` | All milestones closed; manifest has no unresolved `gap` outside tiered boundaries | None. |
 | Delivery (CLI, embed, Python, release) | active | `plans/subsystems/delivery-roadmap.md` | M003 Eggup archive/pair self-update adoption landed and shipped in published `v1.0.10` | Closed 2026-09-29 (`plans/closure/delivery/003-status.md`); `v1.0.11` patch release published 2026-09-30; next version bump is a separate maintainer-authorized release action. |
 
 ## Dependency-ready implementation plans
 
-None. Delivery M003 landed and closed 2026-09-29 (`plans/closure/delivery/003-status.md`).
+| Subsystem | Milestone | Status | Implementation plan | Dependency / consumer |
+|---|---|---|---|---|
+| Transports | M003 downstream-safe bounded WebSocket composition API | ready | `plans/implementation/transports/003-downstream-safe-bounded-websocket-composition-api.md` | Published v1.0.11 baseline; requested by Eggtunnel M019 to remove direct Tungstenite ownership. |
+
+Delivery M003 landed and closed 2026-09-29 (`plans/closure/delivery/003-status.md`).
 
 ## Current execution order and dependency gates
 
 **1.0.10 gate (closed — published 2026-09-24):** the 1.0.10 runtime/TLS implementation, package dry-run, and CI were qualified (physical H2 isolation proven by handshake counts with shared-registry control at `c5826b3`; Rust CI `36032622797` success). `v1.0.10` is tagged and published (PyPI, crates.io, GitHub Release with five CLI archives). Archive phase-records retain their original "prepared, unpublished" wording as provenance.
 
 **Compat-contract gate:** claims remain governed by the manifest plus matrix. Changing a claim requires a manifest update and the oracle/differential/interop suite. Generated reports follow the manifest.
+
+**WebSocket downstream-boundary gate:** Transports M003 is ready and additive. It must preserve existing WebSocket methods/defaults while adding an Eggress-owned finite message/frame configuration seam. Source closure does not authorize or imply a version tag; downstream Eggtunnel adoption remains operationally blocked until the API is published through the normal release process.
 
 **Verification gate:** `docs/CI_STATUS.md` owns verification policy; `docs/TESTING.md` owns the suite inventory. Ordinary changes use the narrowest test first, then the broad gate before merging substantial Rust changes.
 
