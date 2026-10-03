@@ -84,7 +84,7 @@ the publishable Eggress workspace. This milestone does not change pproxy compati
 Transports M003 is dependency-ready at
 [`plans/implementation/transports/003-downstream-safe-bounded-websocket-composition-api.md`](../plans/implementation/transports/003-downstream-safe-bounded-websocket-composition-api.md).
 
-The scope is deliberately small and additive: `egress-protocol-websocket`
+The scope is deliberately small and additive: `eggress-protocol-websocket`
 already owns the WebSocket tunnel adapter, but callers that need explicit
 underlying message/frame ceilings currently have to pass a concrete
 `tokio_tungstenite::WebSocketConfig`. M003 adds an Eggress-owned finite
