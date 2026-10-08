@@ -34,7 +34,7 @@ Complementary authority: `docs/ROADMAP.md` (canonical roadmap), `docs/parity/ppr
 | Transports | active | `plans/subsystems/transports-roadmap.md` | M003 downstream-safe bounded WebSocket composition API | Ready on published v1.0.11; additive downstream API seam. |
 | Outbound chains and connectors | closed | `plans/subsystems/outbound-chains-roadmap.md` | All milestones closed; pooled-transport/H2/ALPN correctives qualified | None. |
 | Parity contract and compatibility translation | closed | `plans/subsystems/parity-compat-roadmap.md` | All milestones closed; manifest has no unresolved `gap` outside tiered boundaries | None. |
-| Delivery (CLI, embed, Python, release) | active | `plans/subsystems/delivery-roadmap.md` | M003 Eggup archive/pair self-update adoption landed and shipped in published `v1.0.10` | Closed 2026-09-29 (`plans/closure/delivery/003-status.md`); `v1.0.11` patch release published 2026-09-30; next version bump is a separate maintainer-authorized release action. |
+| Delivery (CLI, embed, Python, release) | active | `plans/subsystems/delivery-roadmap.md` | M003 Eggup archive/pair self-update adoption landed and shipped in published `v1.0.10` | Closed 2026-09-29 (`plans/closure/delivery/003-status.md`); `v1.0.11` patch release published 2026-09-30; `v1.0.12` patch release in progress (maintainer-authorized). |
 
 ## Dependency-ready implementation plans
 

@@ -60,6 +60,17 @@ crates.io, GitHub Release with the five prebuilt CLI archives +
 installers). The workspace is at 1.0.11; the next version bump follows
 the lockstep procedure in `docs/release/RELEASE_PROCESS.md`.
 
+### 1.0.12 — release in progress (patch)
+
+Patch rollup of post-1.0.11 work: `eggress-runtime` SIGHUP reload-test
+isolation (process-wide HUP cross-delivery serialized via
+`SUPERVISOR_TEST_MUTEX`, same pattern as `admin.rs`), README crates.io
+badges retargeted to `eggress-core`, and stale `1.0.11` version strings
+refreshed across docs and install examples. No functional changes and no
+compatibility-claim changes (manifest plus matrix unchanged). The workspace
+is at 1.0.12; publication follows the lockstep procedure in
+`docs/release/RELEASE_PROCESS.md`.
+
 ### Active maintenance — Eggup archive/pair self-update convergence
 
 Delivery M003 is registered at
