@@ -1,7 +1,7 @@
 # eggress
 
-[![crates.io](https://img.shields.io/crates/v/eggress-cli.svg)](https://crates.io/crates/eggress-cli)
-[![downloads](https://img.shields.io/crates/d/eggress-cli.svg)](https://crates.io/crates/eggress-cli)
+[![crates.io](https://img.shields.io/crates/v/eggress-core.svg)](https://crates.io/crates/eggress-core)
+[![downloads](https://img.shields.io/crates/d/eggress-core.svg)](https://crates.io/crates/eggress-core)
 [![docs](https://img.shields.io/docsrs/eggress-cli.svg)](https://docs.rs/eggress-cli)
 [![license](https://img.shields.io/crates/l/eggress-cli.svg)](https://github.com/eggstack/eggress/blob/main/LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/eggress.svg)](https://pypi.org/project/eggress/)
