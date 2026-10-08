@@ -2,6 +2,17 @@ use std::io::Write;
 
 use tempfile::NamedTempFile;
 
+// SIGHUP delivery is process-wide (`kill -HUP <pid>` wakes every supervisor
+// signal loop in this test binary), so the SIGHUP-driven tests below must not
+// run concurrently: a HUP sent by one test would otherwise trigger a (no-op,
+// generation-bumping) reload in the sibling supervisor. Same pattern as
+// `admin.rs` (`SUPERVISOR_TEST_MUTEX`).
+static SUPERVISOR_TEST_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+async fn supervisor_test_guard() -> tokio::sync::MutexGuard<'static, ()> {
+    SUPERVISOR_TEST_MUTEX.lock().await
+}
+
 fn write_config(content: &str) -> NamedTempFile {
     let mut f = NamedTempFile::new().unwrap();
     f.write_all(content.as_bytes()).unwrap();
@@ -673,15 +684,17 @@ async fn socks5_no_auth_greeting(addr: std::net::SocketAddr) -> [u8; 2] {
 /// End-to-end rejected reload: the serving supervisor receives SIGHUP for a
 /// listener-auth change, rejects it, and keeps serving with startup behavior.
 ///
-/// Note: SIGHUP delivery is process-wide, so a cross-delivered reload from a
-/// sibling test can only ever hit this supervisor while its file holds the
-/// rejected config — every such attempt is itself rejected and cannot advance
-/// the generation.
+/// Serialized via `SUPERVISOR_TEST_MUTEX`: SIGHUP is process-wide, so without
+/// the guard a HUP from the sibling routing test could land while this
+/// supervisor's file still holds the startup config and bump the generation
+/// with an accepted no-op reload.
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn rejected_auth_reload_preserves_data_plane() {
     use std::io::Write as _;
     use std::time::Duration;
+
+    let _supervisor_guard = supervisor_test_guard().await;
 
     let config1 = r#"
 version = 1
@@ -705,7 +718,6 @@ protocols = ["socks5"]
 
     // Baseline: no-auth handshake succeeds.
     assert_eq!(socks5_no_auth_greeting(listener_addr).await, [0x05, 0x00]);
-    let gen_before = state.generation();
 
     // Attempt to add listener auth via reload: must be rejected.
     let config2 = r#"
@@ -731,6 +743,10 @@ password = "s3cret"
         f.flush().unwrap();
         f.sync_all().unwrap();
     }
+    // Capture the generation after the rejected config is on disk: only our
+    // own SIGHUP can advance it from here, so any bump proves the rejected
+    // change was wrongly applied.
+    let gen_before = state.generation();
     std::process::Command::new("kill")
         .arg("-HUP")
         .arg(std::process::id().to_string())
@@ -757,12 +773,18 @@ password = "s3cret"
 
 /// End-to-end accepted reload: a routing-only change delivered via SIGHUP is
 /// applied, and a new connection observes the new route.
+///
+/// Serialized via `SUPERVISOR_TEST_MUTEX` (see above): without the guard a
+/// sibling HUP could bump the generation with a no-op reload and mask a
+/// failure of our own reload.
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn accepted_routing_reload_observed_by_new_connection() {
     use std::io::Write as _;
     use std::time::Duration;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let _supervisor_guard = supervisor_test_guard().await;
 
     // Local echo target so the direct route provably works offline.
     let echo = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -838,10 +860,6 @@ protocols = ["socks5"]
         socks5_connect_reply(listener_addr, echo_addr).await,
         [0x05, 0x00]
     );
-    // Capture the generation before triggering the reload: the signal loop
-    // can apply our SIGHUP before this task resumes, so reading it after
-    // `kill` races with our own reload and can miss the bump entirely.
-    let gen_before = state.generation();
 
     // Routing-only change: reject the echo port. Listeners are untouched.
     let config2 = format!(
@@ -870,14 +888,19 @@ reject = "blocked"
         f.flush().unwrap();
         f.sync_all().unwrap();
     }
+    // Capture the generation after the new routing file is on disk but before
+    // signalling: the signal loop can apply our SIGHUP before this task
+    // resumes, so reading it after `kill` races with our own reload and can
+    // miss the bump entirely.
+    let gen_before = state.generation();
     std::process::Command::new("kill")
         .arg("-HUP")
         .arg(std::process::id().to_string())
         .output()
         .ok();
-    // A cross-delivered HUP from a sibling test can only advance the
-    // generation with this same routing file, so `> gen_before` plus the
-    // behavior check below is the robust assertion.
+    // Serialized with the sibling SIGHUP test via `SUPERVISOR_TEST_MUTEX`,
+    // so any generation advance from here is our own routing reload; the
+    // behavior check below confirms the new route is live.
     for _ in 0..100 {
         if state.generation() > gen_before {
             break;
