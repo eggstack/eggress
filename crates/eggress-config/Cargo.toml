@@ -24,6 +24,7 @@ rustls.workspace = true
 serde = { workspace = true, features = ["derive"] }
 toml.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 regex.workspace = true
 ipnet.workspace = true
 zeroize.workspace = true

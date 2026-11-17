@@ -152,7 +152,19 @@ version/cmd/atyp in hex. `From<Socks5Error> for io::Error` (:50).
 | UDP datagram | 65535 B | `udp_codec.rs:37` |
 
 **Constant-time compare**: SOCKS5 password via `subtle::ConstantTimeEq`
-(:server.rs:338-346). SOCKS4 user_id is clear-text, not a credential.
+(:server.rs:338-346).
+
+**SOCKS4 user ID as credential carrier**: SOCKS4 has no password field, and the
+pinned pproxy 2.7.9 oracle matches `userid in users` where `users` holds full
+`user:pass` strings. The listener-side enforcement therefore lives in
+`eggress-server::accept` (`accept_socks4`), not in this protocol crate:
+`read_socks4_request` only bounds and decodes the user ID (255 B, UTF-8). When
+the listener has `[listeners.auth]`, the accept path compares the raw user ID
+against `username:password` with `subtle::ConstantTimeEq`, returns a generic
+authentication failure on any mismatch (no credential echo), derives the session
+identity from the authenticated username, and seeds the IP-reuse cache only on
+that full-credential success — a username-only user ID can never authenticate or
+cache an identity.
 
 **Validation**: RSV must be 0x00 in CONNECT and UDP. FRAG must be 0x00.
 Empty SOCKS4a domain rejected (:server.rs:119). `send_method_selection`
@@ -173,6 +185,10 @@ never downgrades password-required to no-auth (:server.rs:285-288).
 - `socks5/client.rs`: auth, CONNECT request, reply parsing.
 - `socks5/udp_codec.rs`: encode/decode roundtrip, RSV/FRAG rejection,
   short/oversized/zero-domain, payload preservation.
+- `eggress-server` accept tests (`crates/eggress-server/src/accept/tests.rs`):
+  SOCKS4 full `user:pass` accepted with a `Username` identity, username-only /
+  wrong-password / empty user ID rejected with a generic error, no cache seeding
+  on failure, and peer-scoped reuse after a full-credential success.
 
 **Fuzz targets**: `socks5_handshake` exercises `parse_method_negotiation`,
 `parse_connect_request`, `parse_socks5_request`.

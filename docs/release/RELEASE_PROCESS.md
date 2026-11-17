@@ -51,9 +51,16 @@ cargo test --workspace --locked
 Run dependency and advisory checks because release inputs are changing:
 
 ```bash
-cargo deny check
+cargo deny --workspace check
 cargo audit --ignore RUSTSEC-2023-0071
 ```
+
+`--workspace` is not optional: the root manifest is the `eggress-bench`
+package, so a bare `cargo deny check` roots the graph there and silently skips
+`eggress-cli` (and `eggup-archive -> zip`), printing a misleading
+`advisories ok`. `deny.toml` audits the all-features graph and carries only the
+tracked `zip 6.0.0` ignores; the release workflow runs the same command in its
+preflight job, so a tag cannot ship with an unreviewed advisory.
 
 Run specialized interoperability, Python, performance, or cross-platform checks only when the release contains relevant changes or makes claims that depend on them. The selection policy is in `docs/TESTING.md`. For example, a release containing SSH/embed changes must run the required OpenSSH embed regression (`EGRESS_REQUIRE_OPENSSH_TESTS=1 cargo test -p eggress-embed --locked --no-default-features --features ssh,pproxy-compat --test ssh`); a skipped fixture is not release evidence for such a version.
 

@@ -4,7 +4,15 @@ This directory contains evidence-based completion records for implementation mil
 
 A closure record is not a retrospective summary alone. It is the gate that determines whether the corresponding subsystem milestone can be marked complete.
 
-No new closure records are pending. Historical closure evidence lives in `plans/archive/phase-records/` and Git history.
+The 2026-11-16 security-corrective records are current:
+
+- `transports/004-status.md` (S1 TLS trust/advisory), `transports/005-status.md` (S2 `russh` migration)
+- `protocols-edge/003-status.md` (S3 SOCKS4/UDP policy)
+- `routing-health-observability/003-status.md` (S4 CIDR/admin exposure)
+- `delivery/004-status.md` (S5 updater/advisory gate)
+- `parity-compat/003-status.md` (S6 auth reuse/redaction)
+
+Historical closure evidence lives in `plans/archive/phase-records/` and Git history.
 
 ## Layout and naming
 

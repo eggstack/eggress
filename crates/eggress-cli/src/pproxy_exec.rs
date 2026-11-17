@@ -188,6 +188,23 @@ pub fn compile(gated: GatedRun) -> Result<PreparedRun, PrepareFailure> {
     })
 }
 
+/// Startup advisory for the pproxy-compatible auth-reuse cache, if relevant.
+///
+/// The cache is source-IP keyed and process-global, so it only becomes
+/// observable when a translated listener carries `[listeners.auth]`. Gating on
+/// the compiled config (not on raw `-l` strings) keeps the warning out of
+/// unauthenticated runs and out of translation-only subcommands.
+fn auth_reuse_advisory_for(
+    args: &eggress_pproxy_compat::PproxyArgs,
+    rt_config: &eggress_config::compile::RuntimeConfig,
+) -> Option<String> {
+    rt_config
+        .listeners
+        .iter()
+        .any(|listener| listener.auth.is_some())
+        .then(|| args.auth_reuse_advisory())
+}
+
 /// Execute a prepared compatibility run: warnings, `--test` diagnostics,
 /// daemon transition, then the supervised service.
 ///
@@ -222,6 +239,14 @@ pub fn execute(prepared: PreparedRun, diag_prefix: &str) -> i32 {
             return EXIT_CONFIG_VALIDATION;
         }
         return run_upstream_test(&rt_config, Some(&target), timeout, false);
+    }
+
+    // One startup advisory for the pproxy-compatible auth-reuse cache. It is
+    // gated on translated `[listeners.auth]` (never on raw argv) and emitted
+    // before daemonization so the operator sees it; it is never per
+    // connection and never contains a listener URI or credential.
+    if let Some(advisory) = auth_reuse_advisory_for(&pproxy_args, &rt_config) {
+        eprintln!("{diag_prefix}warning: {advisory}");
     }
 
     #[cfg(feature = "pproxy-daemon")]
@@ -398,5 +423,31 @@ mod tests {
         assert!(joined.contains("listen:"));
         assert!(joined.contains("tls:      enabled"));
         assert!(joined.contains("pac:      enabled"));
+    }
+
+    fn prepared_run(args: &[&str]) -> PreparedRun {
+        match prepare(&argv(args)).expect("supported args must prepare") {
+            PreparedAction::Run(gated) => compile(*gated).expect("translated TOML must compile"),
+            _ => panic!("expected a prepared run"),
+        }
+    }
+
+    #[test]
+    fn auth_reuse_advisory_fires_for_credentialed_listener_only() {
+        let prepared = prepared_run(&["-l", "http://user:pass@127.0.0.1:0"]);
+        let advisory = auth_reuse_advisory_for(&prepared.args, &prepared.rt_config)
+            .expect("credentialed listener must produce the reuse advisory");
+        assert!(advisory.contains("30 days"), "{advisory}");
+        assert!(advisory.contains("source IP"), "{advisory}");
+        assert!(!advisory.contains("user"), "{advisory}");
+        assert!(!advisory.contains("pass"), "{advisory}");
+        assert!(!advisory.contains("127.0.0.1"), "{advisory}");
+
+        // No listener credentials: the cache is inert and must not warn.
+        let prepared = prepared_run(&["-l", "http://127.0.0.1:0", "-r", "socks5://127.0.0.1:1080"]);
+        assert!(
+            auth_reuse_advisory_for(&prepared.args, &prepared.rt_config).is_none(),
+            "unauthenticated listeners must not warn about auth reuse"
+        );
     }
 }

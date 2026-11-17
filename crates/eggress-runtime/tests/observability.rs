@@ -54,7 +54,7 @@ async fn http_get(addr: &str, path: &str) -> (u16, String) {
 async fn http_post(addr: &str, path: &str, body: &str) -> (u16, String) {
     let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
     let request = format!(
-        "POST {path} HTTP/1.1\r\nHost: {addr}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        "POST {path} HTTP/1.1\r\nHost: {addr}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
     tokio::io::AsyncWriteExt::write_all(&mut stream, request.as_bytes())

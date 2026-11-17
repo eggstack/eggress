@@ -31,6 +31,9 @@ pub struct AdminState {
     pub reverse_registry: Arc<ReverseRegistry>,
     pub metrics_enabled: bool,
     pub auth: Option<AdminAuthConfig>,
+    /// Accepted `Host` values (normalized: lowercase, no brackets or port).
+    /// Empty means "derive from the bound address at serve time".
+    pub allowed_hosts: Vec<String>,
 }
 
 pub trait AdminSnapshotProvider: Send + Sync + 'static {
@@ -70,14 +73,15 @@ pub struct StaticAdminSnapshot { pub snapshot: AdminSnapshot }
 ## How it works — request handling pipeline
 
 1. **Accept** — `AdminServer::run()` loops on `self.listener.accept()`. Each connection acquires a semaphore permit from a pool of 64 (`server.rs:176-187`). If no permit is available, the connection is dropped immediately.
-2. **Auth check** — before dispatching, `authorized()` (`server.rs:111`) checks `AdminState.auth`:
+2. **Host validation** — `host_allowed()` runs before auth and before any body is read. The `Host` header is normalized (lowercase, port and IPv6 brackets stripped) and compared against `AdminState.allowed_hosts`; `X-Forwarded-Host` is ignored. A missing, unparseable, or unlisted host returns a generic `400 "bad request"` with no echo of the value. An empty `allowed_hosts` is replaced at startup with bind-derived defaults (`derive_allowed_hosts`), so loopback clients keep working.
+3. **Auth check** — before dispatching, `authorized()` (`server.rs:111`) checks `AdminState.auth`:
    - **Bearer**: `Authorization: Bearer <token>` compared via `subtle::ConstantTimeEq`
    - **Basic**: `Authorization: Basic <base64>` decoded, split on `:`, CT-compared
    - On failure: `401 "unauthorized"` with `WWW-Authenticate: Bearer, Basic` header; once an IP trips the failure limiter (5 fails/60 s → 30 s block), further attempts get `429 "too many authentication failures"` with a `Retry-After` header until the block lapses
-3. **Timeout** — each HTTP/1.1 connection is wrapped in `tokio::time::timeout(Duration::from_secs(30), conn)` (`server.rs:243`).
-4. **Snapshot** — handlers call `state.snapshot()` which delegates to `AdminSnapshotProvider::snapshot()`. A fresh snapshot is fetched per request, so reloads are immediately visible without restarting admin.
-5. **Dispatch** — `handle_request()` (`routes.rs:15`) pattern-matches on path. Body-consuming endpoints (`/-/route-explain`) use `collect_limited()` to enforce the 16 KiB limit.
-6. **Non-loopback warning** — `AdminServer::new()` logs a warning when bound to a non-loopback address (`server.rs:157-170`).
+4. **Timeout** — each HTTP/1.1 connection is wrapped in `tokio::time::timeout(Duration::from_secs(30), conn)` (`server.rs:243`).
+5. **Snapshot** — handlers call `state.snapshot()` which delegates to `AdminSnapshotProvider::snapshot()`. A fresh snapshot is fetched per request, so reloads are immediately visible without restarting admin.
+6. **Dispatch** — `handle_request()` (`routes.rs:15`) pattern-matches on path. `/-/route-explain` requires `Content-Type: application/json` (`415` otherwise) and, when `Origin` is present, an allowlisted origin host (`403` otherwise, including `Origin: null` unless the literal entry `null` is configured); both checks precede body collection. Body-consuming endpoints use `collect_limited()` to enforce the 16 KiB limit.
+7. **Non-loopback warning** — `AdminServer::new()` logs a plaintext-HTTP exposure warning when bound to a non-loopback address (`server.rs:159-173`); `validate_config_security` emits the same warning at config load, alongside the existing no-auth warning.
 
 ## Limits
 
@@ -112,11 +116,15 @@ Thread-safe registry (`RwLock<HashMap<ReverseServerId, ReverseServerEntry>>`). R
 - **Auth per-request**: auth is checked inside the service_fn closure per request, not per-connection, so keep-alive connections are still gated.
 - **Body limit streaming**: `collect_limited()` rejects bodies exceeding 16 KiB chunk-by-chunk, avoiding unbounded memory allocation (`routes.rs:387`).
 - **Auth rate-limit**: the Nth failure that trips the per-IP limiter is itself a `429` (record-then-check); successes clear the IP's failure count.
+- **Host allowlist**: the effective set is the compiled `admin.allowed_hosts` (bind-derived defaults plus configured entries) and is fixed for the server lifetime, because `admin.bind` is not hot-reloaded; `classify_reload_config` rejects a change to it with `restart required` for the same reason. Only the actual `Host` header counts; `X-Forwarded-Host` is ignored.
+- **Origin/content-type gate**: `POST /-/route-explain` rejects a non-JSON `Content-Type` (`415`) and a disallowed `Origin` (`403`) before reading the body. Rejections never echo the rejected value, credentials, or topology.
 - **Identity validation**: empty identity rejected; identity over 256 bytes rejected; non-`None` identity wrapped as `ClientIdentity::Username` (`routes.rs:316-335`).
 
 ## Security notes
 
 - Admin is an operator surface; exposing it to the network without auth leaks topology, metrics, and routing state. Prefer loopback bind or configure auth.
+- Admin speaks plaintext HTTP only (no native TLS; the CLI admin client rejects `https://`). A non-loopback bind emits a warning at config load and at runtime: use loopback with a VPN/SSH tunnel, or a TLS-terminating reverse proxy whose host name is listed in `admin.allowed_hosts`.
+- `Host` validation is the DNS-rebinding defense: a browser page on an attacker origin can resolve its own name to `127.0.0.1`, so the header — not the socket address — decides whether the request is acceptable. A reverse-proxy or DNS-name deployment must list that host explicitly.
 - Auth is checked per-request (not per-connection), so keep-alive connections are still gated.
 - Bearer and Basic auth are both supported; configure one or the other via `AdminAuthConfig`.
 - The 16 KiB body limit prevents memory-exhaustion from oversized POST bodies.
@@ -138,7 +146,9 @@ Thread-safe registry (`RwLock<HashMap<ReverseServerId, ReverseServerEntry>>`). R
 | Upstreams | JSON array of groups |
 | Config | JSON summary counts + listener names |
 | UDP | JSON association/target-flow/upstream-flow gauges, per-listener counts |
-| Route-explain | POST-only (GET → 405); dry-run routing decision for `{target, listener, protocol, source?, identity?}` |
+| Route-explain | POST-only (GET → 405); dry-run routing decision for `{target, listener, protocol, source?, identity?}`; `415` without a JSON content type; `403` for a disallowed `Origin` or `Origin: null` |
+| Host validation | `Host: attacker.example` → `400 "bad request"`; `localhost`, `127.0.0.1`, `[::1]:port` accepted with no configuration; `X-Forwarded-Host` ignored; bad Host precedes `401` |
+| Config `allowed_hosts` | Configured host accepted (port-insensitive), bind-derived defaults replaced by an explicit list, invalid/wildcard entry rejected at validation |
 | Reverse | Empty when no servers; reports registered server state (active_control, active_streams, denied_bind, dropped counters) |
 | PAC | Generated when configured, 404 when not; escaping of quotes, backslashes, line separators, C0 controls; host sorting; no-fallback mode |
 | Static content | Correct content type and body |
@@ -158,6 +168,7 @@ Run: `cargo test -p eggress-admin`
 8. `AdminState::generation()` (`server.rs:343`) calls `provider.snapshot().generation` — a convenience method that allocates a full snapshot just to read one field.
 9. `build_response()` (`server.rs:369`) never emits an invalid status or injectable content type: out-of-range status falls back to 500, unparseable content type to `application/octet-stream`.
 10. The `client.rs` route-explain client is HTTP/1.1-only: `https://` admin URLs are rejected, the default port is 9090, and responses over 1 MiB (`MAX_ADMIN_RESPONSE`) fail as transport errors.
+11. `AdminState.allowed_hosts` is a plain `Vec<String>`: construct it from the compiled `eggress_config::compile::AdminConfig` in production. Leaving it empty is supported — `run()` derives the bind-address defaults — but an embedder that sets it explicitly replaces those defaults, so a non-loopback or reverse-proxy deployment must include every `Host` clients send.
 
 ## See also
 

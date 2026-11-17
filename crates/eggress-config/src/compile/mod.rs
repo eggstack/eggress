@@ -5,12 +5,15 @@
 //! startup. Public compiled types stay reachable at
 //! `eggress_config::compile::…` via re-exports.
 
+pub mod admin_hosts;
 pub mod listeners;
 pub mod model;
 pub mod process;
 pub mod reverse;
 pub mod rules;
 pub mod upstreams;
+
+pub use admin_hosts::{derive_allowed_hosts, effective_allowed_hosts, normalize_host_entry};
 
 pub use model::{
     AdminAuthConfig, AdminConfig, CompiledH2Config, CompiledListenerTlsConfig,

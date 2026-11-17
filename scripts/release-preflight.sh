@@ -18,6 +18,11 @@
 #   6. the checked-out commit is exactly the tagged commit;
 #   7. the working tree is clean (local/manual mode; CI checkouts are clean).
 #
+# This script is offline and gate-only for version/tag coherence. The dependency
+# advisory gate (`cargo deny --workspace check`, Delivery M004) runs right after
+# it in the `release-binaries.yml` preflight job and is also reproduced by the
+# CI `advisories` job; run it locally with the same command before tagging.
+#
 # The binary release workflow builds from the tag commit, never from whatever
 # happens to be the default-branch head. Manual dispatch must supply an
 # existing tag; it never synthesizes an untagged production release.

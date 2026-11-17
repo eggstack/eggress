@@ -203,6 +203,72 @@ mod tests {
     }
 
     #[test]
+    fn ipv4_mapped_destination_matches_ipv4_cidr() {
+        // `ipnet` returns false across address families, so a dual-stack
+        // client sending the mapped form must still be matched against the
+        // IPv4 rule.
+        let cidr: ipnet::IpNet = "10.0.0.0/8".parse().unwrap();
+        let mapped: IpAddr = "::ffff:10.0.0.1".parse().unwrap();
+        assert!(matches!(mapped, IpAddr::V6(_)), "literal must stay mapped");
+        let target = target_ip(mapped, 80);
+        let req = make_request(&target, None, "l", ProtocolId::Http, &ANON);
+        assert!(MatchExpr::DestinationCidr(cidr).matches(&req));
+    }
+
+    #[test]
+    fn ipv4_mapped_destination_outside_ipv4_cidr_no_match() {
+        let cidr: ipnet::IpNet = "10.0.0.0/8".parse().unwrap();
+        let mapped: IpAddr = "::ffff:192.168.1.1".parse().unwrap();
+        let target = target_ip(mapped, 80);
+        let req = make_request(&target, None, "l", ProtocolId::Http, &ANON);
+        assert!(!MatchExpr::DestinationCidr(cidr).matches(&req));
+    }
+
+    #[test]
+    fn ipv4_cidr_does_not_match_unrelated_native_ipv6() {
+        let cidr: ipnet::IpNet = "10.0.0.0/8".parse().unwrap();
+        let target = target_ip("2001:db8::1".parse().unwrap(), 80);
+        let req = make_request(&target, None, "l", ProtocolId::Http, &ANON);
+        assert!(!MatchExpr::DestinationCidr(cidr).matches(&req));
+    }
+
+    #[test]
+    fn native_ipv6_cidr_does_not_match_ipv4() {
+        let cidr: ipnet::IpNet = "2001:db8::/32".parse().unwrap();
+        let target = target_ip(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 80);
+        let req = make_request(&target, None, "l", ProtocolId::Http, &ANON);
+        assert!(!MatchExpr::DestinationCidr(cidr).matches(&req));
+    }
+
+    #[test]
+    fn mapped_destination_cannot_bypass_negated_cidr() {
+        // `not { destination_cidr = "10.0.0.0/8" }` must not match a mapped
+        // address that canonicalizes into 10.0.0.0/8.
+        let cidr: ipnet::IpNet = "10.0.0.0/8".parse().unwrap();
+        let mapped: IpAddr = "::ffff:10.1.2.3".parse().unwrap();
+        let target = target_ip(mapped, 80);
+        let req = make_request(&target, None, "l", ProtocolId::Http, &ANON);
+        let negated = MatchExpr::Not(Box::new(MatchExpr::DestinationCidr(cidr)));
+        assert!(!negated.matches(&req));
+    }
+
+    #[test]
+    fn mapped_destination_canonicalization_does_not_rewrite_explanation() {
+        // Canonicalization is local to the CIDR comparison: the reported
+        // target must stay exactly what the client supplied.
+        let cidr: ipnet::IpNet = "10.0.0.0/8".parse().unwrap();
+        let mapped: IpAddr = "::ffff:10.0.0.1".parse().unwrap();
+        let target = target_ip(mapped, 80);
+        let req = make_request(&target, None, "l", ProtocolId::Http, &ANON);
+        assert!(MatchExpr::DestinationCidr(cidr).matches(&req));
+        assert!(matches!(target.host, TargetHost::Ip(IpAddr::V6(_))));
+
+        let router = Router::new(vec![], RouteActionSpec::Direct);
+        let explanation = router.explain(&req, 1);
+        assert_eq!(explanation.target, "[::ffff:10.0.0.1]:80");
+    }
+
+    #[test]
     fn port_exact_match() {
         let target = target_domain("example.com", 443);
         let req = make_request(&target, None, "l", ProtocolId::Http, &ANON);
@@ -311,6 +377,44 @@ mod tests {
         let target = target_domain("example.com", 80);
         let req = make_request(&target, None, "l", ProtocolId::Http, &ANON);
         assert!(!MatchExpr::SourceCidr(cidr).matches(&req));
+    }
+
+    #[test]
+    fn ipv4_mapped_source_matches_ipv4_source_cidr() {
+        let cidr: ipnet::IpNet = "10.0.0.0/8".parse().unwrap();
+        let source: SocketAddr = "[::ffff:10.1.2.3]:5000".parse().unwrap();
+        assert!(matches!(source.ip(), IpAddr::V6(_)));
+        let target = target_domain("example.com", 80);
+        let req = make_request(&target, Some(source), "l", ProtocolId::Http, &ANON);
+        assert!(MatchExpr::SourceCidr(cidr).matches(&req));
+    }
+
+    #[test]
+    fn ipv4_mapped_source_outside_ipv4_cidr_no_match() {
+        let cidr: ipnet::IpNet = "10.0.0.0/8".parse().unwrap();
+        let source: SocketAddr = "[::ffff:192.0.2.10]:5000".parse().unwrap();
+        let target = target_domain("example.com", 80);
+        let req = make_request(&target, Some(source), "l", ProtocolId::Http, &ANON);
+        assert!(!MatchExpr::SourceCidr(cidr).matches(&req));
+    }
+
+    #[test]
+    fn native_ipv6_source_cidr_still_matches() {
+        let cidr: ipnet::IpNet = "2001:db8::/32".parse().unwrap();
+        let source: SocketAddr = "[2001:db8::5]:5000".parse().unwrap();
+        let target = target_domain("example.com", 80);
+        let req = make_request(&target, Some(source), "l", ProtocolId::Http, &ANON);
+        assert!(MatchExpr::SourceCidr(cidr).matches(&req));
+    }
+
+    #[test]
+    fn mapped_source_cannot_bypass_negated_source_cidr() {
+        let cidr: ipnet::IpNet = "10.0.0.0/8".parse().unwrap();
+        let source: SocketAddr = "[::ffff:10.1.2.3]:5000".parse().unwrap();
+        let target = target_domain("example.com", 80);
+        let req = make_request(&target, Some(source), "l", ProtocolId::Http, &ANON);
+        let negated = MatchExpr::Not(Box::new(MatchExpr::SourceCidr(cidr)));
+        assert!(!negated.matches(&req));
     }
 
     #[test]

@@ -351,6 +351,9 @@ pub(crate) async fn prebind_and_spawn_admin(
             }
         }
         let admin_auth = cfg.auth.clone();
+        // `admin.bind` (and therefore `allowed_hosts`) is not hot-reloaded;
+        // the supervisor is restarted to change either.
+        let admin_allowed_hosts = cfg.allowed_hosts.clone();
         let metrics = metrics_registry.clone();
         admin_tasks.spawn(async move {
             let admin_state = eggress_admin::AdminState {
@@ -366,6 +369,7 @@ pub(crate) async fn prebind_and_spawn_admin(
                 reverse_registry: std::sync::Arc::new(eggress_admin::ReverseRegistry::new()),
                 metrics_enabled,
                 auth: admin_auth,
+                allowed_hosts: admin_allowed_hosts,
             };
             if let Err(e) = server.run(admin_state).await {
                 tracing::error!("admin server error: {e}");

@@ -486,6 +486,66 @@ protocols = ["http"]
     }
 
     #[test]
+    fn compile_admin_allowed_hosts_default_to_loopback_names() {
+        let config = r#"
+version = 1
+
+[admin]
+bind = "127.0.0.1:9090"
+"#;
+        let f = write_config(config);
+        let rt = load_and_validate(f.path().to_str().unwrap()).unwrap();
+        let admin = rt.admin.expect("admin section compiles");
+        assert_eq!(admin.bind, "127.0.0.1:9090");
+        assert_eq!(
+            admin.allowed_hosts,
+            vec!["127.0.0.1", "localhost", "::1"]
+                .into_iter()
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn compile_admin_allowed_hosts_are_additive_and_normalized() {
+        let config = r#"
+version = 1
+
+[admin]
+bind = "127.0.0.1:9090"
+allowed_hosts = ["Admin.Example", "[::1]:9090", "null"]
+"#;
+        let f = write_config(config);
+        let rt = load_and_validate(f.path().to_str().unwrap()).unwrap();
+        let admin = rt.admin.expect("admin section compiles");
+        assert_eq!(
+            admin.allowed_hosts,
+            vec!["127.0.0.1", "localhost", "::1", "admin.example", "null"]
+                .into_iter()
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn invalid_admin_allowed_host_entry_is_rejected() {
+        let config = r#"
+version = 1
+
+[admin]
+bind = "127.0.0.1:9090"
+allowed_hosts = ["*.example.com"]
+"#;
+        let f = write_config(config);
+        let err = load_and_validate(f.path().to_str().unwrap()).unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains("admin.allowed_hosts[0]"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[test]
     fn parse_duration_seconds() {
         let d = validate::validate_duration("30s").unwrap();
         assert_eq!(d, std::time::Duration::from_secs(30));

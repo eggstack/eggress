@@ -1,5 +1,6 @@
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
+use eggress_core::connector::is_reserved_or_private_ip;
 use eggress_protocol_socks::socks5::server::SocksAddr;
 
 use crate::error::UdpError;
@@ -55,25 +56,21 @@ fn validate_target_shape(target: &SocksAddr, reject_loopback: bool) -> Result<()
 }
 
 fn is_private_ipv4(ip: &Ipv4Addr) -> bool {
-    ip.is_private() || ip.is_loopback() || ip.is_link_local()
+    is_reserved_or_private_ip(&IpAddr::V4(*ip))
 }
 
 fn is_private_ipv6(ip: &Ipv6Addr) -> bool {
-    if let Some(v4) = ip.to_ipv4_mapped() {
-        return is_private_ipv4(&v4);
-    }
-    let octets = ip.octets();
-    // fe80::/10 is the link-local unicast prefix
-    if ip.is_loopback() || (octets[0] == 0xfe && (octets[1] & 0xc0) == 0x80) {
-        return true;
-    }
-    // fc00::/7 are unique-local addresses (fc00::/8 + fd00::/8)
-    if (octets[0] & 0xfe) == 0xfc {
-        return true;
-    }
-    false
+    is_reserved_or_private_ip(&IpAddr::V6(*ip))
 }
 
+/// Validate a datagram destination before a flow is created.
+///
+/// Shape checks (port zero, multicast, broadcast, unspecified, and loopback
+/// when `allow_private_egress` is false) always run. Literal private/reserved
+/// addresses are rejected here when the policy is restrictive; domain targets
+/// cannot be judged yet and are enforced post-DNS by
+/// `direct::resolve_target`, which filters every resolved address through the
+/// same shared classifier before connecting.
 pub fn validate_standalone_target(
     target: &SocksAddr,
     allow_private_egress: bool,
@@ -83,26 +80,19 @@ pub fn validate_standalone_target(
     if !allow_private_egress {
         match target {
             SocksAddr::IPv4(addr, _) => {
-                let ip = Ipv4Addr::from(*addr);
-                if is_private_ipv4(&ip) {
-                    return Err(UdpError::Other(
-                        "private network egress not allowed".to_string(),
-                    ));
+                if is_private_ipv4(&Ipv4Addr::from(*addr)) {
+                    return Err(UdpError::PrivateEgressBlocked);
                 }
             }
             SocksAddr::IPv6(addr, _) => {
-                let ip = Ipv6Addr::from(*addr);
-                if is_private_ipv6(&ip) {
-                    return Err(UdpError::Other(
-                        "private network egress not allowed".to_string(),
-                    ));
+                if is_private_ipv6(&Ipv6Addr::from(*addr)) {
+                    return Err(UdpError::PrivateEgressBlocked);
                 }
             }
-            // Domain targets are deferred: the true private-egress check
-            // happens post-DNS in `eggress_core::connector::is_reserved_or_private_ip`.
-            // This pre-check is best-effort; TOCTOU between validation and lookup
-            // is accepted and documented (B-07).
-            _ => {}
+            // A domain carries no address yet; the resolved-address policy is
+            // applied by `direct::resolve_target` (single lookup, all answers
+            // filtered).
+            SocksAddr::Domain(..) => {}
         }
     }
 
@@ -299,10 +289,78 @@ mod tests {
 
     #[test]
     fn allow_public_ipv6_egress() {
+        // 2606:4700:4700::1111 is globally reachable (not documentation or
+        // another special-purpose range).
+        let target = SocksAddr::IPv6(
+            [
+                0x26, 0x06, 0x47, 0x00, 0x47, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0x11, 0x11,
+            ],
+            80,
+        );
+        assert!(validate_standalone_target(&target, false).is_ok());
+    }
+
+    #[test]
+    fn reject_documentation_ipv6_egress() {
+        // 2001:db8::/32 previously slipped past the UDP-local classifier.
         let target = SocksAddr::IPv6(
             [0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
             80,
         );
+        assert!(matches!(
+            validate_standalone_target(&target, false),
+            Err(UdpError::PrivateEgressBlocked)
+        ));
+        assert!(validate_standalone_target(&target, true).is_ok());
+    }
+
+    #[test]
+    fn reject_cgnat_ipv4_egress() {
+        let target = SocksAddr::IPv4([100, 64, 0, 1], 8080);
+        assert!(matches!(
+            validate_standalone_target(&target, false),
+            Err(UdpError::PrivateEgressBlocked)
+        ));
+        assert!(validate_standalone_target(&target, true).is_ok());
+    }
+
+    #[test]
+    fn reject_nat64_and_teredo_egress() {
+        let nat64 = SocksAddr::IPv6(
+            "64:ff9b::808:808"
+                .parse::<std::net::Ipv6Addr>()
+                .unwrap()
+                .octets(),
+            53,
+        );
+        let teredo = SocksAddr::IPv6(
+            "2001:0:4136:e378:8000:63bf:3fff:fdd2"
+                .parse::<std::net::Ipv6Addr>()
+                .unwrap()
+                .octets(),
+            53,
+        );
+        let sixtofour = SocksAddr::IPv6(
+            "2002:808:808::1"
+                .parse::<std::net::Ipv6Addr>()
+                .unwrap()
+                .octets(),
+            53,
+        );
+        for target in [nat64, teredo, sixtofour] {
+            assert!(matches!(
+                validate_standalone_target(&target, false),
+                Err(UdpError::PrivateEgressBlocked)
+            ));
+            assert!(validate_standalone_target(&target, true).is_ok());
+        }
+    }
+
+    #[test]
+    fn domain_target_passes_pre_check_and_is_checked_post_dns() {
+        // A domain carries no address at validation time; the post-DNS policy
+        // in `direct::resolve_target` owns the resolved-address decision.
+        let target = SocksAddr::Domain("example.com".to_string(), 80);
         assert!(validate_standalone_target(&target, false).is_ok());
     }
 

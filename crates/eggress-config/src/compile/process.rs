@@ -81,13 +81,20 @@ pub(crate) fn compile_admin(config: &ConfigFile) -> Result<Option<AdminConfig>, 
         })
         .unwrap_or_default();
 
+    let bind = admin
+        .bind
+        .clone()
+        .unwrap_or_else(|| "127.0.0.1:9090".to_string());
+    // Bind-derived defaults keep loopback admin clients working without
+    // configuration; configured hosts are additive.
+    let allowed_hosts =
+        super::admin_hosts::effective_allowed_hosts(admin.allowed_hosts.as_deref(), &bind);
+
     Ok(Some(AdminConfig {
-        bind: admin
-            .bind
-            .clone()
-            .unwrap_or_else(|| "127.0.0.1:9090".to_string()),
+        bind,
         enabled: admin.enabled.unwrap_or(true),
         metrics: admin.metrics.unwrap_or(true),
+        allowed_hosts,
         auth,
         pac,
         static_content,

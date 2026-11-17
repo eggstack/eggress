@@ -71,6 +71,7 @@ mod tests {
             reverse_registry: Arc::new(ReverseRegistry::new()),
             metrics_enabled: true,
             auth: None,
+            allowed_hosts: eggress_config::compile::derive_allowed_hosts("127.0.0.1:9090"),
         }
     }
 
@@ -98,6 +99,7 @@ mod tests {
             reverse_registry: Arc::new(ReverseRegistry::new()),
             metrics_enabled: true,
             auth: None,
+            allowed_hosts: eggress_config::compile::derive_allowed_hosts("127.0.0.1:9090"),
         }
     }
 
@@ -495,5 +497,277 @@ mod tests {
         let (status, body) = http_get(&addr, "/-/ready").await;
         assert_eq!(status, 503);
         assert_eq!(body, "not ready");
+    }
+
+    // === Host / Origin / Content-Type validation ===
+
+    async fn http_raw(addr: &str, request: &str) -> (u16, String) {
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        tokio::io::AsyncWriteExt::write_all(&mut stream, request.as_bytes())
+            .await
+            .unwrap();
+        tokio::io::AsyncWriteExt::flush(&mut stream).await.unwrap();
+
+        let mut response = Vec::new();
+        loop {
+            let mut buf = [0u8; 4096];
+            match tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await {
+                Ok(0) => break,
+                Ok(n) => response.extend_from_slice(&buf[..n]),
+                Err(_) => break,
+            }
+        }
+        let response = String::from_utf8_lossy(&response);
+        let status_line = response.lines().next().unwrap_or("");
+        let status = status_line
+            .split_whitespace()
+            .nth(1)
+            .and_then(|s| s.parse::<u16>().ok())
+            .unwrap_or(0);
+        let body = response.split("\r\n\r\n").nth(1).unwrap_or("").to_string();
+        (status, body)
+    }
+
+    async fn get_with_host(addr: &str, path: &str, host: &str) -> (u16, String) {
+        http_raw(
+            addr,
+            &format!("GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"),
+        )
+        .await
+    }
+
+    const ROUTE_EXPLAIN_BODY: &str =
+        r#"{"target":"example.com:443","listener":"l","protocol":"http"}"#;
+
+    async fn post_route_explain(
+        addr: &str,
+        host: &str,
+        extra_headers: &str,
+        body: &str,
+    ) -> (u16, String) {
+        let mut request = format!("POST /-/route-explain HTTP/1.1\r\nHost: {host}\r\n");
+        request.push_str(extra_headers);
+        request.push_str(&format!(
+            "Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        ));
+        http_raw(addr, &request).await
+    }
+
+    #[tokio::test]
+    async fn default_loopback_hosts_are_accepted() {
+        let state = test_state();
+        let addr = start_server(state).await;
+        // `http_get` already sends `Host: 127.0.0.1:<port>`; `localhost` and a
+        // bracketed IPv6 with port must also pass with no configuration.
+        assert_eq!(http_get(&addr, "/-/health").await.0, 200);
+        assert_eq!(
+            get_with_host(&addr, "/-/health", "localhost:9090").await.0,
+            200
+        );
+        assert_eq!(
+            get_with_host(
+                &addr,
+                "/-/health",
+                &format!("[::1]:{}", addr.rsplit(':').next().unwrap())
+            )
+            .await
+            .0,
+            200
+        );
+    }
+
+    #[tokio::test]
+    async fn dns_rebinding_host_is_rejected() {
+        let state = test_state();
+        let addr = start_server(state).await;
+        let (status, body) = get_with_host(&addr, "/-/status", "attacker.example").await;
+        assert_eq!(status, 400);
+        assert_eq!(body, "bad request");
+        // The rejected value and internal topology must not be echoed.
+        assert!(!body.contains("attacker"));
+        assert!(!body.contains("generation"));
+    }
+
+    #[tokio::test]
+    async fn forwarded_host_header_does_not_widen_the_allowlist() {
+        let state = test_state();
+        let addr = start_server(state).await;
+        let request = concat!(
+            "GET /-/status HTTP/1.1\r\n",
+            "Host: attacker.example\r\n",
+            "X-Forwarded-Host: 127.0.0.1\r\n",
+            "Connection: close\r\n\r\n",
+        );
+        let (status, body) = http_raw(&addr, request).await;
+        assert_eq!(status, 400);
+        assert_eq!(body, "bad request");
+    }
+
+    #[tokio::test]
+    async fn missing_or_unparseable_host_is_rejected() {
+        let state = test_state();
+        let addr = start_server(state).await;
+        // HTTP/1.1 without a Host header.
+        let (status, body) =
+            http_raw(&addr, "GET /-/health HTTP/1.1\r\nConnection: close\r\n\r\n").await;
+        assert_eq!(status, 400);
+        assert_eq!(body, "bad request");
+
+        // A wildcard is not a host name.
+        let (status, _) = get_with_host(&addr, "/-/health", "*").await;
+        assert_eq!(status, 400);
+    }
+
+    #[tokio::test]
+    async fn host_rejection_precedes_authentication() {
+        let mut state = test_state();
+        state.auth = Some(eggress_config::compile::AdminAuthConfig {
+            bearer_token: Some("secret-token".to_string()),
+            basic_username: None,
+            basic_password: None,
+        });
+        let addr = start_server(state).await;
+        // A bad Host fails with 400 before auth would produce a 401: the
+        // validation must not depend on possessing a credential.
+        let (status, body) = get_with_host(&addr, "/-/status", "attacker.example").await;
+        assert_eq!(status, 400);
+        assert_eq!(body, "bad request");
+
+        let (status, _) = get_with_host(&addr, "/-/status", "localhost:9090").await;
+        assert_eq!(status, 401);
+    }
+
+    #[tokio::test]
+    async fn configured_allowed_host_is_accepted() {
+        let mut state = test_state();
+        state.allowed_hosts = vec!["admin.example".to_string()];
+        let addr = start_server(state).await;
+        assert_eq!(
+            get_with_host(&addr, "/-/health", "admin.example:9090")
+                .await
+                .0,
+            200
+        );
+        // With an explicit allowlist the bind-derived defaults are replaced.
+        assert_eq!(
+            get_with_host(&addr, "/-/health", "127.0.0.1:9090").await.0,
+            400
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_allowed_hosts_falls_back_to_the_bound_address() {
+        let mut state = test_state();
+        state.allowed_hosts = Vec::new();
+        let addr = start_server(state).await;
+        // The server derives the loopback defaults from its bound address.
+        assert_eq!(http_get(&addr, "/-/health").await.0, 200);
+        assert_eq!(
+            get_with_host(&addr, "/-/health", "localhost:9090").await.0,
+            200
+        );
+    }
+
+    #[tokio::test]
+    async fn route_explain_accepts_json_content_type() {
+        let state = test_state();
+        let addr = start_server(state).await;
+        let (status, body) = post_route_explain(
+            &addr,
+            "127.0.0.1:9090",
+            "Content-Type: application/json\r\n",
+            ROUTE_EXPLAIN_BODY,
+        )
+        .await;
+        assert_eq!(status, 200, "body: {body}");
+        let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(json["target"], "example.com:443");
+
+        // Media type matching is case-insensitive and tolerates parameters.
+        let (status, _) = post_route_explain(
+            &addr,
+            "127.0.0.1:9090",
+            "Content-Type: Application/JSON; charset=utf-8\r\n",
+            ROUTE_EXPLAIN_BODY,
+        )
+        .await;
+        assert_eq!(status, 200);
+    }
+
+    #[tokio::test]
+    async fn route_explain_requires_json_content_type() {
+        let state = test_state();
+        let addr = start_server(state).await;
+
+        let (status, body) =
+            post_route_explain(&addr, "127.0.0.1:9090", "", ROUTE_EXPLAIN_BODY).await;
+        assert_eq!(status, 415, "missing content type must be rejected");
+        assert!(body.contains("application/json"));
+
+        let (status, _) = post_route_explain(
+            &addr,
+            "127.0.0.1:9090",
+            "Content-Type: text/plain\r\n",
+            ROUTE_EXPLAIN_BODY,
+        )
+        .await;
+        assert_eq!(status, 415);
+    }
+
+    #[tokio::test]
+    async fn route_explain_rejects_cross_origin_post() {
+        let state = test_state();
+        let addr = start_server(state).await;
+        let (status, body) = post_route_explain(
+            &addr,
+            "127.0.0.1:9090",
+            "Content-Type: application/json\r\nOrigin: https://attacker.example\r\n",
+            ROUTE_EXPLAIN_BODY,
+        )
+        .await;
+        assert_eq!(status, 403);
+        assert_eq!(body, r#"{"error":"origin not allowed"}"#);
+        assert!(!body.contains("attacker"));
+    }
+
+    #[tokio::test]
+    async fn route_explain_accepts_same_origin_post() {
+        let state = test_state();
+        let addr = start_server(state).await;
+        let (status, _) = post_route_explain(
+            &addr,
+            "127.0.0.1:9090",
+            "Content-Type: application/json\r\nOrigin: http://localhost:9090\r\n",
+            ROUTE_EXPLAIN_BODY,
+        )
+        .await;
+        assert_eq!(status, 200);
+    }
+
+    #[tokio::test]
+    async fn route_explain_rejects_null_origin_unless_allowed() {
+        let state = test_state();
+        let addr = start_server(state).await;
+        let (status, _) = post_route_explain(
+            &addr,
+            "127.0.0.1:9090",
+            "Content-Type: application/json\r\nOrigin: null\r\n",
+            ROUTE_EXPLAIN_BODY,
+        )
+        .await;
+        assert_eq!(status, 403);
+
+        let mut allowed = test_state();
+        allowed.allowed_hosts.push("null".to_string());
+        let addr = start_server(allowed).await;
+        let (status, _) = post_route_explain(
+            &addr,
+            "127.0.0.1:9090",
+            "Content-Type: application/json\r\nOrigin: null\r\n",
+            ROUTE_EXPLAIN_BODY,
+        )
+        .await;
+        assert_eq!(status, 200);
     }
 }

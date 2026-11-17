@@ -88,7 +88,8 @@ pub(crate) fn build_intermediates(
         output = output.with_warning(
             "auth-timeout",
             format!(
-                "--auth {}s enables pproxy-compatible source-IP authentication reuse",
+                "--auth {}s sets the pproxy-compatible source-IP re-authentication reuse interval; \
+                 listener credentials themselves come from the listener URI",
                 auth.as_secs()
             ),
         );
@@ -852,13 +853,16 @@ pub(crate) fn build_intermediates(
     let mut udp_upstream_ids = Vec::new();
     let mut udp_routes: Vec<TcpCompatRoute> = Vec::new();
     for (idx, remote_str) in udp_remotes.iter().enumerate() {
+        // Redact the raw `-ur` value before it reaches a diagnostic: UDP
+        // remotes carry socks5/ss credentials and the error is user-visible.
+        let redacted_remote = crate::uri::redact_uri_for_error(remote_str);
         let remote_chain =
             crate::uri::parse_pproxy_chain(remote_str).map_err(|e| CompatError::InvalidArgs {
-                message: format!("invalid UDP remote URI '{}': {}", remote_str, e),
+                message: format!("invalid UDP remote URI '{redacted_remote}': {e}"),
             })?;
         let Some(remote_uri) = remote_chain.hops.first() else {
             return Err(CompatError::InvalidArgs {
-                message: format!("invalid UDP remote URI '{remote_str}': no proxy hop"),
+                message: format!("invalid UDP remote URI '{redacted_remote}': no proxy hop"),
             });
         };
 

@@ -295,11 +295,23 @@ pub struct ListenerConfig {
 }
 
 /// Compiled TLS configuration for a listener.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CompiledListenerTlsConfig {
     pub cert_pem: Vec<u8>,
     pub key_pem: Vec<u8>,
     pub alpn: Vec<Vec<u8>>,
+}
+
+impl std::fmt::Debug for CompiledListenerTlsConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Never print PEM material; presence flags and a length only.
+        f.debug_struct("CompiledListenerTlsConfig")
+            .field("has_cert", &!self.cert_pem.is_empty())
+            .field("has_key", &!self.key_pem.is_empty())
+            .field("key_len", &self.key_pem.len())
+            .field("alpn", &self.alpn)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -375,6 +387,10 @@ pub struct AdminConfig {
     pub bind: String,
     pub enabled: bool,
     pub metrics: bool,
+    /// Host header values the admin server accepts, normalized (lowercase,
+    /// no brackets or port). Contains the bind-derived defaults plus any
+    /// configured `[admin] allowed_hosts` entries.
+    pub allowed_hosts: Vec<String>,
     pub auth: Option<AdminAuthConfig>,
     pub pac: Option<PacConfig>,
     pub static_content: Vec<StaticRoute>,
@@ -407,5 +423,87 @@ impl Drop for AdminAuthConfig {
         if let Some(password) = &mut self.basic_password {
             password.zeroize();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CERT_PEM: &[u8] =
+        b"-----BEGIN CERTIFICATE-----\nCERT-SECRET-BYTES\n-----END CERTIFICATE-----\n";
+    const KEY_PEM: &[u8] =
+        b"-----BEGIN PRIVATE KEY-----\nKEY-SECRET-BYTES\n-----END PRIVATE KEY-----\n";
+
+    fn listener_with_tls(tls: CompiledListenerTlsConfig) -> ListenerConfig {
+        ListenerConfig {
+            name: "tls-in".to_string(),
+            bind: "127.0.0.1:8443".to_string(),
+            protocols: vec![ProtocolId::Http],
+            reuse_port: None,
+            connection_limit: None,
+            auth: None,
+            udp: None,
+            tls: Some(tls),
+            shadowsocks: None,
+            trojan: None,
+            transparent: None,
+            unix: None,
+            fixed_target: None,
+            local_bind: None,
+        }
+    }
+
+    #[test]
+    fn compiled_listener_tls_debug_redacts_pem_material() {
+        let config = CompiledListenerTlsConfig {
+            cert_pem: CERT_PEM.to_vec(),
+            key_pem: KEY_PEM.to_vec(),
+            alpn: vec![b"h2".to_vec()],
+        };
+
+        let rendered = format!("{config:?}");
+        assert!(!rendered.contains("KEY-SECRET-BYTES"), "{rendered}");
+        assert!(!rendered.contains("CERT-SECRET-BYTES"), "{rendered}");
+        assert!(!rendered.contains("PRIVATE KEY"), "{rendered}");
+        assert!(!rendered.contains("BEGIN CERTIFICATE"), "{rendered}");
+        // Non-secret shape only: presence flags plus a key length.
+        assert!(rendered.contains("has_cert: true"), "{rendered}");
+        assert!(rendered.contains("has_key: true"), "{rendered}");
+        assert!(
+            rendered.contains(&format!("key_len: {}", KEY_PEM.len())),
+            "{rendered}"
+        );
+    }
+
+    #[test]
+    fn compiled_listener_tls_debug_reports_absent_material() {
+        let config = CompiledListenerTlsConfig {
+            cert_pem: Vec::new(),
+            key_pem: Vec::new(),
+            alpn: Vec::new(),
+        };
+
+        let rendered = format!("{config:?}");
+        assert!(rendered.contains("has_cert: false"), "{rendered}");
+        assert!(rendered.contains("has_key: false"), "{rendered}");
+        assert!(rendered.contains("key_len: 0"), "{rendered}");
+    }
+
+    /// The enclosing `ListenerConfig` derives `Debug`; the redaction must hold
+    /// across that nesting boundary, which is how compiled listeners are
+    /// actually rendered.
+    #[test]
+    fn listener_config_debug_redacts_nested_tls_key() {
+        let listener = listener_with_tls(CompiledListenerTlsConfig {
+            cert_pem: CERT_PEM.to_vec(),
+            key_pem: KEY_PEM.to_vec(),
+            alpn: Vec::new(),
+        });
+
+        let rendered = format!("{listener:?}");
+        assert!(!rendered.contains("KEY-SECRET-BYTES"), "{rendered}");
+        assert!(!rendered.contains("CERT-SECRET-BYTES"), "{rendered}");
+        assert!(rendered.contains("CompiledListenerTlsConfig"), "{rendered}");
     }
 }

@@ -36,6 +36,22 @@ Rules: `__` separates hops (`___` rejected as duplicate separator);
 unbracketed `@`; credentials are percent-decoded; SSH defaults to port 22;
 port 0 rejected (except Unix); unmatched brackets fail closed.
 
+## Query parameters
+
+`?rule=<value>` selects a routing rule for the hop.
+
+`?insecure` (equivalently `?insecure=true`) marks the hop as an explicit
+certificate-verification bypass: the TLS peer certificate for that hop is not
+validated. It is reachable from configuration, not only from the API —
+`eggress-cli` and `eggress-runtime` compile the `insecure-tls` feature
+unconditionally. Configuration compilation warns once per upstream that
+selects it, naming the upstream id plus the affected hop indexes and protocols
+only (never endpoints, credentials, or the source URI), before any chain
+executes. Insecure QUIC/H3 hops additionally require the `insecure-quic` build
+feature and are rejected at config compile by default. A verification, build,
+or root-load failure never falls back to this mode: the hop either verifies or
+fails closes.
+
 ## Example URI Format
 
 ```
@@ -48,6 +64,7 @@ http://[::1]:8080
 http://[2001:db8::1]:1080
 http://proxy:8080?rule=regex
 http+tls://proxy:443
+socks5+tls://proxy:1080?insecure
 shadowsocks://aes-256-gcm:secret@proxy:8388
 trojan://password@proxy:443
 ```

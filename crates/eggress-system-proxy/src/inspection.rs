@@ -55,13 +55,60 @@ pub struct InspectionResult {
     /// Capability reports for all system proxy backends.
     pub capabilities: Vec<SystemProxyCapabilityReport>,
     /// Current proxy settings (if readable).
+    ///
+    /// Kept for in-process callers that need the unredacted values, but never
+    /// serialized: OS and environment settings can carry `user:pass@`
+    /// credentials, and `eggress system-proxy inspect --json` is a
+    /// copy/paste-able diagnostic surface. JSON output therefore carries only
+    /// [`Self::redacted_settings`].
+    #[serde(default, skip_serializing)]
     pub settings: Option<SystemProxySettings>,
-    /// Redacted version of settings (safe for logging).
+    /// Redacted version of settings (safe for logging and JSON output).
+    ///
+    /// Always derived from [`Self::settings`] by
+    /// [`InspectionResult::new`]/`inspect_system_proxy`, so it is populated
+    /// whenever raw settings exist.
     pub redacted_settings: Option<SystemProxySettings>,
     /// Whether apply/revert is supported on this platform.
     pub apply_supported: bool,
-    /// Commands that would be used for apply (dry-run).
+    /// Commands that would be used for apply (dry-run, redacted).
     pub dry_run_commands: Vec<Command>,
+}
+
+impl InspectionResult {
+    /// Build an inspection result, deriving the redacted settings copy.
+    ///
+    /// This is the only constructor used by inspection so `redacted_settings`
+    /// can never be missing while raw `settings` are present.
+    pub fn new(
+        platform: String,
+        capabilities: Vec<SystemProxyCapabilityReport>,
+        settings: Option<SystemProxySettings>,
+        apply_supported: bool,
+        dry_run_commands: Vec<Command>,
+    ) -> Self {
+        let redacted_settings = settings.as_ref().map(redact_settings);
+        Self {
+            platform,
+            capabilities,
+            settings,
+            redacted_settings,
+            apply_supported,
+            dry_run_commands,
+        }
+    }
+}
+
+/// Owner-safe copy of settings: URI/credential-bearing values are redacted.
+fn redact_settings(settings: &SystemProxySettings) -> SystemProxySettings {
+    SystemProxySettings {
+        source: settings.source.clone(),
+        http_proxy: settings.http_proxy.as_ref().map(|v| redact_proxy_value(v)),
+        https_proxy: settings.https_proxy.as_ref().map(|v| redact_proxy_value(v)),
+        socks_proxy: settings.socks_proxy.as_ref().map(|v| redact_proxy_value(v)),
+        no_proxy: settings.no_proxy.clone(),
+        raw: redact_proxy_settings(&settings.raw),
+    }
 }
 
 impl fmt::Display for InspectionResult {
@@ -119,14 +166,7 @@ pub fn inspect_system_proxy_with_runner(runner: &dyn CommandRunner) -> Inspectio
         _ => inspect_env_only(runner),
     };
 
-    let redacted_settings = settings.as_ref().map(|s| SystemProxySettings {
-        source: s.source.clone(),
-        http_proxy: s.http_proxy.as_ref().map(|v| redact_proxy_value(v)),
-        https_proxy: s.https_proxy.as_ref().map(|v| redact_proxy_value(v)),
-        socks_proxy: s.socks_proxy.as_ref().map(|v| redact_proxy_value(v)),
-        no_proxy: s.no_proxy.clone(),
-        raw: redact_proxy_settings(&s.raw),
-    });
+    let redacted_settings = settings.as_ref().map(redact_settings);
 
     let apply_supported = capabilities.iter().any(|c| {
         matches!(c.status, SystemProxyStatus::Available)
@@ -139,7 +179,10 @@ pub fn inspect_system_proxy_with_runner(runner: &dyn CommandRunner) -> Inspectio
             )
     });
 
-    let dry_run_commands = generate_dry_run_commands(&platform, settings.as_ref());
+    // Generate the display-only dry-run commands from the redacted copy:
+    // backends embed the proxy value verbatim, so using raw settings here
+    // would leak `user:pass@` through `--json` and the human report.
+    let dry_run_commands = generate_dry_run_commands(&platform, redacted_settings.as_ref());
 
     InspectionResult {
         platform,
@@ -277,6 +320,89 @@ mod tests {
         };
         let json = serde_json::to_string(&result).unwrap();
         assert!(json.contains("\"platform\":\"test\""));
+    }
+
+    /// JSON output is the diagnostic surface: raw settings (which can carry
+    /// `user:pass@` from OS/environment proxy configuration) must never be
+    /// serialized, while in-process callers keep them.
+    #[test]
+    fn inspection_result_json_omits_raw_credentials() {
+        let mut raw = std::collections::HashMap::new();
+        raw.insert(
+            "http_proxy".to_string(),
+            "http://user:pass@proxy:8080".to_string(),
+        );
+        raw.insert(
+            "HTTPS_PROXY".to_string(),
+            "http://user:pass@proxy:8443".to_string(),
+        );
+        let settings = SystemProxySettings {
+            source: "environment".to_string(),
+            http_proxy: Some("http://user:pass@proxy:8080".to_string()),
+            https_proxy: Some("http://user:pass@proxy:8443".to_string()),
+            socks_proxy: Some("socks5://admin:secret@proxy:1080".to_string()),
+            no_proxy: Some("localhost".to_string()),
+            raw,
+        };
+        let result = InspectionResult::new(
+            "linux".to_string(),
+            Vec::new(),
+            Some(settings),
+            false,
+            Vec::new(),
+        );
+        assert!(
+            result.settings.is_some(),
+            "raw settings stay available to in-process callers"
+        );
+        assert!(
+            result
+                .redacted_settings
+                .as_ref()
+                .and_then(|s| s.http_proxy.as_deref())
+                == Some("http://****@proxy:8080"),
+            "redacted settings are derived whenever settings exist"
+        );
+
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(!json.contains("user:pass@"), "{json}");
+        assert!(!json.contains("admin:secret@"), "{json}");
+        assert!(
+            !json.contains("\"settings\""),
+            "raw settings must not be serialized: {json}"
+        );
+        assert!(json.contains("\"redacted_settings\""), "{json}");
+        assert!(json.contains("****@proxy:8080"), "{json}");
+
+        // The redacted-only shape still deserializes.
+        let round_trip: InspectionResult = serde_json::from_str(&json).unwrap();
+        assert!(round_trip.settings.is_none());
+        assert!(round_trip.redacted_settings.is_some());
+    }
+
+    /// Dry-run commands are display-only and must be built from the redacted
+    /// copy: backends embed the proxy value verbatim.
+    #[test]
+    fn dry_run_commands_use_redacted_values() {
+        let settings = SystemProxySettings {
+            source: "macos:networksetup:*Wi-Fi".to_string(),
+            http_proxy: Some("http://user:pass@proxy:8080".to_string()),
+            https_proxy: Some("http://user:pass@proxy:8443".to_string()),
+            socks_proxy: Some("socks5://admin:secret@proxy:1080".to_string()),
+            no_proxy: Some("localhost".to_string()),
+            raw: std::collections::HashMap::new(),
+        };
+        let redacted = redact_settings(&settings);
+        for platform in ["macos", "windows", "linux"] {
+            let commands = generate_dry_run_commands(platform, Some(&redacted));
+            for command in &commands {
+                let rendered = command.to_string();
+                assert!(
+                    !rendered.contains("user:pass@") && !rendered.contains("admin:secret@"),
+                    "{platform} dry-run command leaked credentials: {rendered}"
+                );
+            }
+        }
     }
 
     #[test]

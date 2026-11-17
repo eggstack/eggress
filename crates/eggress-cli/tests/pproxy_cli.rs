@@ -205,6 +205,54 @@ fn translate_annotate_flag() {
 }
 
 #[test]
+fn translate_annotate_redacts_credentials_but_keeps_toml_runnable() {
+    let output = eggress_bin()
+        .args([
+            "pproxy",
+            "translate",
+            "--annotate",
+            "--",
+            "-l",
+            "http://admin:supersecret@127.0.0.1:1080",
+            "-r",
+            "socks5://bob:hunter2@upstream:1080",
+        ])
+        .output()
+        .expect("failed to run eggress");
+    assert!(
+        output.status.success(),
+        "translate failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let annotation = stdout
+        .lines()
+        .find(|line| line.starts_with("# pproxy arguments:"))
+        .expect("annotate output must include the pproxy argument line");
+    assert!(
+        annotation.contains("http://****:****@127.0.0.1:1080"),
+        "listener credentials must be redacted: {annotation}"
+    );
+    assert!(
+        annotation.contains("socks5://****:****@upstream:1080"),
+        "remote credentials must be redacted: {annotation}"
+    );
+    assert!(
+        !annotation.contains("supersecret") && !annotation.contains("hunter2"),
+        "annotated argv leaked credentials: {annotation}"
+    );
+    // Generated TOML keeps the real credentials so it stays runnable.
+    assert!(
+        stdout.contains("password = \"supersecret\""),
+        "generated TOML lost listener credentials: {stdout}"
+    );
+    assert!(
+        stdout.contains("socks5://bob:hunter2@upstream:1080"),
+        "generated TOML lost upstream credentials: {stdout}"
+    );
+}
+
+#[test]
 fn translate_chain_of_two_upstreams() {
     let output = eggress_bin()
         .args([
@@ -225,4 +273,59 @@ fn translate_chain_of_two_upstreams() {
     assert!(stdout.contains("pproxy-upstream-0"));
     assert!(stdout.contains("pproxy-upstream-1"));
     assert!(stdout.contains("first-available"));
+}
+
+// `check --json` must keep its recognized display paths redacted. Note that
+// `raw_args` and `chain_info[].raw` are documented "raw" fields (see the
+// `cli.check_json_chain_info` manifest entry); closing those is a separate
+// contract decision and is not asserted here.
+#[test]
+fn check_json_redacts_parsed_uris_and_diagnostics() {
+    let output = eggress_bin()
+        .args([
+            "pproxy",
+            "check",
+            "--json",
+            "--",
+            "-l",
+            "socks5://alice:s3cr3t-listen@127.0.0.1:1080",
+            "-r",
+            "http://bob:hunter2-up@upstream:8080",
+        ])
+        .output()
+        .expect("failed to run eggress");
+    assert!(
+        output.status.success(),
+        "check --json failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("check --json must be valid JSON");
+
+    let parsed = &json["parsed_uris"];
+    let parsed_display = format!("{} {}", parsed["listeners"], parsed["remotes"]);
+    assert!(
+        !parsed_display.contains("s3cr3t-listen") && !parsed_display.contains("hunter2-up"),
+        "parsed_uris leaked credentials: {parsed_display}"
+    );
+    assert!(
+        parsed["listeners"][0]
+            .as_str()
+            .unwrap()
+            .contains("****:****@"),
+        "listener display must be redacted: {parsed_display}"
+    );
+    assert!(
+        parsed["remotes"][0]
+            .as_str()
+            .unwrap()
+            .contains("****:****@"),
+        "remote display must be redacted: {parsed_display}"
+    );
+    let diagnostics = json["diagnostics"].to_string();
+    assert!(
+        !diagnostics.contains("s3cr3t-listen") && !diagnostics.contains("hunter2-up"),
+        "diagnostics leaked credentials: {diagnostics}"
+    );
 }

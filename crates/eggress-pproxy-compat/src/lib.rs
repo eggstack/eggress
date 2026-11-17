@@ -26,7 +26,7 @@ pub use translate::{
     translate_pproxy_args_to_native, translate_to_runtime_config, CombinedTranslation,
     NativeTranslation,
 };
-pub use uri::{PproxyChain, PproxyPluginSpec, PproxyUri};
+pub use uri::{redact_argv_for_annotation, PproxyChain, PproxyPluginSpec, PproxyUri};
 pub use warnings::{CompatWarning, TranslationOutput, UnsupportedFeature};
 
 #[cfg(test)]

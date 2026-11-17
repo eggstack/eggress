@@ -10,8 +10,10 @@ pre-transition phase records are provenance under `plans/archive/phase-records/`
 
 ## Current Status
 
-All core milestones are complete. The Rust-native CLI and runtime are
-production-ready with broad pproxy 2.7.9 behavioral compatibility. See the
+All core capability milestones are complete. A 2026-11-16 security audit opened
+a bounded corrective program (see below); it restores existing security
+invariants and is not a new capability phase. The Rust-native CLI and runtime
+remain production-ready with broad pproxy 2.7.9 behavioral compatibility. See the
 active [compatibility matrix](parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
 and [capability manifest](parity/pproxy_capability_manifest.toml).
 
@@ -73,6 +75,53 @@ compatibility-claim changes (manifest plus matrix unchanged).
 crates.io, GitHub Release with the five prebuilt CLI archives +
 installers). The workspace is at 1.0.12; the next version bump follows
 the lockstep procedure in `docs/release/RELEASE_PROCESS.md`.
+
+### Closed maintenance — security remediation (2026-11-16 audit)
+
+A 2026-11-16 security audit opened a bounded corrective program at
+[`plans/subsystems/security-hardening-roadmap.md`](../plans/subsystems/security-hardening-roadmap.md);
+it is implemented and closed as of 2026-11-16. It restored existing security
+invariants without adding proxy capabilities or changing pproxy compatibility
+tiers.
+
+- **S1/TLS** — bundled roots included a distrusted emSign root and the webpki
+  verifier accepted known-compromised intermediates (CVE-2026-111943). rustls,
+  rustls-webpki, webpki-roots, rustls-platform-verifier, quinn, and tokio now
+  resolve to fixed versions
+  ([closure](../plans/closure/transports/004-status.md)).
+- **S2/SSH** — optional `ssh` moved to `russh 0.65.2`, clearing
+  RUSTSEC-2026-0492/-0495 and the `crypto-bigint`/`ctutils` path with known-hosts
+  policy and OpenSSH regression intact
+  ([closure](../plans/closure/transports/005-status.md)).
+- **S3/SOCKS4+UDP** — SOCKS4 enforces the full pproxy `user:pass` user ID and
+  no longer seeds the reuse cache on a username-only match; UDP applies
+  `allow_private_egress` after DNS on every locally resolving path; CGNAT,
+  NAT64, 6to4, Teredo, and selected IETF special-purpose ranges are classified;
+  non-loopback auth without TLS warns
+  ([closure](../plans/closure/protocols-edge/003-status.md)).
+- **S4/CIDR+admin** — IPv4-mapped IPv6 is canonicalized before CIDR matching,
+  the literal-IP-only CIDR contract is documented and warned about, and admin
+  validates `Host`/`Origin`/JSON `Content-Type` with a non-loopback plaintext
+  warning
+  ([closure](../plans/closure/routing-health-observability/003-status.md)).
+- **S5/updater+gate** — release builds ignore `EGRESS_UPDATE_BASE_URL` and
+  reject `file://`, SHA-256 is computed in-process, `curl` resolves only from
+  fixed system locations, staging is private/create-new with a closed
+  verify/extract window, `system-proxy inspect --json` is redacted, and
+  `cargo deny --workspace check` runs in CI and release preflight
+  ([closure](../plans/closure/delivery/004-status.md)).
+- **S6/compat** — the pproxy `--auth` reuse contract is documented and warned
+  about, and UDP remote errors, `translate --annotate`, and the reverse compat
+  IR redact credentials
+  ([closure](../plans/closure/parity-compat/003-status.md)).
+
+The workspace `fmt`/`clippy`/`test` gate, the documented feature slices, the
+embed OpenSSH regression, and `cargo deny --workspace check` all pass. The only
+remaining audit item is the four `zip 6.0.0` advisories in the updater graph,
+tracked as a narrow, commented `deny.toml` exception with an owner and review
+date pending an upstream `eggup-archive` release with `zip >= 9.0.0`. No version
+bump, tag, or publication was authorized; `v1.0.12` remains the current
+published release.
 
 ### Active maintenance — Eggup archive/pair self-update convergence
 

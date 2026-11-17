@@ -254,7 +254,8 @@ pub enum SystemProxyAction {
 #[cfg(feature = "operations")]
 #[derive(Parser, Debug)]
 pub struct SystemProxyInspect {
-    /// Output as JSON
+    /// Output as JSON. Settings are emitted redacted only: credentials in
+    /// proxy URIs (`user:pass@`) never appear in this output.
     #[arg(long)]
     pub json: bool,
 }

@@ -8,10 +8,10 @@ Egress uses deliberately small hosted CI. GitHub Actions is a smoke signal for o
 
 The repository has four hosted workflows:
 
-- `.github/workflows/ci.yml`: one Ubuntu Rust job running format, Clippy, the default workspace test suite, bounded optional-compat and embed/outbound feature-boundary compile checks, a required local OpenSSH embed runtime regression, and fuzz-target compilation. The job installs `openssh-server` immediately before that runtime gate. A second `updater-matrix` job (ubuntu/macos/windows) runs `cargo test -p eggress-cli --locked --bin eggress update::` plus the `release_contract` / `cli_exit_codes` suites.
+- `.github/workflows/ci.yml`: one Ubuntu Rust job running format, Clippy, the default workspace test suite, bounded optional-compat and embed/outbound feature-boundary compile checks, a required local OpenSSH embed runtime regression, and fuzz-target compilation. The job installs `openssh-server` immediately before that runtime gate. A second `updater-matrix` job (ubuntu/macos/windows) runs `cargo test -p eggress-cli --locked --bin eggress update::` plus the `release_contract` / `cli_exit_codes` suites. A third `advisories` job installs a pinned `cargo-deny` (`cargo install cargo-deny --locked --version 0.19.0`) and runs `cargo deny --workspace check`.
 - `.github/workflows/python-test.yml`: one path-scoped Ubuntu/Python 3.12 smoke job for the Python binding and compatibility packages.
 - `.github/workflows/publish-python.yml`: a real release path, not a smoke job. It fires on every `v*` tag push, validates the tag against the workspace version, builds ten `cp39-abi3` wheel families (Linux x86_64/aarch64/armv7l GNU + musl, macOS x86_64/arm64, Windows x86_64/ARM64) plus an sdist, smoke-tests them (native per-platform smokes, musl/ARMv7 execution smokes, exhaustive 3.9–3.15 compat smoke on Linux x86_64), and publishes to PyPI through the protected `pypi` GitHub environment (TestPyPI only via manual dispatch).
-- `.github/workflows/release-binaries.yml`: a real release path, not a smoke job. It fires on every `v*` tag push (or manual dispatch against an existing tag), validates the tag with `scripts/release-preflight.sh`, builds the five canonical `eggress-cli` target archives with default features, smoke-tests both executables natively, and creates/updates the GitHub Release with archives, SHA-256 sidecars, and installers. Ordinary CI never builds this matrix.
+- `.github/workflows/release-binaries.yml`: a real release path, not a smoke job. It fires on every `v*` tag push (or manual dispatch against an existing tag), validates the tag with `scripts/release-preflight.sh`, then runs the dependency advisory gate (`cargo deny --workspace check`) so a tag cannot ship with an unreviewed advisory, builds the five canonical `eggress-cli` target archives with default features, smoke-tests both executables natively, and creates/updates the GitHub Release with archives, SHA-256 sidecars, and installers. Ordinary CI never builds this matrix.
 
 There are no crates-publishing workflows, cross-platform ordinary-CI matrices, or mandatory compatibility-evidence uploads. Pushing a version tag is a release action; ordinary pushes never publish anything.
 
@@ -102,7 +102,7 @@ Run these only when their trigger condition applies:
 
 | Check | Trigger |
 |---|---|
-| `cargo deny check` | Dependency, feature, or license-policy changes; release preparation |
+| `cargo deny --workspace check` | Dependency, feature, or license-policy changes; release preparation; CI `advisories` job and release preflight |
 | `cargo audit --ignore RUSTSEC-2023-0071` | Dependency changes; release preparation |
 | optional-compat compile gate above | SSH, QUIC/H3, SSR/`pproxy-legacy`, legacy-crypto, or daemon code paths |
 | pproxy differential/oracle suites | Compatibility behavior, manifests, URI translation, or pproxy namespace changes |
@@ -112,6 +112,8 @@ Run these only when their trigger condition applies:
 | cross-platform local/hosted checks | Platform-specific code or release preparation |
 
 The commands remain documented in `docs/TESTING.md`, `docs/DIFFERENTIAL_TESTING.md`, and `AGENTS.md`. Their existence does not make them routine merge gates.
+
+The advisory gate runs `cargo deny --workspace check`, not a bare `cargo deny check`: the root manifest is the `eggress-bench` package (not a virtual manifest), so a root-only graph silently omits `eggress-cli` — and with it `eggup-archive -> zip` — and prints a misleading `advisories ok`. `deny.toml` sets `[graph] all-features = true` so optional-only dependencies (`russh`, QUIC/H3, the `zip` subtree) are scanned as well. `deny.toml` carries exactly four commented `zip 6.0.0` ignores; add nothing to that list without the same owner/removal-condition treatment.
 
 ## Evidence and completion records
 

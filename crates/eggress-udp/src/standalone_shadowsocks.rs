@@ -634,7 +634,12 @@ async fn build_direct_flow(
     response_tx: &tokio::sync::mpsc::Sender<ResponseMsg>,
     target: SocksAddr,
 ) -> Result<TargetFlowEntry, UdpError> {
-    let flow = UdpTargetFlow::new(target.clone(), local_udp_bind_addr()).await?;
+    let flow = UdpTargetFlow::new(
+        target.clone(),
+        local_udp_bind_addr(),
+        config.allow_private_egress,
+    )
+    .await?;
     let target_idle_timeout = config.limits.target_idle_timeout;
 
     let flow_response_tx = response_tx.clone();
@@ -732,6 +737,84 @@ mod tests {
     ) -> Vec<u8> {
         let salt = vec![0x42u8; method.salt_size()];
         encode_pproxy_udp_packet(method, password, target, payload, &salt).unwrap()
+    }
+
+    async fn start_counting_udp_echo() -> (SocketAddr, Arc<std::sync::atomic::AtomicU64>) {
+        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let addr = socket.local_addr().unwrap();
+        let received = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let counter = Arc::clone(&received);
+        tokio::spawn(async move {
+            let mut buf = [0u8; 65535];
+            while let Ok((n, peer)) = socket.recv_from(&mut buf).await {
+                counter.fetch_add(1, Ordering::Relaxed);
+                let _ = socket.send_to(&buf[..n], peer).await;
+            }
+        });
+        (addr, received)
+    }
+
+    /// Standalone Shadowsocks UDP: `allow_private_egress = false` must drop a
+    /// domain target whose answers are private, record the rejection, and never
+    /// send a datagram to the resolved destination.
+    #[tokio::test]
+    async fn shadowsocks_standalone_private_domain_dropped_when_policy_disallows() {
+        let (echo_addr, received) = start_counting_udp_echo().await;
+        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let relay_addr = relay_socket.local_addr().unwrap();
+
+        let udp_metrics = Arc::new(UdpMetrics::new());
+        let mut config = shadowsocks_config(direct_router());
+        config.udp_metrics = udp_metrics.clone();
+        config.allow_private_egress = false;
+        let cancel = CancellationToken::new();
+
+        let relay_cancel = cancel.clone();
+        let relay_sock = relay_socket.clone();
+        let relay_handle = tokio::spawn(async move {
+            shadowsocks_standalone_udp_relay(relay_sock, config, relay_cancel).await
+        });
+
+        let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        client_socket.connect(relay_addr).await.unwrap();
+
+        let target = TargetAddr {
+            host: TargetHost::Domain("localhost".to_string()),
+            port: echo_addr.port(),
+        };
+        let pkt = encode_ss_packet(
+            eggress_protocol_shadowsocks::CipherMethod::Aes256Gcm,
+            b"test-password-123456",
+            &target,
+            b"private domain",
+        );
+        client_socket.send(&pkt).await.unwrap();
+
+        let mut recv_buf = [0u8; 65535];
+        let response = tokio::time::timeout(
+            std::time::Duration::from_millis(300),
+            client_socket.recv(&mut recv_buf),
+        )
+        .await;
+        assert!(
+            response.is_err(),
+            "private-resolving target must be dropped"
+        );
+        assert_eq!(
+            udp_metrics
+                .standalone_rejected_datagrams
+                .load(Ordering::Relaxed),
+            1,
+            "post-DNS policy rejection must count as a rejected datagram"
+        );
+        assert_eq!(
+            received.load(Ordering::Relaxed),
+            0,
+            "no datagram may reach the private target"
+        );
+
+        cancel.cancel();
+        relay_handle.await.unwrap().unwrap();
     }
 
     #[tokio::test]

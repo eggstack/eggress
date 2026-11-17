@@ -541,7 +541,23 @@ async fn handle_client_datagram(
             e.into_mut()
         }
         std::collections::hash_map::Entry::Vacant(e) => {
-            let flow = UdpTargetFlow::new(request.target.clone(), config.upstream_udp_bind).await?;
+            // The post-DNS destination policy runs here: a domain whose
+            // answers are all private/reserved fails closed and drops this
+            // datagram instead of creating a flow.
+            let flow = match UdpTargetFlow::new(
+                request.target.clone(),
+                config.upstream_udp_bind,
+                config.allow_private_egress,
+            )
+            .await
+            {
+                Ok(flow) => flow,
+                Err(error) => {
+                    tracing::debug!(%error, "failed to create direct UDP target flow");
+                    config.udp_metrics.record_dropped();
+                    return Ok(());
+                }
+            };
 
             let target_addr_clone = request.target.clone();
             let flow_response_tx = response_tx.clone();
@@ -885,6 +901,15 @@ mod tests {
         pkt
     }
 
+    fn domain_socks5_packet(domain: &str, port: u16, payload: &[u8]) -> Vec<u8> {
+        let mut pkt = vec![0x00, 0x00, 0x00, 0x03];
+        pkt.push(domain.len() as u8);
+        pkt.extend_from_slice(domain.as_bytes());
+        pkt.extend_from_slice(&port.to_be_bytes());
+        pkt.extend_from_slice(payload);
+        pkt
+    }
+
     async fn start_udp_echo() -> SocketAddr {
         let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let addr = socket.local_addr().unwrap();
@@ -895,6 +920,115 @@ mod tests {
             }
         });
         addr
+    }
+
+    async fn start_counting_udp_echo() -> (SocketAddr, Arc<std::sync::atomic::AtomicU64>) {
+        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let addr = socket.local_addr().unwrap();
+        let received = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let counter = Arc::clone(&received);
+        tokio::spawn(async move {
+            let mut buf = [0u8; 65535];
+            while let Ok((n, peer)) = socket.recv_from(&mut buf).await {
+                counter.fetch_add(1, Ordering::Relaxed);
+                let _ = socket.send_to(&buf[..n], peer).await;
+            }
+        });
+        (addr, received)
+    }
+
+    /// SOCKS5 UDP ASSOCIATE direct path: `allow_private_egress = false` must
+    /// drop a domain target whose answers are private, record the dropped
+    /// metric, and never send a datagram to the resolved destination.
+    #[tokio::test]
+    async fn relay_private_domain_dropped_when_policy_disallows() {
+        let (echo_addr, received) = start_counting_udp_echo().await;
+        let assoc = test_assoc();
+        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let relay_addr = relay_socket.local_addr().unwrap();
+
+        let udp_metrics = Arc::new(UdpMetrics::new());
+        let mut config = relay_config(direct_router());
+        config.udp_metrics = udp_metrics.clone();
+        config.allow_private_egress = false;
+        let cancel = CancellationToken::new();
+
+        let relay_cancel = cancel.clone();
+        let relay_assoc = assoc.clone();
+        let relay_sock = relay_socket.clone();
+        let relay_handle = tokio::spawn(async move {
+            udp_relay_loop(relay_sock, relay_assoc, config, relay_cancel).await
+        });
+
+        let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        client_socket.connect(relay_addr).await.unwrap();
+
+        let pkt = domain_socks5_packet("localhost", echo_addr.port(), b"private domain");
+        client_socket.send(&pkt).await.unwrap();
+
+        let mut recv_buf = [0u8; 65535];
+        let response = tokio::time::timeout(
+            std::time::Duration::from_millis(300),
+            client_socket.recv(&mut recv_buf),
+        )
+        .await;
+        assert!(
+            response.is_err(),
+            "private-resolving target must be dropped"
+        );
+        assert_eq!(
+            udp_metrics.dropped_packets.load(Ordering::Relaxed),
+            1,
+            "post-DNS policy rejection must count as a dropped datagram"
+        );
+        assert_eq!(
+            received.load(Ordering::Relaxed),
+            0,
+            "no datagram may reach the private target"
+        );
+
+        cancel.cancel();
+        relay_handle.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn relay_private_domain_allowed_when_policy_permits() {
+        let echo_addr = start_udp_echo().await;
+        let assoc = test_assoc();
+        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let relay_addr = relay_socket.local_addr().unwrap();
+
+        let config = relay_config(direct_router());
+        assert!(config.allow_private_egress);
+        let cancel = CancellationToken::new();
+
+        let relay_cancel = cancel.clone();
+        let relay_assoc = assoc.clone();
+        let relay_sock = relay_socket.clone();
+        let relay_handle = tokio::spawn(async move {
+            udp_relay_loop(relay_sock, relay_assoc, config, relay_cancel).await
+        });
+
+        let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        client_socket.connect(relay_addr).await.unwrap();
+
+        // Numeric domain form keeps a real lookup while staying resolver-family
+        // independent.
+        let pkt = domain_socks5_packet("127.0.0.1", echo_addr.port(), b"permitted");
+        client_socket.send(&pkt).await.unwrap();
+
+        let mut recv_buf = [0u8; 65535];
+        let n = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            client_socket.recv(&mut recv_buf).await
+        })
+        .await
+        .expect("permissive policy must keep private UDP egress working")
+        .expect("recv should succeed");
+        let resp = decode_packet(&recv_buf[..n], &UdpLimits::default()).unwrap();
+        assert_eq!(resp.payload, b"permitted");
+
+        cancel.cancel();
+        relay_handle.await.unwrap().unwrap();
     }
 
     #[tokio::test]

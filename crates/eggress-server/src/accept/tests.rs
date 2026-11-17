@@ -441,6 +441,181 @@ async fn test_tls_client_hello_not_interpreted_as_http() {
     server_jh.await.unwrap();
 }
 
+// === SOCKS4 full-credential authentication tests ===
+
+/// Drive one SOCKS4 CONNECT attempt with `user_id` in the user-ID field and
+/// return the accept result. `peer` is reported as the connection's source IP
+/// so the auth-reuse cache can be exercised.
+async fn socks4_auth_attempt(
+    auth: &InboundAuthentication,
+    peer: Option<IpAddr>,
+    user_id: &str,
+) -> Result<AcceptedSession, AcceptError> {
+    let protocols: Vec<ProtocolId> = vec![ProtocolId::Http, ProtocolId::Socks4, ProtocolId::Socks5];
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let user_id = user_id.to_string();
+    let client_jh = tokio::spawn(async move {
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        // VN=0x04, CD=CONNECT, DSTPORT=80, DSTIP=10.0.0.1
+        stream
+            .write_all(&[0x04, 0x01, 0x00, 0x50, 10, 0, 0, 1])
+            .await
+            .unwrap();
+        stream.write_all(user_id.as_bytes()).await.unwrap();
+        stream.write_all(&[0x00]).await.unwrap();
+        stream.flush().await.unwrap();
+    });
+
+    let (stream, _) = listener.accept().await.unwrap();
+    let boxed: BoxStream = Box::new(stream);
+    let result =
+        accept_with_fixed_target_for_peer(boxed, &protocols, auth, None, None, None, None, peer)
+            .await;
+    client_jh.await.unwrap();
+    result
+}
+
+fn socks4_auth_with_cache(cache: &Arc<AuthReuseCache>) -> InboundAuthentication {
+    InboundAuthentication::UsernamePasswordWithReuse {
+        username: "user".to_string(),
+        password: "secret".to_string(),
+        reuse: Arc::clone(cache),
+    }
+}
+
+#[tokio::test]
+async fn test_socks4_auth_full_credential_accepted() {
+    let cache = Arc::new(AuthReuseCache::new(Duration::from_secs(60)));
+    let auth = socks4_auth_with_cache(&cache);
+    let peer: IpAddr = "203.0.113.9".parse().unwrap();
+
+    let session = socks4_auth_attempt(&auth, Some(peer), "user:secret")
+        .await
+        .expect("full pproxy credential must be accepted");
+    match session {
+        AcceptedSession::Tunnel(pending) => {
+            assert_eq!(pending.protocol, TunnelProtocol::Socks4);
+            assert_eq!(pending.target.port, 80);
+            assert_eq!(
+                pending.identity,
+                ClientIdentity::Username("user".to_string()),
+                "identity must be derived from the authenticated username"
+            );
+        }
+        _ => panic!("expected tunnel"),
+    }
+    assert_eq!(
+        cache.lookup(peer),
+        Some(ClientIdentity::Username("user".to_string())),
+        "a fully authenticated SOCKS4 session seeds the reuse cache"
+    );
+}
+
+#[tokio::test]
+async fn test_socks4_auth_username_only_rejected() {
+    let cache = Arc::new(AuthReuseCache::new(Duration::from_secs(60)));
+    let auth = socks4_auth_with_cache(&cache);
+    let peer: IpAddr = "203.0.113.10".parse().unwrap();
+
+    let result = socks4_auth_attempt(&auth, Some(peer), "user").await;
+    assert!(matches!(result, Err(AcceptError::AuthenticationFailed)));
+    assert!(
+        cache.is_empty(),
+        "a username-only SOCKS4 attempt must never seed the reuse cache"
+    );
+}
+
+#[tokio::test]
+async fn test_socks4_auth_wrong_password_rejected() {
+    let cache = Arc::new(AuthReuseCache::new(Duration::from_secs(60)));
+    let auth = socks4_auth_with_cache(&cache);
+    let peer: IpAddr = "203.0.113.11".parse().unwrap();
+
+    let result = socks4_auth_attempt(&auth, Some(peer), "user:wrong").await;
+    assert!(matches!(result, Err(AcceptError::AuthenticationFailed)));
+    assert!(cache.is_empty(), "failed auth must not seed the cache");
+}
+
+#[tokio::test]
+async fn test_socks4_auth_empty_user_id_rejected() {
+    let cache = Arc::new(AuthReuseCache::new(Duration::from_secs(60)));
+    let auth = socks4_auth_with_cache(&cache);
+    let peer: IpAddr = "203.0.113.12".parse().unwrap();
+
+    let result = socks4_auth_attempt(&auth, Some(peer), "").await;
+    assert!(matches!(result, Err(AcceptError::AuthenticationFailed)));
+    assert!(cache.is_empty(), "failed auth must not seed the cache");
+}
+
+#[tokio::test]
+async fn test_socks4_auth_failure_does_not_leak_credentials() {
+    let cache = Arc::new(AuthReuseCache::new(Duration::from_secs(60)));
+    let auth = socks4_auth_with_cache(&cache);
+    let peer: IpAddr = "203.0.113.13".parse().unwrap();
+
+    let result = socks4_auth_attempt(&auth, Some(peer), "user:wrong").await;
+    let error = result.err().expect("wrong password must be rejected");
+    let rendered = format!("{error}");
+    assert_eq!(rendered, "authentication failed");
+    assert!(!rendered.contains("user"));
+    assert!(!rendered.contains("secret"));
+    assert!(!rendered.contains("wrong"));
+}
+
+#[tokio::test]
+async fn test_socks4_auth_rejected_attempt_does_not_authorize_retry() {
+    let cache = Arc::new(AuthReuseCache::new(Duration::from_secs(60)));
+    let auth = socks4_auth_with_cache(&cache);
+    let peer: IpAddr = "203.0.113.14".parse().unwrap();
+
+    for user_id in ["user", "user:wrong", ""] {
+        let result = socks4_auth_attempt(&auth, Some(peer), user_id).await;
+        assert!(
+            matches!(result, Err(AcceptError::AuthenticationFailed)),
+            "user ID {user_id:?} must be rejected"
+        );
+        assert!(cache.is_empty());
+    }
+
+    // The same source IP is still authenticated only by the full credential.
+    let session = socks4_auth_attempt(&auth, Some(peer), "user:secret")
+        .await
+        .expect("full credential must still be accepted after failures");
+    drop(session);
+}
+
+#[tokio::test]
+async fn test_socks4_auth_reuse_cache_is_peer_scoped() {
+    let cache = Arc::new(AuthReuseCache::new(Duration::from_secs(60)));
+    let auth = socks4_auth_with_cache(&cache);
+    let authenticated: IpAddr = "203.0.113.15".parse().unwrap();
+    let other: IpAddr = "203.0.113.16".parse().unwrap();
+
+    socks4_auth_attempt(&auth, Some(authenticated), "user:secret")
+        .await
+        .expect("full credential must be accepted");
+
+    // Same source IP, no user ID: authorized by the earlier authentication and
+    // reported with the authenticated username identity.
+    let reused = socks4_auth_attempt(&auth, Some(authenticated), "")
+        .await
+        .expect("authenticated source IP is reused");
+    match reused {
+        AcceptedSession::Tunnel(pending) => assert_eq!(
+            pending.identity,
+            ClientIdentity::Username("user".to_string())
+        ),
+        _ => panic!("expected tunnel"),
+    }
+
+    // A different source IP gets nothing from the cache.
+    let foreign = socks4_auth_attempt(&auth, Some(other), "").await;
+    assert!(matches!(foreign, Err(AcceptError::AuthenticationFailed)));
+    assert_eq!(cache.len(), 1);
+}
+
 // === Authentication tests ===
 
 #[tokio::test]

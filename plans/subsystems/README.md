@@ -23,6 +23,11 @@ parity-compat-roadmap.md
 delivery-roadmap.md
 ```
 
+`security-hardening-roadmap.md` is a cross-cutting corrective program, not an
+architectural subsystem. It coordinates security milestones that are owned by
+the subsystem roadmaps above and MUST NOT duplicate their runtime/protocol/
+delivery ownership.
+
 ## Required roadmap structure
 
 ```markdown

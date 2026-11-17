@@ -1,8 +1,48 @@
 [graph]
 targets = []
+# Review the all-features dependency graph of every workspace member.
+#
+# `all-features` is required because optional-only dependencies (`russh`,
+# QUIC/H3, the `eggup`/`zip` updater subtree) are otherwise dropped from the
+# advisory/bans/licenses/sources checks.
+#
+# This section cannot widen the graph roots: the root manifest here is the
+# `eggress-bench` package (not a virtual manifest), so `cargo deny` treats it
+# as the sole root unless the invocation adds the global `--workspace` flag.
+# The gate therefore runs as `cargo deny --workspace check`; a bare
+# `cargo deny check` silently omits `eggress-cli` (and therefore `zip`) and
+# prints a misleading "advisories ok". Feature slicing still applies to builds
+# and tests (`docs/CI_STATUS.md`); it does not restrict what is audited.
+all-features = true
 
 [advisories]
-ignore = []
+ignore = [
+    # Upstream-blocked `zip 6.0.0` (Delivery M004 / Security S5).
+    #
+    # Path: root `eggress-cli` -> `eggup-archive 0.1.2` (and 0.2.0) ->
+    # `zip = "6.0.0"`. `eggup-archive` also carries the `zip` crate for its
+    # bounded Windows `.zip` extractor, so a lockfile update alone cannot
+    # remove it, and the direct `zip` dependency in `eggress-cli` is
+    # dev-only (test archive fixtures).
+    #
+    # Why the interim risk is acceptable: Eggup's extractor never calls
+    # `ZipArchive::extract`/`ZipStreamReader::extract` (the APIs named by
+    # these advisories). It walks entries itself, rejects symlinks, non-file
+    # entries, `enclosed_name() == None`, and `..`/absolute paths, and reads
+    # members through object-bound handles under finite size limits. Eggress
+    # additionally verifies the whole archive SHA-256 before extraction.
+    #
+    # Removal condition: delete these four entries (do not carry them
+    # forward) as soon as an `eggup-archive` release depending on
+    # `zip >= 9.0.0` is adopted.
+    #
+    # Owner: Delivery M004. Reviewed 2026-11-16. Re-review by 2027-05-01
+    # even if no upstream release has landed; do not renew silently.
+    "RUSTSEC-2026-0367",
+    "RUSTSEC-2026-0368",
+    "RUSTSEC-2026-0369",
+    "RUSTSEC-2026-0429",
+]
 
 # `rustls-pemfile` (RUSTSEC-2025-0134) was replaced by `rustls-pki-types` PEM
 # APIs (`CertificateDer::pem_slice_iter`, `PrivatePkcs8KeyDer::from_pem_slice`)
@@ -12,6 +52,9 @@ ignore = []
 allow = [
     "MIT",
     "Apache-2.0",
+    # `target-lexicon` (build-dependency of `pyo3-build-config` in
+    # `eggress-python`) ships under the Apache-2.0 LLVM exception.
+    "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",

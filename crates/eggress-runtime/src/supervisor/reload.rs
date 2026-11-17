@@ -321,13 +321,28 @@ pub fn classify_reload_config(
         return Err("timeout configuration changed; restart required".to_string());
     }
 
-    let old_admin_endpoint = old_admin.map(|admin| (admin.enabled, admin.bind.as_str()));
-    let new_admin_endpoint = new_config
-        .admin
-        .as_ref()
-        .map(|admin| (admin.enabled, admin.bind.as_str()));
+    // `allowed_hosts` is part of the admin listener's security policy and is
+    // fixed when the admin task starts, so a change to it requires the same
+    // restart as a bind change. Silently keeping the old allowlist would leave
+    // the running server out of step with the configuration on disk.
+    let old_admin_endpoint = old_admin.map(|admin| {
+        (
+            admin.enabled,
+            admin.bind.as_str(),
+            admin.allowed_hosts.as_slice(),
+        )
+    });
+    let new_admin_endpoint = new_config.admin.as_ref().map(|admin| {
+        (
+            admin.enabled,
+            admin.bind.as_str(),
+            admin.allowed_hosts.as_slice(),
+        )
+    });
     if old_admin_endpoint != new_admin_endpoint {
-        return Err("admin endpoint bind configuration changed; restart required".to_string());
+        return Err(
+            "admin endpoint bind/allowed_hosts configuration changed; restart required".to_string(),
+        );
     }
 
     Ok(())

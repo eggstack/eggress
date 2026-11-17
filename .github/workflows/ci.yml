@@ -73,6 +73,28 @@ jobs:
       - name: Check fuzz targets
         run: cargo check --manifest-path fuzz/Cargo.toml --bins
 
+  advisories:
+    # Dependency advisory gate (Delivery M004 / Security S5).
+    #
+    # `cargo deny` is pinned and installed from source (no third-party action
+    # runs in this job). `--workspace` is required: the root manifest is the
+    # `eggress-bench` package, so without it cargo-deny roots the graph at
+    # that crate and silently skips `eggress-cli` -> `eggup-archive` -> `zip`.
+    # `deny.toml` sets `[graph] all-features = true` so optional-only
+    # dependencies are scanned as well. The only ignores are the four tracked
+    # `zip 6.0.0` advisories (upstream-blocked on `eggup-archive`).
+    name: Dependency advisories
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install pinned cargo-deny
+        run: cargo install cargo-deny --locked --version 0.19.0
+      - name: cargo deny --workspace check
+        run: cargo deny --workspace check
+
   updater-matrix:
     # Delivery M003 evidence: the updater/archive path must execute (not
     # merely compile) on Linux, macOS, and Windows. Shell-candidate flow

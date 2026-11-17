@@ -126,50 +126,84 @@ pub enum SshHostKeyPolicy {
     InsecureCompatibility,
 }
 
-impl russh::client::Handler for CompatClient {
-    type Error = russh::Error;
-
-    async fn check_server_key(
-        &mut self,
-        server_public_key: &russh::keys::PublicKey,
-    ) -> Result<bool, Self::Error> {
-        Ok(match &self.host_key_policy {
-            SshHostKeyPolicy::KnownHosts => {
-                match russh::keys::check_known_hosts(&self.host, self.port, server_public_key) {
-                    Ok(accepted) => accepted,
-                    Err(error) => {
-                        // A missing or unreadable known_hosts file must not be
-                        // indistinguishable from a key mismatch.
-                        tracing::warn!(
-                            host = %self.host,
-                            port = self.port,
-                            %error,
-                            "known_hosts lookup failed; rejecting host key"
-                        );
-                        false
-                    }
+/// Decide whether a plain server host key is acceptable under `policy`.
+///
+/// This is the whole host-key trust decision, kept out of the `russh` callback
+/// so it can be unit-tested without a live session. A lookup error (unreadable
+/// or malformed known_hosts, or a changed key) is logged and rejected; it never
+/// degrades into `InsecureCompatibility`.
+fn verify_host_key(
+    host: &str,
+    port: u16,
+    policy: &SshHostKeyPolicy,
+    server_public_key: &russh::keys::PublicKey,
+) -> bool {
+    match policy {
+        SshHostKeyPolicy::KnownHosts => {
+            match russh::keys::check_known_hosts(host, port, server_public_key) {
+                Ok(accepted) => accepted,
+                Err(error) => {
+                    // A missing or unreadable known_hosts file must not be
+                    // indistinguishable from a key mismatch.
+                    tracing::warn!(
+                        host = %host,
+                        port = port,
+                        %error,
+                        "known_hosts lookup failed; rejecting host key"
+                    );
+                    false
                 }
             }
-            SshHostKeyPolicy::KnownHostsFile(path) => match russh::keys::check_known_hosts_path(
-                &self.host,
-                self.port,
-                server_public_key,
-                path,
-            ) {
+        }
+        SshHostKeyPolicy::KnownHostsFile(path) => {
+            match russh::keys::check_known_hosts_path(host, port, server_public_key, path) {
                 Ok(accepted) => accepted,
                 Err(error) => {
                     tracing::warn!(
-                        host = %self.host,
-                        port = self.port,
+                        host = %host,
+                        port = port,
                         known_hosts = %path.display(),
                         %error,
                         "known_hosts lookup failed; rejecting host key"
                     );
                     false
                 }
-            },
-            SshHostKeyPolicy::InsecureCompatibility => true,
-        })
+            }
+        }
+        SshHostKeyPolicy::InsecureCompatibility => true,
+    }
+}
+
+impl russh::client::Handler for CompatClient {
+    type Error = russh::Error;
+
+    async fn check_server_key(
+        &mut self,
+        server_public_key: &russh::keys::PublicKeyOrCertificate,
+    ) -> Result<bool, Self::Error> {
+        // `russh` 0.65 reports certificate host keys separately from plain
+        // host keys. Eggress has never accepted SSH certificate host keys: the
+        // pre-0.65 graph could not even parse one, so the handshake failed
+        // before a policy decision. Rejecting here keeps that fail-closed
+        // behaviour instead of projecting a certificate onto a plain key, and
+        // it applies to every policy including insecure compatibility.
+        let server_public_key = match server_public_key {
+            russh::keys::PublicKeyOrCertificate::PublicKey { key, .. } => key,
+            russh::keys::PublicKeyOrCertificate::Certificate(_) => {
+                tracing::warn!(
+                    host = %self.host,
+                    port = self.port,
+                    "SSH server presented a certificate host key; certificate host keys are not supported"
+                );
+                return Ok(false);
+            }
+        };
+        Ok(verify_host_key(
+            &self.host,
+            self.port,
+            &self.host_key_policy,
+            server_public_key,
+        ))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -569,4 +603,147 @@ async fn connect_authenticated_with_config(
         return Err(SshTransportError::AuthenticationFailed);
     }
     Ok(session)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::*;
+
+    /// Public test vectors. They are host *public* keys and authorize nothing.
+    const HOST_KEY_A: &str =
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBwetC7SGNq9kJMmuSzhc5wn7U9GiYrQdsOSemUfu8rK";
+    const HOST_KEY_B: &str =
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG13LBHUOjmMmz1H4YO3A0sMYlX2X9Q8BSrN/4wR6TZZ";
+
+    fn public_key(openssh: &str) -> russh::keys::PublicKey {
+        russh::keys::PublicKey::from_openssh(openssh).expect("static test key parses")
+    }
+
+    fn known_hosts_entry(host: &str, port: u16, key: &str) -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("known_hosts");
+        std::fs::write(&path, format!("[{host}]:{port} {key}\n")).expect("write known_hosts");
+        (dir, path)
+    }
+
+    fn session_key(policy: SshHostKeyPolicy) -> SshSessionKey {
+        SshSessionKey {
+            host: "ssh.example".to_string(),
+            port: 2222,
+            username: "operator".to_string(),
+            auth: SshAuth::Password("hunter2".to_string()),
+            hop_index: 0,
+            policy,
+        }
+    }
+
+    #[test]
+    fn ssh_auth_debug_never_shows_secrets() {
+        let password = SshAuth::Password("hunter2".to_string());
+        let private_key = SshAuth::PrivateKey("/home/operator/.ssh/id_ed25519".to_string());
+        for (auth, secret) in [
+            (&password, "hunter2"),
+            (&private_key, "/home/operator/.ssh/id_ed25519"),
+        ] {
+            let rendered = format!("{auth:?}");
+            assert!(rendered.contains("****"), "{rendered}");
+            assert!(!rendered.contains(secret), "{rendered}");
+        }
+    }
+
+    #[test]
+    fn session_key_debug_never_shows_secrets() {
+        let rendered = format!("{:?}", session_key(SshHostKeyPolicy::InsecureCompatibility));
+        assert!(rendered.contains("****"), "{rendered}");
+        assert!(!rendered.contains("hunter2"), "{rendered}");
+    }
+
+    #[test]
+    fn session_key_is_scoped_by_host_key_policy() {
+        let known = session_key(SshHostKeyPolicy::KnownHosts);
+        let insecure = session_key(SshHostKeyPolicy::InsecureCompatibility);
+        assert_ne!(known, insecure);
+        let keys = HashSet::from([known, insecure]);
+        assert_eq!(
+            keys.len(),
+            2,
+            "a session authenticated under one policy must not collide with another"
+        );
+    }
+
+    #[test]
+    fn known_hosts_file_accepts_matching_key_and_rejects_mismatch() {
+        let (_dir, path) = known_hosts_entry("127.0.0.1", 2222, HOST_KEY_A);
+        let policy = SshHostKeyPolicy::KnownHostsFile(path);
+        assert!(verify_host_key(
+            "127.0.0.1",
+            2222,
+            &policy,
+            &public_key(HOST_KEY_A)
+        ));
+        assert!(
+            !verify_host_key("127.0.0.1", 2222, &policy, &public_key(HOST_KEY_B)),
+            "a changed host key must be rejected"
+        );
+    }
+
+    #[test]
+    fn missing_known_hosts_file_rejects_host_key() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let policy = SshHostKeyPolicy::KnownHostsFile(dir.path().join("absent_known_hosts"));
+        assert!(
+            !verify_host_key("127.0.0.1", 2222, &policy, &public_key(HOST_KEY_A)),
+            "an absent known_hosts file must fail closed"
+        );
+    }
+
+    #[test]
+    fn default_known_hosts_policy_rejects_unrecorded_host() {
+        // A reserved `.invalid` name cannot be recorded in a real known_hosts
+        // file, so the default policy is exercised without reading a match.
+        let policy = SshHostKeyPolicy::KnownHosts;
+        assert!(!verify_host_key(
+            "eggress-ssh-policy.invalid",
+            65022,
+            &policy,
+            &public_key(HOST_KEY_A)
+        ));
+    }
+
+    #[test]
+    fn insecure_compatibility_accepts_any_plain_key() {
+        let policy = SshHostKeyPolicy::InsecureCompatibility;
+        for key in [HOST_KEY_A, HOST_KEY_B] {
+            assert!(verify_host_key(
+                "127.0.0.1",
+                2222,
+                &policy,
+                &public_key(key)
+            ));
+        }
+    }
+
+    #[test]
+    fn cache_policy_accessors_match_their_constructors() {
+        assert_eq!(
+            SshSessionCache::new().policy(),
+            SshHostKeyPolicy::KnownHosts
+        );
+        let path = PathBuf::from("known_hosts");
+        assert_eq!(
+            SshSessionCache::with_known_hosts(path.clone()).policy(),
+            SshHostKeyPolicy::KnownHostsFile(path)
+        );
+    }
+
+    #[cfg(feature = "pproxy-compat")]
+    #[test]
+    fn compatibility_cache_constructs_the_insecure_policy() {
+        assert_eq!(
+            SshSessionCache::new_compatibility().policy(),
+            SshHostKeyPolicy::InsecureCompatibility
+        );
+    }
 }

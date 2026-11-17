@@ -20,14 +20,19 @@ use crate::{BoxStream, ConnectError, TargetAddr, TargetHost};
 ///
 /// Rejected ranges:
 /// - IPv4: loopback (127.0.0.0/8), link-local (169.254.0.0/16),
-///   private (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16), unspecified (0.0.0.0),
+///   private (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16),
+///   carrier-grade NAT (100.64.0.0/10), unspecified (0.0.0.0),
 ///   broadcast (255.255.255.255), multicast (224.0.0.0/4),
 ///   documentation (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24),
 ///   benchmarking (198.18.0.0/15), reserved future (240.0.0.0/4),
 ///   this-network (0.0.0.0/8)
 /// - IPv6: loopback (::1), link-local (fe80::/10), unique-local (fc00::/7),
 ///   unspecified (::), multicast (ff00::/8),
-///   documentation (2001:db8::/32), discard prefix (0100::/64)
+///   documentation (2001:db8::/32), discard prefix (0100::/64),
+///   NAT64 (64:ff9b::/96), 6to4 (2002::/16), Teredo (2001::/32),
+///   benchmarking (2001:2::/48), ORCHID (2001:10::/28, 2001:20::/28)
+///
+/// IPv4-mapped IPv6 addresses are classified as their embedded IPv4 address.
 pub fn is_reserved_or_private_ip(ip: &IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
@@ -37,6 +42,7 @@ pub fn is_reserved_or_private_ip(ip: &IpAddr) -> bool {
                 || v4.is_unspecified()
                 || v4.is_multicast()
                 || v4.is_broadcast()
+                || is_v4_cgnat(v4)
                 || is_v4_documentation(v4)
                 || is_v4_benchmarking(v4)
                 || is_v4_reserved(v4)
@@ -56,6 +62,11 @@ pub fn is_reserved_or_private_ip(ip: &IpAddr) -> bool {
                 || is_unicast_link_local_v6(v6)
                 || is_unique_local_v6(v6)
                 || is_v6_discard_prefix(v6)
+                || is_v6_nat64(v6)
+                || is_v6_6to4(v6)
+                || is_v6_teredo(v6)
+                || is_v6_benchmarking(v6)
+                || is_v6_orchid(v6)
         }
     }
 }
@@ -81,6 +92,14 @@ fn is_v6_discard_prefix(ip: &Ipv6Addr) -> bool {
 /// Check if an IPv4 address is in the 0.0.0.0/8 "this network" range.
 fn is_v4_this_network(ip: &std::net::Ipv4Addr) -> bool {
     ip.octets()[0] == 0
+}
+
+/// Check if an IPv4 address is in the 100.64.0.0/10 carrier-grade NAT range
+/// (RFC 6598). These are not reachable from the public Internet and are
+/// commonly used for provider or overlay-network addressing.
+fn is_v4_cgnat(ip: &std::net::Ipv4Addr) -> bool {
+    let octets = ip.octets();
+    octets[0] == 100 && (octets[1] & 0xc0) == 0x40
 }
 
 /// Check if an IPv4 address is in any of the documentation ranges
@@ -111,6 +130,53 @@ fn is_v4_reserved(ip: &std::net::Ipv4Addr) -> bool {
 fn is_v6_documentation(ip: &Ipv6Addr) -> bool {
     let octets = ip.octets();
     octets[0] == 0x20 && octets[1] == 0x01 && octets[2] == 0x0d && octets[3] == 0xb8
+}
+
+/// Check if an IPv6 address is in the 64:ff9b::/96 well-known NAT64 prefix
+/// (RFC 6052), which embeds an IPv4 destination in its last four bytes.
+fn is_v6_nat64(ip: &Ipv6Addr) -> bool {
+    let octets = ip.octets();
+    octets[0] == 0x00
+        && octets[1] == 0x64
+        && octets[2] == 0xff
+        && octets[3] == 0x9b
+        && octets[4..12].iter().all(|byte| *byte == 0)
+}
+
+/// Check if an IPv6 address is in the 2002::/16 6to4 range (RFC 3056), which
+/// embeds an IPv4 address in bits 16-47 of a publicly routed prefix.
+fn is_v6_6to4(ip: &Ipv6Addr) -> bool {
+    let octets = ip.octets();
+    octets[0] == 0x20 && octets[1] == 0x02
+}
+
+/// Check if an IPv6 address is in the 2001::/32 Teredo range (RFC 4380).
+fn is_v6_teredo(ip: &Ipv6Addr) -> bool {
+    let octets = ip.octets();
+    octets[0] == 0x20 && octets[1] == 0x01 && octets[2] == 0x00 && octets[3] == 0x00
+}
+
+/// Check if an IPv6 address is in the 2001:2::/48 benchmarking range
+/// (RFC 5180).
+fn is_v6_benchmarking(ip: &Ipv6Addr) -> bool {
+    let octets = ip.octets();
+    octets[0] == 0x20
+        && octets[1] == 0x01
+        && octets[2] == 0x00
+        && octets[3] == 0x02
+        && octets[4] == 0x00
+        && octets[5] == 0x00
+}
+
+/// Check if an IPv6 address is in an ORCHID range: 2001:10::/28 (RFC 4843,
+/// deprecated) or 2001:20::/28 (ORCHIDv2, RFC 7343). ORCHIDs are
+/// cryptographically generated identifiers, not routable endpoints.
+fn is_v6_orchid(ip: &Ipv6Addr) -> bool {
+    let octets = ip.octets();
+    if octets[0] != 0x20 || octets[1] != 0x01 || octets[2] != 0x00 {
+        return false;
+    }
+    matches!(octets[3] & 0xf0, 0x10 | 0x20)
 }
 
 /// Check if a resolved IP address represents a DNS rebinding risk.
@@ -603,6 +669,71 @@ mod tests {
         assert!(is_reserved_or_private_ip(&IpAddr::V6(ip)));
     }
 
+    /// CGNAT, NAT64, 6to4, Teredo, and selected IETF special-purpose ranges
+    /// must classify as non-public so the DNS-rebinding and UDP private-egress
+    /// guards cannot be bypassed by a domain that resolves into them.
+    #[test]
+    fn reserved_special_purpose_ranges_table() {
+        let reserved = [
+            // IPv4 CGNAT 100.64.0.0/10 (RFC 6598) including both edges.
+            "100.64.0.0",
+            "100.64.0.1",
+            "100.127.255.254",
+            // IPv6 NAT64 well-known prefix 64:ff9b::/96 (RFC 6052).
+            "64:ff9b::1",
+            "64:ff9b::808:808",
+            // IPv6 6to4 2002::/16 (RFC 3056).
+            "2002::1",
+            "2002:808:808::1",
+            // IPv6 Teredo 2001::/32 (RFC 4380).
+            "2001::1",
+            "2001:0:4136:e378:8000:63bf:3fff:fdd2",
+            // IPv6 benchmarking 2001:2::/48 (RFC 5180).
+            "2001:2::1",
+            "2001:2:0:ffff::1",
+            // ORCHID 2001:10::/28 (RFC 4843) and ORCHIDv2 2001:20::/28 (RFC 7343).
+            "2001:10::1",
+            "2001:1f::1",
+            "2001:20::1",
+            "2001:2f::1",
+            // IPv4-mapped forms of the new IPv4 range.
+            "::ffff:100.64.0.1",
+            "::ffff:100.127.255.254",
+        ];
+        for text in reserved {
+            let ip = text
+                .parse::<IpAddr>()
+                .unwrap_or_else(|_| panic!("bad fixture: {text}"));
+            assert!(
+                is_reserved_or_private_ip(&ip),
+                "{text} must be classified as reserved/private"
+            );
+        }
+
+        // Neighbouring public ranges must not be over-classified.
+        let public = [
+            "100.63.255.255",
+            "100.128.0.0",
+            "8.8.8.8",
+            "1.1.1.1",
+            "2001:1::1",
+            "2001:3::1",
+            "2001:30::1",
+            "2003::1",
+            "2606:4700:4700::1111",
+            "::ffff:8.8.8.8",
+        ];
+        for text in public {
+            let ip = text
+                .parse::<IpAddr>()
+                .unwrap_or_else(|_| panic!("bad fixture: {text}"));
+            assert!(
+                !is_reserved_or_private_ip(&ip),
+                "{text} must remain a permitted public destination"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn reject_domain_resolving_to_loopback() {
         let connector = DirectConnector;
@@ -626,14 +757,26 @@ mod tests {
     async fn direct_connect_falls_back_to_next_resolved_address() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let good_addr = listener.local_addr().unwrap();
-        let bad_addr = SocketAddr::new(good_addr.ip(), good_addr.port() + 1);
+        // Bind-and-release a second port instead of using `good_addr.port() + 1`:
+        // the adjacent port can be held by any other test in this binary that
+        // binds an ephemeral listener, which made the first connect succeed to
+        // the wrong socket and left the `accept` below waiting forever.
+        let bad_addr = {
+            let probe = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = probe.local_addr().unwrap();
+            drop(probe);
+            addr
+        };
 
         let accept = tokio::spawn(async move { listener.accept().await.unwrap() });
         let stream = connect_to_addrs(&[bad_addr, good_addr], None)
             .await
             .expect("second resolved address should be attempted");
         drop(stream);
-        accept.await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(10), accept)
+            .await
+            .expect("listener should accept the fallback connection")
+            .unwrap();
     }
 
     #[tokio::test]
