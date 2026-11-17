@@ -16,8 +16,14 @@
 //! - a failed update leaves the prior installation usable;
 //! - normal operation never touches the network except for this explicit
 //!   command; unit tests never depend on live GitHub availability
-//!   (`EGRESS_UPDATE_BASE_URL` + `file://` fixtures cover the flow
-//!   offline).
+//!   (`EGRESS_UPDATE_BASE_URL` + `file://` fixtures cover the flow offline,
+//!   compiled only for tests or the non-default `update-fixtures` feature);
+//! - every update URL is HTTPS and every integrity decision is made
+//!   in-process; `curl` is resolved from fixed system locations and never
+//!   from `PATH`;
+//! - staging is an unpredictable, owner-only directory created atomically,
+//!   downloads are `create_new`, and the archive is re-hashed immediately
+//!   before extraction.
 
 pub mod download;
 pub mod eggup;
@@ -98,9 +104,10 @@ fn run_update() -> Result<String, UpdateFailure> {
     let current = ReleaseVersion::current();
     let target = detect_target().map_err(UpdateFailure::UnsupportedTarget)?;
 
-    // Test hook: redirect release discovery/downloads at `file://` fixtures
-    // without touching production URLs.
-    let base_override = std::env::var("EGRESS_UPDATE_BASE_URL").ok();
+    // Offline fixture redirect. Only tests or the non-default
+    // `update-fixtures` feature can produce a value here; release builds
+    // ignore `EGRESS_UPDATE_BASE_URL` entirely.
+    let base_override = update_base_url_override();
 
     let latest = discover_latest_release(&base_override)?;
     if current >= latest {
@@ -126,25 +133,41 @@ fn run_update() -> Result<String, UpdateFailure> {
     let (archive_url, checksum_url) = asset_urls(&download_base, target);
 
     let stage = staging_dir()?;
-    let archive_path = stage.join(target::archive_name(target));
-    let checksum_path = stage.join(target::checksum_name(target));
+    let archive_path = stage.path().join(target::archive_name(target));
+    let checksum_path = stage.path().join(target::checksum_name(target));
 
     let outcome = update_from_urls(
         &archive_url,
         &checksum_url,
         target,
         latest,
-        &stage,
+        stage.path(),
         &archive_path,
         &checksum_path,
         &installed_eggress,
         &installed_pproxy,
     );
 
-    let _ = std::fs::remove_dir_all(&stage);
+    // Dropping the guard removes this transaction's private staging tree
+    // (its own path only; best-effort and never an unrelated path).
+    drop(stage);
     let outcome = outcome?;
 
     Ok(format!("updated eggress {current} -> {latest}{outcome}"))
+}
+
+/// Offline fixture redirect for release discovery/downloads.
+///
+/// Compiled away for release/default builds, which therefore never read
+/// `EGRESS_UPDATE_BASE_URL` and cannot be pointed at a `file://` tree.
+#[cfg(any(test, feature = "update-fixtures"))]
+fn update_base_url_override() -> Option<String> {
+    std::env::var("EGRESS_UPDATE_BASE_URL").ok()
+}
+
+#[cfg(not(any(test, feature = "update-fixtures")))]
+fn update_base_url_override() -> Option<String> {
+    None
 }
 
 /// Download, verify, stage, and install one release. Factored out so
@@ -190,8 +213,25 @@ fn update_from_urls(
             installed_eggress.display()
         )));
     }
+    // Re-hash immediately before extraction: the staging directory is
+    // private and create-new, but a replacement after the first verification
+    // must still fail closed instead of extracting unverified bytes.
+    verify_archive_before_extraction(archive_path, &sidecar)?;
     install_pair_via_eggup(archive_path, target, expected, install_dir, stage)
         .map_err(UpdateFailure::Failed)
+}
+
+/// Last integrity gate before extraction.
+///
+/// `verify_archive` already ran once after download; this second hash of the
+/// exact archive file closes the verify/extract window, so a post-verification
+/// replacement is rejected instead of extracted.
+fn verify_archive_before_extraction(archive: &Path, sidecar: &str) -> Result<(), UpdateFailure> {
+    verify::verify_archive(archive, sidecar).map_err(|e| {
+        UpdateFailure::Failed(format!(
+            "{e} (the staged archive changed after checksum verification)"
+        ))
+    })
 }
 
 /// Resolve the latest stable release version from GitHub (or fixtures).
@@ -265,19 +305,32 @@ fn verify_sibling_identity(sibling: &Path, current: ReleaseVersion) -> Result<()
     Ok(())
 }
 
-fn staging_dir() -> Result<PathBuf, UpdateFailure> {
-    let dir = std::env::temp_dir().join(format!("eggress-update-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| UpdateFailure::Failed(format!("cannot create staging directory: {e}")))?;
-    Ok(dir)
+/// Create the private staging directory for one update transaction.
+///
+/// `tempfile` creates the directory atomically under the default temp root
+/// (so filesystem/installation semantics match the previous staging) with an
+/// unpredictable name. The explicit owner-only mode matters: `tempfile`'s
+/// platform default is the process umask (typically `0755`), which would let
+/// another local user read the staged archive and race the output paths.
+fn staging_dir() -> Result<tempfile::TempDir, UpdateFailure> {
+    let mut builder = tempfile::Builder::new();
+    builder.prefix("eggress-update-");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        builder.permissions(std::fs::Permissions::from_mode(0o700));
+    }
+    builder
+        .tempdir()
+        .map_err(|e| UpdateFailure::Failed(format!("cannot create private staging directory: {e}")))
 }
 
 fn map_download_error(error: DownloadError) -> UpdateFailure {
     match error {
-        DownloadError::MissingCurl | DownloadError::NotFound(_) | DownloadError::Transport(_) => {
-            UpdateFailure::ExternalDependency(error.to_string())
-        }
+        DownloadError::MissingCurl(_)
+        | DownloadError::NotFound(_)
+        | DownloadError::Transport(_) => UpdateFailure::ExternalDependency(error.to_string()),
+        DownloadError::UnsafeDestination(_) => UpdateFailure::Failed(error.to_string()),
     }
 }
 
@@ -319,7 +372,7 @@ mod tests {
 
     /// End-to-end offline flow: fixture release metadata + archive +
     /// checksum over `file://`, installed into a temp pair directory.
-    /// Requires `curl`, `tar`, and a SHA-256 tool (present on CI runners).
+    /// Requires a trusted `curl` and `tar` (present on CI runners).
     #[test]
     fn offline_fixture_update_replaces_pair_atomically() {
         let Some(target) = target::detect_target().ok() else {
@@ -328,15 +381,11 @@ mod tests {
         if target::is_windows_target(target) {
             return; // fixture scripts are POSIX shell; Windows covered by installer tests.
         }
-        for tool in ["curl", "tar"] {
-            let available = std::process::Command::new(tool)
-                .arg("--version")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
-            if !available {
-                return;
-            }
+        let Some(tar) = absolute_tar() else {
+            return;
+        };
+        if download::find_curl().is_err() {
+            return;
         }
 
         let root = std::env::temp_dir().join(format!("eggress-update-e2e-{}", std::process::id()));
@@ -367,7 +416,7 @@ mod tests {
         );
         let archive_name = target::archive_name(target);
         let archive_path = release_dir.join(&archive_name);
-        let status = std::process::Command::new("tar")
+        let status = std::process::Command::new(&tar)
             .arg("-czf")
             .arg(&archive_path)
             .arg("-C")
@@ -429,15 +478,11 @@ mod tests {
         if target::is_windows_target(target) {
             return;
         }
-        for tool in ["curl", "tar"] {
-            let available = std::process::Command::new(tool)
-                .arg("--version")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
-            if !available {
-                return;
-            }
+        let Some(tar) = absolute_tar() else {
+            return;
+        };
+        if download::find_curl().is_err() {
+            return;
         }
 
         let root = std::env::temp_dir().join(format!("eggress-update-neg-{}", std::process::id()));
@@ -457,7 +502,7 @@ mod tests {
         );
         let archive_name = target::archive_name(target);
         let archive_path = release_dir.join(&archive_name);
-        std::process::Command::new("tar")
+        std::process::Command::new(&tar)
             .arg("-czf")
             .arg(&archive_path)
             .arg("-C")
@@ -510,5 +555,135 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
+    }
+
+    /// Resolve `tar` once, by absolute path, so a concurrently running test
+    /// that temporarily rewrites `PATH` cannot make a fixture spawn fail.
+    fn absolute_tar() -> Option<PathBuf> {
+        let path_var = std::env::var_os("PATH")?;
+        std::env::split_paths(&path_var)
+            .filter(|dir| !dir.as_os_str().is_empty())
+            .map(|dir| dir.join("tar"))
+            .find(|candidate| candidate.is_file())
+    }
+
+    /// Staging is created atomically with an unpredictable name and
+    /// owner-only permissions; a second transaction never reuses or clears
+    /// the first one's tree.
+    #[test]
+    fn staging_directory_is_private_and_unique() {
+        let first = staging_dir().unwrap();
+        let second = staging_dir().unwrap();
+        assert_ne!(first.path(), second.path());
+        std::fs::write(first.path().join("marker"), b"in-flight").unwrap();
+        assert!(
+            first.path().join("marker").is_file(),
+            "creating a second staging directory must not disturb the first"
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(first.path())
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o700, "staging directory must be owner-only");
+        }
+    }
+
+    /// Concurrent updater attempts get distinct private directories instead
+    /// of racing on one predictable path.
+    #[test]
+    fn concurrent_staging_attempts_do_not_share_a_directory() {
+        let handles: Vec<_> = (0..8)
+            .map(|_| std::thread::spawn(|| staging_dir().unwrap()))
+            .collect();
+        let dirs: Vec<_> = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("staging thread panicked"))
+            .collect();
+        let unique: std::collections::HashSet<_> =
+            dirs.iter().map(|dir| dir.path().to_path_buf()).collect();
+        assert_eq!(
+            unique.len(),
+            dirs.len(),
+            "concurrent staging attempts must never share a path"
+        );
+    }
+
+    /// A replacement after the first checksum verification must fail closed
+    /// before any extraction happens.
+    #[test]
+    fn post_verification_archive_replacement_fails_closed() {
+        let root =
+            std::env::temp_dir().join(format!("eggress-update-toctou-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let archive = root.join("eggress-x86_64-unknown-linux-gnu.tar.gz");
+        std::fs::write(&archive, b"verified-bytes").unwrap();
+        let pristine = verify::compute_sha256(&archive).unwrap();
+        let sidecar = format!("{pristine}  eggress-x86_64-unknown-linux-gnu.tar.gz\n");
+        verify::verify_archive(&archive, &sidecar).expect("first verification passes");
+
+        // Swap the archive after the checksum gate accepted it.
+        std::fs::write(&archive, b"attacker-replacement").unwrap();
+        let err = verify_archive_before_extraction(&archive, &sidecar).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("changed after checksum verification"),
+            "post-verification replacement must fail closed: {err}"
+        );
+        assert_eq!(err.code(), eggress_cli::EXIT_RUNTIME_FAILURE);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `PATH` must never supply an integrity-critical tool: a planted
+    /// `sha256sum` cannot change the digest and a planted `curl` is never
+    /// selected.
+    #[test]
+    fn path_tools_are_not_trusted() {
+        let root = std::env::temp_dir().join(format!("eggress-update-path-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+
+        // `PATH` is process-global; restore it even if an assertion panics.
+        struct PathGuard(Option<std::ffi::OsString>);
+        impl Drop for PathGuard {
+            fn drop(&mut self) {
+                match self.0.take() {
+                    Some(value) => std::env::set_var("PATH", value),
+                    None => std::env::remove_var("PATH"),
+                }
+            }
+        }
+
+        write_script(
+            &root.join("sha256sum"),
+            "echo '0000000000000000000000000000000000000000000000000000000000000000  x'",
+        );
+        write_script(&root.join("curl"), "echo 'fake curl 0.0.0'");
+
+        let guard = PathGuard(std::env::var_os("PATH"));
+        std::env::set_var("PATH", &root);
+
+        let sample = root.join("sample");
+        std::fs::write(&sample, b"abc").unwrap();
+        assert_eq!(
+            verify::compute_sha256(&sample).unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            "a fake `sha256sum` on PATH must not influence verification"
+        );
+        if let Ok(resolved) = download::find_curl() {
+            assert_ne!(
+                resolved,
+                root.join("curl"),
+                "a PATH-only curl must never be selected"
+            );
+        }
+
+        drop(guard);
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -39,6 +39,7 @@ Uses Eggress as an open proxy by connecting to non-loopback listener or admin.
 - Default admin bind is `127.0.0.1:9090`
 - Config validation rejects non-loopback admin binds without authentication
 - Shadowsocks/TLS listeners provide built-in authentication
+- Password-authenticated HTTP/SOCKS listeners on a non-loopback bind emit a non-fatal warning when no `[listeners.tls]` is configured, because the credential would otherwise cross the wire in clear
 - `unsafe_code = "deny"` prevents memory safety issues that could be exploited
 
 ### A2: Malicious Upstream Proxy
@@ -47,6 +48,7 @@ Compromised or malicious upstream server that logs or modifies proxied traffic.
 
 **Mitigations:**
 - TLS transport for upstream connections (`socks5+tls://`, `http+tls://`)
+- Upstream TLS verifies the peer against the bundled Mozilla root set (`webpki-roots`), not the OS certificate store; pinning a private CA replaces that set rather than extending it
 - Operator chooses trusted upstreams
 - Upstream traffic is inherently trust-dependent
 
@@ -119,6 +121,31 @@ Attacker reading logs, metrics, or admin output for credentials.
 - Admin snapshots expose only metadata, not credentials
 - Metrics labels never contain raw URIs or passwords
 
+### A10: DNS-Rebinding Web Page (admin surface)
+
+A page on an attacker-controlled origin resolves its own hostname to
+`127.0.0.1` and issues same-origin requests to the local admin port. Without a
+`Host` check the browser's request is indistinguishable from an operator's, so
+`/-/status`, `/-/config`, `/-/routes`, `/-/upstreams`, `/-/reverse`, and
+`/metrics` become readable and `POST /-/route-explain` becomes callable.
+
+**Mitigations:**
+- The admin server validates the `Host` header against `[admin] allowed_hosts`
+  plus bind-derived defaults (`localhost`, `127.0.0.1`, `::1` for a loopback
+  bind) before authentication and before any request body is read; a missing,
+  unparseable, or unlisted host returns a generic `400 Bad Request` with no
+  echo of the value
+- `X-Forwarded-Host` is ignored: only the actual `Host` header counts
+- `POST /-/route-explain` requires `Content-Type: application/json` and rejects
+  an `Origin` whose host is not allowlisted (including `Origin: null` unless
+  the literal entry `null` is configured)
+- The admin surface stays read-only apart from the dry-run `route-explain`
+  endpoint, so a successful rebinding read leaks topology, not state changes
+- Non-loopback admin binds require authentication and additionally emit a
+  plaintext-HTTP warning; admin has no native TLS, so remote access belongs on
+  a VPN/SSH tunnel or behind a TLS-terminating reverse proxy whose host name is
+  listed in `allowed_hosts`
+
 ## Entry Points
 
 | Entry Point | Protocol | Auth | Default Bind |
@@ -127,7 +154,7 @@ Attacker reading logs, metrics, or admin output for credentials.
 | UDP listener | SOCKS5 UDP associate | Via TCP control | `127.0.0.1:0` |
 | Transparent listener | iptables REDIRECT / PF | None (OS-level) | N/A (kernel) |
 | Unix socket | SOCKS4/5, HTTP | Optional (OS perms) | `/var/run/eggress.sock` |
-| Admin server | HTTP | None (loopback only) | `127.0.0.1:9090` |
+| Admin server | HTTP | None (loopback only); `Host`/`Origin` allowlisted | `127.0.0.1:9090` |
 | Reverse control | Custom binary | Optional | Configurable |
 | Python embed | In-process | Application | N/A |
 
@@ -149,3 +176,21 @@ Attacker reading logs, metrics, or admin output for credentials.
 14. Graceful shutdown ordering (drain before cancel)
 15. No secrets in Python package data
 16. Config warnings for non-loopback binds without authentication
+17. SOCKS4 listeners with `[listeners.auth]` require the full pproxy `user:pass`
+    string in the SOCKS4 user-ID field; a username-only or wrong-password
+    attempt fails before any tunnel is created and never seeds the shared
+    IP-reuse cache
+18. `allow_private_egress = false` is applied after DNS on every locally
+    resolving UDP path (standalone SOCKS5 UDP, SOCKS5 UDP ASSOCIATE, standalone
+    Shadowsocks UDP): all answers of the single lookup are filtered through the
+    shared special-purpose/private classifier and a private-only resolution is
+    dropped without creating a flow
+19. The shared special-purpose classifier covers CGNAT `100.64.0.0/10`, NAT64
+    `64:ff9b::/96`, 6to4 `2002::/16`, Teredo `2001::/32`, IPv6 benchmarking
+    `2001:2::/48`, and ORCHID `2001:10::/28` / `2001:20::/28`, including
+    IPv4-mapped forms
+20. Admin `Host`/`Origin` validation against `[admin] allowed_hosts` (plus
+    bind-derived loopback defaults) blocks DNS-rebinding reads; `route-explain`
+    additionally requires a JSON content type
+21. IPv4-mapped IPv6 literals are canonicalized before `destination_cidr` /
+    `source_cidr` matching, so the mapped form cannot bypass an IPv4 CIDR rule

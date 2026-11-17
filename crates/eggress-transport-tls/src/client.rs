@@ -12,7 +12,8 @@ static DEFAULT_H2_CLIENT_CONFIG: OnceLock<Arc<ClientConfig>> = OnceLock::new();
 
 /// Return the process-shared verified client configuration for ordinary TLS.
 ///
-/// The configuration contains only immutable public system roots and no
+/// The configuration contains only the immutable bundled Mozilla root set
+/// (from `webpki-roots`, not the operating-system store) and no
 /// destination-specific state. Callers that need custom roots, client
 /// identity, or a caller-owned override must continue to use the builder.
 ///
@@ -166,7 +167,14 @@ impl TlsClientConfigBuilder {
         }
     }
 
-    /// Load system root certificates (via webpki-roots).
+    /// Extend the root store with the bundled Mozilla root certificate set
+    /// published by the `webpki-roots` crate.
+    ///
+    /// The historical method name notwithstanding, this is **not** the
+    /// operating-system trust store: the roots are compiled into the binary
+    /// and change only when the `webpki-roots` dependency is updated.
+    /// [`TlsClientConfigBuilder::with_custom_ca_pem`] *replaces* this set
+    /// rather than extending it.
     pub fn with_system_roots(mut self) -> Result<Self, TlsError> {
         self.root_store
             .extend(webpki_roots::TLS_SERVER_ROOTS.iter().map(|r| r.to_owned()));
@@ -371,12 +379,17 @@ mod tests {
     #[test]
     fn builder_system_roots() {
         init();
-        let config = TlsClientConfigBuilder::new()
-            .with_system_roots()
-            .unwrap()
-            .build()
-            .unwrap();
-        // Config built successfully with system roots
+        let builder = TlsClientConfigBuilder::new().with_system_roots().unwrap();
+        // The default trust set is the bundled `webpki-roots` store: it must
+        // be non-empty and match the compiled-in root count exactly, so an
+        // accidental empty/foreign root set cannot pass unnoticed.
+        assert!(!builder.root_store.is_empty());
+        assert_eq!(
+            builder.root_store.len(),
+            webpki_roots::TLS_SERVER_ROOTS.len()
+        );
+        let config = builder.build().unwrap();
+        // Config built successfully with the bundled roots
         assert!(config.alpn_protocols.is_empty());
     }
 
@@ -459,6 +472,47 @@ mod tests {
         assert_eq!(&buf[..n], b"hello");
 
         server_handle.await.unwrap();
+    }
+
+    /// The shared default configuration must stay on the strict verifier
+    /// path: a peer that only presents a self-signed certificate is
+    /// rejected. This is the regression guard for the advisory remediation;
+    /// a silent insecure fallback would let the handshake succeed.
+    #[tokio::test]
+    async fn default_verified_config_rejects_self_signed_server() {
+        init();
+        let (cert_pem, key_pem) = crate::self_signed_cert();
+
+        let server_config = crate::TlsServerConfigBuilder::new()
+            .with_certificate_pem(cert_pem.as_bytes())
+            .unwrap()
+            .with_key_pem(key_pem.as_bytes())
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let client_config = crate::default_client_config().unwrap();
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server_handle = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let boxed: eggress_core::BoxStream = Box::new(stream);
+            // The client aborts after certificate verification fails; the
+            // server side is expected to error and its error is dropped.
+            let _ = crate::tls_accept(boxed, server_config).await;
+        });
+
+        let tcp = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let boxed: eggress_core::BoxStream = Box::new(tcp);
+        let result = crate::tls_connect(boxed, client_config, "localhost").await;
+        assert!(
+            result.is_err(),
+            "default client config must not accept a self-signed certificate"
+        );
+
+        server_handle.abort();
     }
 
     #[test]

@@ -389,6 +389,7 @@ mod tests {
             reverse_registry: Arc::new(crate::reverse::ReverseRegistry::new()),
             metrics_enabled: true,
             auth: None,
+            allowed_hosts: eggress_config::compile::derive_allowed_hosts("127.0.0.1:9090"),
         };
         let cancel = tokio_util::sync::CancellationToken::new();
         let server = crate::server::AdminServer::new("127.0.0.1:0", cancel.clone())

@@ -224,27 +224,107 @@ fn redact_unix_path(path: &str) -> String {
     }
 }
 
+/// Placeholder for a redacted userinfo span.
+///
+/// Passwords are indistinguishable from usernames once redacted, but keeping
+/// the `user:pass` shape signals that both parts were present.
+fn userinfo_placeholder(userinfo: &str) -> &'static str {
+    if userinfo.contains(':') {
+        "****:****@"
+    } else {
+        "****@"
+    }
+}
+
+/// Replace userinfo (`user:pass@`) with a placeholder on every `scheme://` hop.
+///
+/// Hop-aware so chained input (`socks5://u:p@a__http://u:p@b`) redacts both
+/// hops instead of collapsing the first one. The scan is bounded to each
+/// hop's authority so an `@` in a query/path is never treated as userinfo.
+/// Uses the canonical bracket-aware last-`@` separator so an `@` inside the
+/// password stays inside the redacted span; an unmatched `[`/`{` falls back
+/// to the last raw `@` so malformed input can never echo credentials.
+fn redact_userinfo_in_hops(input: &str) -> String {
+    let mut out = String::with_capacity(input.len().min(288));
+    let mut rest = input;
+    loop {
+        let Some(scheme_end) = rest.find("://") else {
+            out.push_str(rest);
+            break;
+        };
+        let after = scheme_end + 3;
+        out.push_str(&rest[..after]);
+        let remainder = &rest[after..];
+        // Authority ends at the first path/query/fragment delimiter.
+        let hard_end = remainder.find(['/', '?', '#']).unwrap_or(remainder.len());
+        let authority = &remainder[..hard_end];
+        let Some(at) =
+            uri_syntax::find_userinfo_separator(authority).or_else(|| authority.rfind('@'))
+        else {
+            // No credentials in this hop; re-emit the authority verbatim.
+            out.push_str(authority);
+            rest = &remainder[hard_end..];
+            continue;
+        };
+        // A `__` after the userinfo separator starts the next chained hop
+        // (or is part of a hostname). Splitting there is safe because the
+        // host/tail is re-emitted verbatim, and it lets the next iteration
+        // redact the following hop's userinfo.
+        let host_end = authority[at + 1..]
+            .find("__")
+            .map(|idx| at + 1 + idx)
+            .unwrap_or(authority.len());
+        out.push_str(userinfo_placeholder(&authority[..at]));
+        out.push_str(&authority[at + 1..host_end]);
+        rest = &remainder[host_end..];
+    }
+    out
+}
+
+/// Redact credentials in a single URI token.
+///
+/// Userinfo becomes `****:****@` / `****@`; fragment auth (`#user:pass`)
+/// becomes `#****` and everything after the first `#` is dropped so a
+/// fragment can never leak. Everything else (scheme, host, port, query,
+/// `__` chain separators) is preserved byte-for-byte.
+pub(crate) fn redact_uri_token(token: &str) -> String {
+    let mut out = redact_userinfo_in_hops(token);
+    if let Some(hash) = out.find('#') {
+        out.truncate(hash);
+        out.push_str("#****");
+    }
+    out
+}
+
 /// Redact secret-bearing URI input before embedding it in error messages.
-fn redact_uri_for_error(uri: &str) -> String {
+pub(crate) fn redact_uri_for_error(uri: &str) -> String {
     // Strip userinfo (`user:pass@`) and fragment auth; keep the remainder for
     // diagnostics. Bound length so huge inputs cannot blow up logs.
-    // Uses the canonical bracket-aware last-`@` separator so a `@` inside
-    // the password does not leak a fragment into the redacted output.
-    let mut out = uri.to_string();
-    if let Some(scheme_end) = out.find("://") {
-        let after = scheme_end + 3;
-        if let Some(at) = uri_syntax::find_userinfo_separator(&out[after..]) {
-            out.replace_range(after..after + at + 1, "****:****@");
-        }
-    }
-    if let Some((head, _)) = out.split_once('#') {
-        out = format!("{head}#****");
-    }
+    let mut out = redact_uri_token(uri);
     if out.len() > 256 {
         out.truncate(256);
         out.push_str("...");
     }
     out
+}
+
+/// Redact credentials from a raw compatibility argv slice for annotation.
+///
+/// Flags and non-URI tokens are preserved verbatim. Tokens containing a
+/// `scheme://` hop are redacted per [`redact_uri_token`], so a reproduction
+/// line keeps its flags, `__` chain separators, and query strings while
+/// never echoing a username, password, or fragment credential.
+pub fn redact_argv_for_annotation(args: &[String]) -> String {
+    args.iter()
+        .map(|arg| {
+            if arg.contains("://") {
+                redact_uri_token(arg)
+            } else {
+                arg.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Shared host formatting (bracket IPv6 literals).
@@ -1538,5 +1618,95 @@ mod tests {
             chain.hops[0].fixed_target.as_deref(),
             Some("example.com:443")
         );
+    }
+
+    #[test]
+    fn test_redact_uri_for_error_hides_credentials() {
+        assert_eq!(
+            redact_uri_for_error("socks5://user:pass@127.0.0.1:1080"),
+            "socks5://****:****@127.0.0.1:1080"
+        );
+        // Last-`@` separator keeps a password containing `@` inside the span.
+        assert_eq!(
+            redact_uri_for_error("http://user:p@ss@proxy:8080"),
+            "http://****:****@proxy:8080"
+        );
+        // Bracketed password + IPv6 host.
+        assert_eq!(
+            redact_uri_for_error("socks5://user:p[a]ss@[::1]:1080"),
+            "socks5://****:****@[::1]:1080"
+        );
+        // Unmatched bracket falls back to the last raw `@` (never leaks).
+        assert_eq!(
+            redact_uri_for_error("socks5://user:p[a@host:1080"),
+            "socks5://****:****@host:1080"
+        );
+        // Percent-escaped delimiter bytes stay inside the redacted span.
+        assert_eq!(
+            redact_uri_for_error("http://us%40er:pa%3Ass@proxy:8080"),
+            "http://****:****@proxy:8080"
+        );
+        // Username-only userinfo keeps the short placeholder.
+        assert_eq!(
+            redact_uri_for_error("socks5://user@proxy:1080"),
+            "socks5://****@proxy:1080"
+        );
+        // Chained hops and query strings survive redaction.
+        assert_eq!(
+            redact_uri_for_error("socks5://u:p@a:1__http://x:y@b:2?rule=a__b"),
+            "socks5://****:****@a:1__http://****:****@b:2?rule=a__b"
+        );
+        // Fragment auth is replaced wholesale.
+        assert_eq!(
+            redact_uri_for_error("http://proxy:8080#user:pass"),
+            "http://proxy:8080#****"
+        );
+        // Non-credential and non-URI input are unchanged.
+        assert_eq!(redact_uri_for_error("file:///tmp/x"), "file:///tmp/x");
+        assert_eq!(redact_uri_for_error("not a uri"), "not a uri");
+        assert_eq!(
+            redact_uri_for_error("socks5://[::1]:1080"),
+            "socks5://[::1]:1080"
+        );
+        // Oversized input is bounded and still hides the secret.
+        let long = format!("socks5://user:{}@host:1080", "s".repeat(400));
+        let redacted = redact_uri_for_error(&long);
+        assert!(redacted.len() <= 259, "redaction must bound length");
+        assert!(!redacted.contains(&"s".repeat(16)));
+    }
+
+    #[test]
+    fn test_redact_argv_for_annotation_preserves_flags_and_chains() {
+        let args: Vec<String> = [
+            "-l",
+            "socks5://user:pass@127.0.0.1:1080",
+            "-r",
+            "http://user:pass@a:8080__socks5://b:1080?rule=x__y",
+            "--auth",
+            "30",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let redacted = redact_argv_for_annotation(&args);
+        assert_eq!(
+            redacted,
+            "-l socks5://****:****@127.0.0.1:1080 \
+             -r http://****:****@a:8080__socks5://b:1080?rule=x__y --auth 30"
+        );
+        assert!(!redacted.contains("user"));
+        assert!(!redacted.contains("pass"));
+    }
+
+    #[test]
+    fn test_redact_argv_for_annotation_username_only_and_fragments() {
+        let args: Vec<String> = ["-l", "socks5://user@proxy:1080#u:p", "-r", "direct://"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let redacted = redact_argv_for_annotation(&args);
+        assert_eq!(redacted, "-l socks5://****@proxy:1080#**** -r direct://");
+        assert!(!redacted.contains("user"));
+        assert!(!redacted.contains("u:p"));
     }
 }

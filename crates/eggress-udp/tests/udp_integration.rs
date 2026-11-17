@@ -18,6 +18,7 @@ async fn direct_flow_ipv4_echo() {
     let flow = UdpTargetFlow::new(
         SocksAddr::IPv4([127, 0, 0, 1], echo_addr.port()),
         "127.0.0.1:0".parse().unwrap(),
+        true,
     )
     .await
     .unwrap();
@@ -35,6 +36,7 @@ async fn direct_flow_multiple_packets() {
     let flow = UdpTargetFlow::new(
         SocksAddr::IPv4([127, 0, 0, 1], echo_addr.port()),
         "127.0.0.1:0".parse().unwrap(),
+        true,
     )
     .await
     .unwrap();
@@ -57,6 +59,7 @@ async fn direct_flow_metrics_tracking() {
     let flow = UdpTargetFlow::new(
         SocksAddr::IPv4([127, 0, 0, 1], echo_addr.port()),
         "127.0.0.1:0".parse().unwrap(),
+        true,
     )
     .await
     .unwrap();

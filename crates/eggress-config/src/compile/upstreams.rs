@@ -199,6 +199,8 @@ pub(crate) fn compile_upstreams(config: &ConfigFile) -> Result<Vec<UpstreamConfi
                 }
             }
 
+            warn_if_insecure_hops(u.id.as_str(), &chain);
+
             let health = compile_health_config(u.health.as_ref()).map_err(|e| match e {
                 ConfigError::Validation { path, message } => {
                     ConfigError::validation(&format!("upstream {}.{}", u.id, path), &message)
@@ -272,4 +274,200 @@ pub(crate) fn compile_groups(config: &ConfigFile) -> Result<Vec<UpstreamGroupCon
             })
         })
         .collect()
+}
+
+/// Emit one compile-time security notice per upstream that explicitly selects
+/// a certificate-verification bypass through `?insecure`.
+///
+/// The notice names the upstream id plus the affected hop indexes and
+/// protocols only. Hop endpoints, credentials, and every other secret-bearing
+/// part of the source URI are deliberately omitted. It is emitted while
+/// configuration is compiled, so it fires once per load/reload — before any
+/// chain is executed — rather than once per connection or packet.
+fn warn_if_insecure_hops(upstream_id: &str, chain: &eggress_uri::ProxyChainSpec) {
+    let Some(summary) = insecure_hop_summary(chain) else {
+        return;
+    };
+    tracing::warn!(
+        upstream = %upstream_id,
+        insecure_hops = %summary,
+        policy = "insecure-tls",
+        "upstream explicitly disables TLS certificate verification (?insecure); \
+         peer certificates for these hops are not validated"
+    );
+}
+
+/// Describe the hops of `chain` that set `?insecure`, as
+/// `hop <index> (<protocol>[+<protocol>])` entries joined by `, `.
+///
+/// Returns `None` when every hop verifies certificates. Kept separate from the
+/// logging call so the redacted shape can be asserted directly in tests.
+fn insecure_hop_summary(chain: &eggress_uri::ProxyChainSpec) -> Option<String> {
+    let summary: Vec<String> = chain
+        .hops
+        .iter()
+        .enumerate()
+        .filter(|(_, hop)| hop.insecure)
+        .map(|(idx, hop)| {
+            let protocols: Vec<&str> = hop
+                .protocols
+                .iter()
+                .map(|protocol| protocol.canonical_name())
+                .collect();
+            format!("hop {idx} ({})", protocols.join("+"))
+        })
+        .collect();
+    if summary.is_empty() {
+        None
+    } else {
+        Some(summary.join(", "))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use tracing::field::{Field, Visit};
+    use tracing::span::{Attributes, Id, Record};
+    use tracing::{Event, Metadata, Subscriber};
+
+    use super::*;
+
+    fn parse_chain(uri: &str) -> eggress_uri::ProxyChainSpec {
+        eggress_uri::parse_proxy_chain(uri).expect("test URI must parse")
+    }
+
+    #[test]
+    fn insecure_hop_summary_is_none_for_verified_chain() {
+        let chain = parse_chain("socks5://hop1:1080__http://hop2:8080");
+        assert!(insecure_hop_summary(&chain).is_none());
+    }
+
+    #[test]
+    fn insecure_hop_summary_names_only_hop_index_and_protocols() {
+        let chain =
+            parse_chain("socks5://user:topsecret@insecure.example:1080?insecure__http://hop2:8080");
+        let summary = insecure_hop_summary(&chain).expect("hop 0 selects ?insecure");
+        assert_eq!(summary, "hop 0 (socks5)");
+        assert!(
+            !summary.contains("topsecret"),
+            "credentials leaked: {summary}"
+        );
+        assert!(
+            !summary.contains("insecure.example"),
+            "host leaked: {summary}"
+        );
+        assert!(!summary.contains("1080"), "port leaked: {summary}");
+    }
+
+    #[test]
+    fn insecure_hop_summary_lists_every_insecure_hop() {
+        let chain = parse_chain("socks5://a:1?insecure__http://b:2?insecure");
+        let summary = insecure_hop_summary(&chain).expect("both hops select ?insecure");
+        assert_eq!(summary, "hop 0 (socks5), hop 1 (http)");
+    }
+
+    /// Minimal subscriber that records every event's fields as
+    /// `name=value` pairs, so a compile-time warning can be asserted without
+    /// adding a logging test dependency.
+    #[derive(Default)]
+    struct CaptureSubscriber {
+        events: Arc<Mutex<Vec<String>>>,
+    }
+
+    struct FieldCollector(Vec<String>);
+
+    impl Visit for FieldCollector {
+        fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+            self.0.push(format!("{}={value:?}", field.name()));
+        }
+    }
+
+    impl Subscriber for CaptureSubscriber {
+        fn enabled(&self, _metadata: &Metadata<'_>) -> bool {
+            true
+        }
+
+        fn new_span(&self, _span: &Attributes<'_>) -> Id {
+            Id::from_u64(1)
+        }
+
+        fn record(&self, _span: &Id, _values: &Record<'_>) {}
+
+        fn record_follows_from(&self, _span: &Id, _follows: &Id) {}
+
+        fn event(&self, event: &Event<'_>) {
+            let mut collector = FieldCollector(Vec::new());
+            event.record(&mut collector);
+            self.events.lock().unwrap().push(collector.0.join(" "));
+        }
+
+        fn enter(&self, _span: &Id) {}
+
+        fn exit(&self, _span: &Id) {}
+    }
+
+    fn compile_and_capture(config_toml: &str) -> Vec<String> {
+        let config: crate::model::ConfigFile =
+            toml::from_str(config_toml).expect("test config must parse");
+
+        let subscriber = CaptureSubscriber::default();
+        let events = Arc::clone(&subscriber.events);
+        tracing::subscriber::with_default(subscriber, || {
+            compile_upstreams(&config).expect("upstreams must compile");
+        });
+        let captured = events.lock().unwrap().clone();
+        captured
+    }
+
+    #[test]
+    fn compile_warns_once_for_the_insecure_upstream_only() {
+        let events = compile_and_capture(
+            r#"
+version = 1
+
+[[upstreams]]
+id = "verified"
+uri = "socks5://verify.example:1080"
+
+[[upstreams]]
+id = "bypassed"
+uri = "socks5://user:topsecret@insecure.example:1080?insecure"
+"#,
+        );
+
+        assert_eq!(
+            events.len(),
+            1,
+            "exactly one notice expected, got {events:?}"
+        );
+        let notice = &events[0];
+        assert!(notice.contains("upstream=bypassed"), "{notice}");
+        assert!(notice.contains("insecure_hops=hop 0 (socks5)"), "{notice}");
+        assert!(notice.contains("insecure-tls"), "{notice}");
+        assert!(
+            !notice.contains("topsecret"),
+            "credentials leaked: {notice}"
+        );
+        assert!(
+            !notice.contains("insecure.example"),
+            "host leaked: {notice}"
+        );
+    }
+
+    #[test]
+    fn compile_does_not_warn_when_every_hop_verifies() {
+        let events = compile_and_capture(
+            r#"
+version = 1
+
+[[upstreams]]
+id = "verified"
+uri = "socks5+tls://verify.example:1080"
+"#,
+        );
+
+        assert!(events.is_empty(), "unexpected notice: {events:?}");
+    }
 }

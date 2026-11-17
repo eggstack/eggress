@@ -44,7 +44,7 @@ async fn http_get(addr: &str, path: &str) -> (u16, String) {
 async fn http_post(addr: &str, path: &str, body: &str) -> (u16, String) {
     let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
     let request = format!(
-        "POST {path} HTTP/1.1\r\nHost: {addr}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        "POST {path} HTTP/1.1\r\nHost: {addr}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
     tokio::io::AsyncWriteExt::write_all(&mut stream, request.as_bytes())
@@ -135,6 +135,7 @@ fn test_state_with_listeners() -> AdminState {
         reverse_registry: Arc::new(eggress_admin::ReverseRegistry::new()),
         metrics_enabled: true,
         auth: None,
+        allowed_hosts: eggress_config::compile::derive_allowed_hosts("127.0.0.1:9090"),
     }
 }
 
@@ -536,6 +537,16 @@ enabled = true
         "source=10.1.2.3 should match internal-only rule"
     );
 
+    // An IPv4-mapped IPv6 source is canonicalized before the CIDR comparison,
+    // so it cannot bypass the IPv4 source rule.
+    let mapped_body = r#"{"target":"example.com:443","listener":"http-in","protocol":"http","source":"[::ffff:10.1.2.3]:5000"}"#;
+    let (_status, body) = http_post(&admin_addr, "/-/route-explain", mapped_body).await;
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        json["matched_rule"], "internal-only",
+        "mapped IPv6 source should match the IPv4 source CIDR rule"
+    );
+
     let external_body = r#"{"target":"example.com:443","listener":"http-in","protocol":"http","source":"192.0.2.10:5000"}"#;
     let (_status, body) = http_post(&admin_addr, "/-/route-explain", external_body).await;
     let json: serde_json::Value = serde_json::from_str(&body).unwrap();
@@ -842,4 +853,150 @@ async fn admin_rejects_oversized_post_body() {
         status == 413,
         "oversized POST body should be rejected with 413, got status {status}"
     );
+}
+
+async fn http_raw(addr: &str, request: &str) -> (u16, String) {
+    let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+    tokio::io::AsyncWriteExt::write_all(&mut stream, request.as_bytes())
+        .await
+        .unwrap();
+    tokio::io::AsyncWriteExt::flush(&mut stream).await.unwrap();
+
+    let mut response = Vec::new();
+    loop {
+        let mut buf = [0u8; 4096];
+        match tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await {
+            Ok(0) => break,
+            Ok(n) => response.extend_from_slice(&buf[..n]),
+            Err(_) => break,
+        }
+    }
+    let response = String::from_utf8_lossy(&response);
+    let status_line = response.lines().next().unwrap_or("");
+    let status = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse::<u16>().ok())
+        .unwrap_or(0);
+    let body = response.split("\r\n\r\n").nth(1).unwrap_or("").to_string();
+    (status, body)
+}
+
+#[tokio::test]
+async fn admin_host_origin_and_content_type_policy_from_config() {
+    use std::io::Write as _;
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[[rules]]
+id = "only"
+any = true
+direct = true
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+allowed_hosts = ["admin.example"]
+"#;
+    let _supervisor_guard = supervisor_test_guard().await;
+    let mut f = tempfile::NamedTempFile::new().unwrap();
+    f.write_all(config.as_bytes()).unwrap();
+    f.flush().unwrap();
+    let path = f.path().to_str().unwrap().to_string();
+
+    let mut sup = eggress_runtime::ServiceSupervisor::start(&path).unwrap();
+    let token = sup.shutdown_token();
+    struct AutoShutdown(tokio_util::sync::CancellationToken);
+    impl Drop for AutoShutdown {
+        fn drop(&mut self) {
+            self.0.cancel();
+        }
+    }
+    let _shutdown = AutoShutdown(token.clone());
+    let state = sup.state().clone();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..50 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed));
+
+    let admin_addr = state
+        .admin_local_addr
+        .lock()
+        .unwrap()
+        .expect("admin should have bound")
+        .to_string();
+    let request_body = r#"{"target":"example.com:443","listener":"http-in","protocol":"http"}"#;
+
+    // 1. A DNS-rebinding style Host is rejected even though the request is a
+    //    plain read of routing topology.
+    let request = concat!(
+        "GET /-/routes HTTP/1.1\r\n",
+        "Host: attacker.example\r\n",
+        "Connection: close\r\n\r\n",
+    );
+    let (status, body) = http_raw(&admin_addr, request).await;
+    assert_eq!(status, 400, "attacker Host must be rejected");
+    assert_eq!(body, "bad request");
+    assert!(!body.contains("attacker"));
+    assert!(!body.contains("only"));
+
+    // 2. The configured host is accepted (port-insensitive).
+    let request = concat!(
+        "GET /-/routes HTTP/1.1\r\n",
+        "Host: admin.example:9090\r\n",
+        "Connection: close\r\n\r\n",
+    );
+    let (status, body) = http_raw(&admin_addr, request).await;
+    assert_eq!(status, 200, "configured host must be accepted: {body}");
+
+    // 3. route-explain requires a JSON content type.
+    let request = format!(
+        "POST /-/route-explain HTTP/1.1\r\nHost: admin.example\r\n\
+         Content-Length: {}\r\nConnection: close\r\n\r\n{request_body}",
+        request_body.len()
+    );
+    let (status, _) = http_raw(&admin_addr, &request).await;
+    assert_eq!(status, 415, "missing JSON content type must be rejected");
+
+    // 4. A cross-origin POST is rejected; the rejected origin is not echoed.
+    let request = format!(
+        "POST /-/route-explain HTTP/1.1\r\nHost: admin.example\r\n\
+         Content-Type: application/json\r\nOrigin: https://attacker.example\r\n\
+         Content-Length: {}\r\nConnection: close\r\n\r\n{request_body}",
+        request_body.len()
+    );
+    let (status, body) = http_raw(&admin_addr, &request).await;
+    assert_eq!(status, 403, "cross-origin POST must be rejected");
+    assert!(
+        !body.contains("attacker"),
+        "origin must not be echoed: {body}"
+    );
+
+    // 5. A same-origin POST with JSON still works.
+    let request = format!(
+        "POST /-/route-explain HTTP/1.1\r\nHost: admin.example\r\n\
+         Content-Type: application/json\r\nOrigin: http://admin.example\r\n\
+         Content-Length: {}\r\nConnection: close\r\n\r\n{request_body}",
+        request_body.len()
+    );
+    let (status, body) = http_raw(&admin_addr, &request).await;
+    assert_eq!(status, 200, "same-origin POST must succeed: {body}");
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(json["matched_rule"], "only");
+
+    token.cancel();
+    jh.await.ok();
 }

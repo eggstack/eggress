@@ -20,7 +20,7 @@ on `pproxy.server.main` at the pinned oracle commit.
 | `--ssl SSLFILE` | one | optional | listener certificate/key configuration |
 | `--pac PAC` | one | optional | admin PAC route |
 | `--get GETS` | one | repeatable | admin static content (`PATH,FILE`) |
-| `--auth AUTHTIME` | integer | default `2592000` | bounded source-IP auth reuse when listener credentials exist |
+| `--auth AUTHTIME` | integer | default `2592000` | source-IP re-authentication reuse interval for listener-URI credentials; `0` disables practical reuse |
 | `--sys` | flag | false | apply after bind and restore on shutdown/failure |
 | `--reuse` | flag | false | set SO_REUSEPORT before TCP bind where supported |
 | `--daemon` | flag | false | parsed, then rejected before startup (exit 5) |
@@ -33,6 +33,15 @@ execution gate. Missing values, invalid integers, invalid scheduler choices,
 unknown options, malformed URI values, and unsupported options fail before any
 listener or system-proxy side effect. Parser errors use exit code 2;
 unsupported features use exit code 5.
+
+Listener credentials are not a flag: they come from the listener URI
+(`-l http://:8080#user:pass` in pproxy's fragment form, or
+`-l http://user:pass@:8080` userinfo). `[listeners.auth]` is generated from
+them, and `--auth AUTHTIME` only sets the source-IP re-authentication reuse
+interval (default `2592000` seconds / 30 days when omitted; `0` disables
+practical reuse). The compatibility process emits one startup warning
+describing the process-global, source-IP-keyed, cross-listener cache; the
+warning never contains listener URIs or credentials.
 
 `-d` and `-v` follow argparse count semantics, including repeated separate
 flags and short clusters such as `-dd`, `-vv`, and `-dv`. Explicit `RUST_LOG`

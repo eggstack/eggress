@@ -11,7 +11,7 @@ transport-agnostic.
 
 | Crate | Root file | Lines | Role |
 |---|---|---|---|
-| `eggress-transport-ssh` | `src/lib.rs` | 572 | SSH client session cache, channel open, remote forward |
+| `eggress-transport-ssh` | `src/lib.rs` | 749 | SSH client session cache, channel open, remote forward |
 | `eggress-transport-quic` | `src/lib.rs` | 609 | QUIC client/listener/connection/stream over quinn |
 | `eggress-protocol-h3` | `src/lib.rs` | 492 | HTTP/3 CONNECT client and server over QUIC |
 
@@ -25,46 +25,54 @@ Single-file crate. All types and logic live in `src/lib.rs`.
 
 | Item | Line | Description |
 |---|---|---|
-| `SshSessionCache` | :250 | `Arc<Mutex<HashMap<SshSessionKey, Arc<SessionHandle>>>>` cache |
-| `::new()` / `::new_compatibility()` / `::with_known_hosts(path)` | :262/:279/:287 | Constructor variants |
-| `::policy()` | :270 | Return the cache's `SshHostKeyPolicy` |
-| `::open_tcp_channel()` | :295 | Direct TCP channel; validates port != 0 |
-| `::open_tcp_channel_fresh()` | :315 | Unpooled TCP channel for nested hops (fresh session over the supplied prefix stream) |
-| `::open_unix_channel()` | :362 | Unix domain socket channel; validates non-empty path |
-| `::open_unix_channel_fresh()` | :338 | Unpooled Unix channel for nested hops |
-| `::start_remote_tcp_forward()` | :386 | Server-side TCP forwarding (pproxy compat) |
-| `::shutdown()` / `::invalidate(key)` | :473/:478 | Bulk clear / single session eviction |
+| `SshSessionCache` | :284 | `Arc<Mutex<HashMap<SshSessionKey, Arc<SessionHandle>>>>` cache |
+| `::new()` / `::new_compatibility()` / `::with_known_hosts(path)` | :296/:313/:321 | Constructor variants |
+| `::policy()` | :304 | Return the cache's `SshHostKeyPolicy` |
+| `::open_tcp_channel()` | :329 | Direct TCP channel; validates port != 0 |
+| `::open_tcp_channel_fresh()` | :349 | Unpooled TCP channel for nested hops (fresh session over the supplied prefix stream) |
+| `::open_unix_channel()` | :396 | Unix domain socket channel; validates non-empty path |
+| `::open_unix_channel_fresh()` | :372 | Unpooled Unix channel for nested hops |
+| `::start_remote_tcp_forward()` | :420 | Server-side TCP forwarding (pproxy compat) |
+| `::shutdown()` / `::invalidate(key)` | :507/:512 | Bulk clear / single session eviction |
 | `SshStream` | :15 | Boxed SSH channel stream alias |
 | `SshTransportError` | — | Transport error taxonomy |
-| `SshRemoteForward::address()` / `::port()` | :218/:223 | Bound forward address introspection |
+| `SshRemoteForward::address()` / `::port()` | :252/:257 | Bound forward address introspection |
 | `SshAuth` | :44 | `Password(String)` or `PrivateKey(String)` — the latter is a filesystem *path* loaded via `russh::keys::load_secret_key`; debug redacts both |
 | `SshHostKeyPolicy` | :120 | `KnownHosts` / `KnownHostsFile(PathBuf)` / `InsecureCompatibility` |
 | `SshSessionKey` | :64 | Cache key: `host`, `port`, `username`, `auth`, `hop_index`, `policy` |
-| `SshRemoteForward` | :209 | Session handle + `mpsc::Receiver` for forwarded channels |
-| `SshRemoteForward::accept()` | :228 | Wait for next incoming connection |
-| `SshRemoteForward::cancel()` | :236 | Cancel forward while retaining session |
+| `SshRemoteForward` | :243 | Session handle + `mpsc::Receiver` for forwarded channels |
+| `SshRemoteForward::accept()` | :262 | Wait for next incoming connection |
+| `SshRemoteForward::cancel()` | :270 | Cancel forward while retaining session |
 
 ### How it works
 
-1. `get_or_connect()` (:423) locks cache, checks `!session.is_closed()`,
+1. `get_or_connect()` (:457) locks cache, checks `!session.is_closed()`,
    removes dead entries, then calls `connect_authenticated_with_config()`.
-2. Auth (:554-569): `Password` → `authenticate_password`; `PrivateKey` →
+2. Auth (:576-604): `Password` → `authenticate_password`; `PrivateKey` →
    `russh::keys::load_secret_key` → `PrivateKeyWithHashAlg` → `authenticate_publickey`.
 3. Keepalive hardcoded: `keepalive_interval = 60s`, `keepalive_max = 3`
-   (:450-451).
-4. Host key verification (:137-171): `KnownHosts` → `check_known_hosts`,
+   (:484-485; the fresh-session helper repeats it at :569-570).
+4. Host key verification is `verify_host_key()` (:135-175), called from the
+   `check_server_key` handler (:181): `KnownHosts` → `check_known_hosts`,
    `KnownHostsFile` → `check_known_hosts_path`, `InsecureCompatibility` → `true`.
-5. `CompatClient` (:87) is a private `russh::client::Handler`. Its
-   `forwarded_channels` field enables `server_channel_open_forwarded_tcpip`
-   (:176) for reverse-forwarded channels.
-6. Remote forward (:386+) bypasses cache — always creates a fresh
+   A known_hosts lookup error is logged and rejected, never downgraded.
+5. `CompatClient` (:87) is a private `russh::client::Handler` for
+   `russh` 0.65. `check_server_key` takes
+   `&russh::keys::PublicKeyOrCertificate` and rejects the `Certificate` variant
+   outright (:192-200), so `verify_host_key` only ever sees a plain key; this
+   matches pre-0.65 behaviour, where a certificate host key failed key parsing.
+   Its `forwarded_channels` field enables `server_channel_open_forwarded_tcpip`
+   (:210) for reverse-forwarded channels.
+6. Remote forward (:420+) bypasses cache — always creates a fresh
    session (mpsc channel depth 128). Non-loopback bind emits `tracing::warn`
-   (:394-397).
+   (:428-433).
 
 ### Security notes
 
-- `InsecureCompatibility` exists solely for pproxy parity (:125);
-  disables host-key verification, emits `tracing::warn` per connection.
+- `InsecureCompatibility` exists solely for pproxy parity (:126);
+  disables host-key verification, emits `tracing::warn` per connection. It is
+  constructed only by `SshSessionCache::new_compatibility()`, which is gated
+  behind the `pproxy-compat` feature.
 - `SshSessionCache::new()` retains verified native known-hosts behavior;
   `eggress-embed::outbound::OutboundConnector` selects it for TOML chains and
   selects `new_compatibility()` only for its explicitly pproxy-compatible
@@ -74,8 +82,14 @@ Single-file crate. All types and logic live in `src/lib.rs`.
   retained by the returned channel until it closes.
 - An explicit hop-zero `local_bind` uses a fresh SSH session so a cached
   transport cannot bypass its source-address policy.
-- Both `SshAuth::Debug` (:49) and `SshSessionKey::Debug` (:68) redact
+- Both `SshAuth::Debug` (:49) and `SshSessionKey::Debug` (:73) redact
   secrets with `****`.
+- SSH certificate host keys are unsupported under every policy, including
+  insecure compatibility; they are rejected rather than mapped onto the
+  certified plain key.
+- The crate pins `russh` 0.65.x with `default-features = false` and the `ring`
+  feature set (RUSTSEC-2026-0492/-0495 and the `crypto-bigint`/`ctutils` timing
+  advisories are fixed there). `aws-lc-rs` must never be enabled.
 
 ### Reviewer gotchas
 
@@ -83,7 +97,7 @@ Single-file crate. All types and logic live in `src/lib.rs`.
 - `SshSessionKey` equality includes `hop_index`, but position does not identify
   an arbitrary route prefix. Nested outbound hops bypass the cache instead of
   relying on that field for cross-chain isolation.
-- Auth failure (:569) returns `AuthenticationFailed`; the handle is not
+- Auth failure (:603) returns `AuthenticationFailed`; the handle is not
   yet in cache at that point.
 
 ---
@@ -193,7 +207,8 @@ HTTP/3 CONNECT protocol layer over the QUIC transport.
 
 ## Review entry points
 
-- SSH: `cargo test -p eggress-transport-ssh --test openssh`
+- SSH policy/redaction unit tests: `cargo test -p eggress-transport-ssh`
+- SSH OpenSSH interop: `cargo test -p eggress-transport-ssh --features pproxy-compat --test openssh`
 - QUIC: `cargo test -p eggress-transport-quic --features insecure-quic` (round-trip tests are `#[cfg(all(test, feature = "insecure-quic"))]`; plain `cargo test` runs unit/config tests only)
 - H3: `cargo test -p eggress-protocol-h3 --features insecure-quic` (same gating as QUIC)
 

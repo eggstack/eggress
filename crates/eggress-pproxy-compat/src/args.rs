@@ -552,6 +552,25 @@ impl PproxyArgs {
             .unwrap_or_else(|| Duration::from_secs(86_400 * 30))
     }
 
+    /// Startup advisory describing the pproxy-compatible auth-reuse cache.
+    ///
+    /// Callers emit this once before serving, and only when at least one
+    /// translated listener actually carries `[listeners.auth]`. The text names
+    /// the pproxy default (30 days / `2592000` s), the source-IP-only key, the
+    /// cross-listener sharing, and the escape hatches. It never includes a
+    /// listener URI or credential, so it is safe at the default log level.
+    pub fn auth_reuse_advisory(&self) -> String {
+        format!(
+            "pproxy-compatible authentication reuse is active for listener credentials: \
+             the reuse cache is process-global, keyed only by source IP, and shared across \
+             credentialed compatibility listeners (bounded, monotonic expiry). Reuse interval: \
+             2592000s (30 days) when --auth is omitted; effective for this process: {}s. \
+             Set --auth 0 to disable practical reuse, or use native [listeners.auth] for \
+             per-connection checks with no reuse cache.",
+            self.effective_auth_timeout().as_secs()
+        )
+    }
+
     /// Default tracing log level chosen from `-d` and `-v` verbosity flags.
     ///
     /// Resolution order (highest precedence first):
@@ -1510,5 +1529,53 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod auth_reuse_advisory_tests {
+    use super::*;
+
+    #[test]
+    fn advisory_names_default_scope_and_escape_hatches() {
+        let args = PproxyArgs::parse(&["-l".into(), "socks5://127.0.0.1:1080".into()]).unwrap();
+        let advisory = args.auth_reuse_advisory();
+        assert!(advisory.contains("30 days"), "{advisory}");
+        assert!(advisory.contains("2592000"), "{advisory}");
+        assert!(advisory.contains("source IP"), "{advisory}");
+        assert!(
+            advisory.contains("shared across"),
+            "must name cross-listener sharing: {advisory}"
+        );
+        assert!(advisory.contains("process-global"), "{advisory}");
+        assert!(advisory.contains("--auth 0"), "{advisory}");
+        assert!(advisory.contains("[listeners.auth]"), "{advisory}");
+        assert!(
+            advisory.contains("effective for this process: 2592000s"),
+            "omitted --auth must report the 30-day default: {advisory}"
+        );
+        // The advisory is static text: it never echoes listener URIs or
+        // credentials.
+        assert!(!advisory.contains("socks5://"), "{advisory}");
+        assert!(!advisory.contains(":1080"), "{advisory}");
+    }
+
+    #[test]
+    fn advisory_reports_explicit_auth_interval() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "http://user:secret@127.0.0.1:8080".into(),
+            "--auth".into(),
+            "0".into(),
+        ])
+        .unwrap();
+        let advisory = args.auth_reuse_advisory();
+        assert!(
+            advisory.contains("effective for this process: 0s"),
+            "--auth 0 must be reported as the effective interval: {advisory}"
+        );
+        assert!(!advisory.contains("secret"), "{advisory}");
+        assert!(!advisory.contains("user"), "{advisory}");
+        assert!(!advisory.contains("127.0.0.1"), "{advisory}");
     }
 }

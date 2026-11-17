@@ -1,6 +1,6 @@
 # Edge Protocols Roadmap
 
-Status: closed
+Status: closed — M003 implemented and verified 2026-11-16
 
 Long-term references:
 
@@ -45,6 +45,8 @@ Architecture: `architecture/protocols-http.md`, `protocols-socks.md`, `protocols
 
 Phases 1/3/4/5 plus post-parity SOCKS5 correctness, reverse/UDP composition, and strict-phase protocol corrections complete. Standing feature-gated boundaries (SSR framing/plugins, legacy crypto, QUIC/H3 optional) are intentional and manifest-recorded.
 
+A 2026-11-16 security audit found two inbound-enforcement gaps: SOCKS4 auth compares only the username (the configured password is never enforced and a success can seed the shared IP reuse cache), and `allow_private_egress = false` is bypassable for UDP domain targets because the promised post-DNS check is absent from the direct flow. The same audit found the shared private/reserved-IP classifier missing CGNAT and IPv4-embedding IPv6 forms, and no warning when non-loopback HTTP/SOCKS password auth runs without TLS. M003 closes those gaps without changing the pproxy default or adding a protocol.
+
 ## 5. Target architecture
 
 Any listener protocol pairable with any valid upstream chain through the boxed boundary — attained within documented tiers.
@@ -57,6 +59,7 @@ TCP listener protocols (hard)
     `--> Upstream client roles (hard)
              `--> Reverse composition (soft)
                       `--> Strict-phase corrections (soft)
+                               `--> M003 SOCKS4/UDP/auth-transport corrective (implemented)
 ```
 
 ## 7. Milestones
@@ -69,21 +72,33 @@ Class: capability. Objective: protocol set integrated on both sides of the chain
 
 Class: capability/polish. Objective: post-parity SOCKS5, reverse/UDP, SSR/plugin bounds, legacy-cipher boundaries. Exit: strict phases closed per manifest. Status: closed. Evidence: archive `POST_PARITY_*`, `PPROXY_STRICT_PHASE_*` records.
 
+### Milestone 3 — SOCKS4 credential enforcement and UDP private-egress policy
+
+Class: invariant. Status: closed 2026-11-16 — closure record `plans/closure/protocols-edge/003-status.md` (coordinator workspace-wide gate passed).
+
+Implementation plan:
+
+- `plans/implementation/protocols-edge/003-socks4-auth-and-udp-private-egress.md`
+
+Objective: enforce the full pproxy SOCKS4 user-ID credential, apply `allow_private_egress` after DNS on all locally resolving UDP paths, extend CGNAT/NAT64/6to4/Teredo classification, and warn when non-loopback HTTP/SOCKS auth has no TLS.
+
+Exit: SOCKS4 username-only/wrong-password attempts fail without seeding the reuse cache; private-resolving UDP domains are dropped when the policy disallows private egress; classification tests cover the new ranges; the auth-without-TLS warning is emitted; existing `allow_private_egress = true` behavior remains green. No release/tag.
+
 ## 8. Cross-cutting requirements
 
-Config: per-listener protocol validation. Compat: manifest tiers per protocol behavior. Security: auth checks, bounded handshakes, redaction. Concurrency: association/flow bounds, shutdown drain. Performance: `udp_relay`/`http_connect_upstream` benches informational. Docs: protocol deep dives + `udp.md`.
+Config: per-listener protocol validation. Compat: manifest tiers per protocol behavior. Security: auth checks, post-DNS destination policy, bounded handshakes, redaction; M003 adds the SOCKS4 full-credential rule and resolved-target UDP enforcement. Concurrency: association/flow bounds, shutdown drain. Performance: `udp_relay`/`http_connect_upstream` benches informational. Docs: protocol deep dives + `udp.md`.
 
 ## 9. Verification strategy
 
-Protocol unit/integration tests, UDP relay flow tests, differential suites for HTTP/SOCKS (`EGRESS_REQUIRE_EXTERNAL_INTEROP` gated interop only when the claim changed).
+Protocol unit/integration tests, UDP relay flow tests, differential suites for HTTP/SOCKS (`EGRESS_REQUIRE_EXTERNAL_INTEROP` gated interop only when the claim changed). M003 additionally requires SOCKS4 auth tests, private-domain UDP drop tests, classifier tables, and the auth-without-TLS config warning.
 
 ## 10. Risks and decision points
 
-None active. New listener roles or framing changes require composition validation plus manifest review.
+M003's SOCKS4 change is a compatibility-sensitive restore of the pinned pproxy full-credential user-ID behavior; if the manifest claim changes, the oracle/differential gate applies. UDP domain filtering must reuse the existing lookup and must not change the default `allow_private_egress = true`. CIDR matcher semantics and admin exposure are owned by Routing M003. New listener roles or framing changes require composition validation plus manifest review.
 
 ## 11. Completion definition
 
-Protocol coverage closed within tiered boundaries with differential/interop evidence — attained.
+Protocol coverage closed within tiered boundaries with differential/interop evidence, plus M003 inbound-auth/UDP security correction closed — attained when both are true.
 
 ## 12. Milestone status
 
@@ -91,3 +106,4 @@ Protocol coverage closed within tiered boundaries with differential/interop evid
 |---|---|---|---|---|
 | 1 | closed (historical) | archive phase records | archive phase records | — |
 | 2 | closed (historical) | archive strict/post-parity records | Git history + suite evidence | — |
+| 3 | closed | `plans/implementation/protocols-edge/003-socks4-auth-and-udp-private-egress.md` | `plans/closure/protocols-edge/003-status.md` | — |

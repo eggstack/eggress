@@ -524,13 +524,21 @@ Leaf matchers:
 | `destination_port` | u16 | Exact port |
 | `destination_port_range` | `[u16; 2]` | Port range `[min, max]` |
 | `destination_port_set` | `[u16]` | Set of ports |
-| `destination_cidr` | string | CIDR match on target |
-| `source_cidr` | string | CIDR match on client source |
+| `destination_cidr` | string | CIDR match on the literal target IP |
+| `source_cidr` | string | CIDR match on the literal client source IP |
 | `source_port` | u16 | Client source port |
 | `listener` | string | Listener name |
 | `protocol` | string | `http`, `socks4`, `socks5` |
 | `identity` | string | Client identity (username) |
 | `transport` | string | `tcp` or `udp` |
+
+CIDR rules match literal IP addresses only — no DNS resolution happens during
+route evaluation, so a domain target never matches `destination_cidr` (even
+when the name resolves into the range), and an upstream group resolves names
+remotely. IPv4-mapped IPv6 literals (`::ffff:10.0.0.1`) are canonicalized
+before matching and therefore match the equivalent IPv4 CIDR. A `reject` rule
+that uses a private/reserved `destination_cidr` without a host condition emits
+a non-fatal warning: such a rule is not a complete private-network ACL.
 
 ---
 
@@ -551,8 +559,31 @@ Value can be `"direct"`, `"reject"`, or a group ID reference.
 | `bind` | string | `"127.0.0.1:9090"` | Admin HTTP bind address |
 | `enabled` | bool | false | Enable admin server |
 | `metrics` | bool | false | Enable `/metrics` endpoint |
+| `allowed_hosts` | `[string]` | bind-derived | Extra `Host` values accepted by the admin server |
 | `pac` | table | none | PAC file configuration |
 | `static_content` | table array | none | Static content routes |
+
+`allowed_hosts` defends against DNS rebinding: the admin server rejects a
+request whose `Host` header is not allowlisted (generic `400`, checked before
+authentication and before any body is read). Entries are host names or IP
+literals, optionally with a port; matching is case-insensitive and
+port-insensitive, IPv6 may be bracketed, and wildcards are rejected.
+
+The effective allowlist is the configured entries plus defaults derived from
+`bind`:
+
+- loopback or wildcard bind: the bind host, `localhost`, `127.0.0.1`, `::1`
+  (so `http://127.0.0.1:9090` works with no configuration);
+- any other non-loopback bind: the bind host and `localhost`.
+
+When admin is reached through a reverse proxy or a DNS name, list that host
+explicitly. `X-Forwarded-Host` is ignored. `POST /-/route-explain` also requires
+`Content-Type: application/json` and, when an `Origin` header is present, an
+allowlisted origin host; `Origin: null` is rejected unless `null` is listed.
+
+Admin listens on plaintext HTTP (there is no native admin TLS). A non-loopback
+bind emits a warning; use loopback with a VPN/SSH tunnel or a TLS-terminating
+reverse proxy. Non-loopback admin binds additionally require authentication.
 
 ### `[admin.auth]`
 

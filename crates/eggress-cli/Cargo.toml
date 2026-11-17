@@ -33,6 +33,12 @@ quic = [
 insecure-quic = ["eggress-runtime/insecure-quic", "eggress-transport-quic/insecure-quic"]
 pproxy-compat = ["dep:eggress-pproxy-compat"]
 ssh = ["eggress-runtime/ssh", "eggress-pproxy-compat/ssh"]
+# Non-default, tests/docs only: enables the offline `eggress update` fixtures
+# (`EGRESS_UPDATE_BASE_URL` redirection, `file://` asset URLs, and the
+# `EGRESS_UPDATE_CURL` tool override). Release builds must never enable it:
+# production updater trust decisions assume every non-HTTPS URL and every
+# non-system `curl` is rejected.
+update-fixtures = []
 
 [[bin]]
 name = "eggress"
@@ -67,6 +73,8 @@ tokio.workspace = true
 tokio-util.workspace = true
 serde_json.workspace = true
 serde.workspace = true
+sha2 = "0.10"
+tempfile.workspace = true
 http.workspace = true
 
 [dev-dependencies]
@@ -86,7 +94,6 @@ rand.workspace = true
 rcgen.workspace = true
 rustls.workspace = true
 tar = { version = "0.4", default-features = false }
-tempfile.workspace = true
 tokio-rustls.workspace = true
 toml.workspace = true
 zip = { version = "6", default-features = false, features = ["deflate-flate2"] }

@@ -130,6 +130,20 @@ pub(crate) fn validate_admin(admin: &crate::model::AdminConfig, errors: &mut Vec
         ));
     }
 
+    if let Some(ref allowed_hosts) = admin.allowed_hosts {
+        for (i, entry) in allowed_hosts.iter().enumerate() {
+            if crate::compile::admin_hosts::normalize_host_entry(entry).is_none() {
+                errors.push(ConfigError::validation(
+                    &format!("admin.allowed_hosts[{i}]"),
+                    &format!(
+                        "invalid host entry '{entry}': expected a host name or IP literal, \
+                         optionally with a port; wildcards are not supported"
+                    ),
+                ));
+            }
+        }
+    }
+
     if let Some(auth) = &admin.auth {
         if auth.bearer_token.as_deref().is_some_and(str::is_empty) {
             errors.push(ConfigError::validation(

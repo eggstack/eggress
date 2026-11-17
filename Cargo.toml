@@ -90,7 +90,7 @@ webpki-roots = "0.26"
 pkcs8 = "0.11"
 rcgen = "0.13"
 criterion = { version = "0.5", features = ["html_reports"] }
-russh = { version = "0.62.6", default-features = false, features = ["ring", "flate2", "rsa"] }
+russh = { version = "0.65.2", default-features = false, features = ["ring", "flate2", "rsa"] }
 quinn = { version = "0.11.11", default-features = false, features = ["runtime-tokio", "rustls-ring", "platform-verifier"] }
 h3 = { version = "0.0.8", default-features = false }
 h3-quinn = { version = "0.0.10", default-features = false }

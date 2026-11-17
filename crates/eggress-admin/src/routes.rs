@@ -4,8 +4,8 @@ use eggress_core::capability::classify_upstream_chain;
 
 use crate::pac::generate_pac;
 use crate::server::{
-    build_json_response, build_not_found, build_response, build_text_response, AdminResponse,
-    AdminState,
+    build_json_response, build_not_found, build_response, build_text_response,
+    request_content_type_is_json, request_origin_allowed, AdminResponse, AdminState,
 };
 use crate::static_content::serve_static;
 
@@ -233,6 +233,22 @@ pub async fn handle_request(
         "/-/route-explain" => {
             if method != http::Method::POST {
                 return build_text_response(405, "method not allowed");
+            }
+            // Dry-run explanations reveal routing topology, so a cross-origin
+            // page must not be able to POST here. Both checks run before the
+            // body is read and before any routing state is touched.
+            if !request_content_type_is_json(&req) {
+                return build_json_response(
+                    415,
+                    serde_json::json!({"error": "expected content-type: application/json"})
+                        .to_string(),
+                );
+            }
+            if !request_origin_allowed(&req, &state.allowed_hosts) {
+                return build_json_response(
+                    403,
+                    serde_json::json!({"error": "origin not allowed"}).to_string(),
+                );
             }
             let snap = state.snapshot();
             let router = &snap.router;

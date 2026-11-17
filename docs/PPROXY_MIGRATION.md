@@ -105,6 +105,29 @@ authoritative per-scheme status rather than a duplicated table here.
 -r http://proxy1:8080 -r socks5://proxy2:1080
 ```
 
+### Listener credentials and `--auth`
+
+Listener credentials belong to the listener URI. pproxy's documented form is the
+fragment (`-l http://0.0.0.0:8080#user:pass`); Eggress also accepts userinfo
+(`-l http://user:pass@0.0.0.0:8080`). The translator emits `[listeners.auth]`
+from those credentials whether or not `--auth` is present, so `--auth` is **not**
+what turns authentication on.
+
+`--auth SECONDS` is the source-IP re-authentication **reuse interval** for
+credentials that came from the listener URI. The pproxy default is `2592000`
+seconds (30 days), including when the flag is omitted. Reuse is process-global,
+keyed only by client IP, and shared across every credentialed compatibility
+listener; compatibility startup prints one warning that names the default, the
+IP-only key, and the shared cache.
+
+Migration choices:
+
+- keep pproxy behavior: rely on the URI credentials and the default 30-day
+  reuse interval, and bind to loopback or a trusted network;
+- tighten reuse: pass `--auth 0` so clients re-authenticate per connection;
+- remove reuse entirely: migrate to native `[listeners.auth]`, which verifies
+  every connection and has no IP-keyed cache.
+
 ## Common pproxy Commands -> Eggress Equivalents
 
 ### pproxy
@@ -164,8 +187,10 @@ the notes below call out the boundaries users most often misread:
 - **`-d`, `-v`, `--ssl`, `-b`, `--reuse`, `--pac`, `--get`, `--auth`,
   `--test`** — parsed with compatibility or native-equivalent semantics
   (tracing defaults, TLS config, reject rules, `SO_REUSEPORT`, admin
-  PAC/static content, bounded auth reuse, in-process upstream test). See
-  `cli.*` entries in the manifest for the exact tier.
+  PAC/static content, bounded source-IP auth reuse with a 30-day default,
+  in-process upstream test). `--auth` changes only the reuse interval, not
+  whether authentication happens. See `cli.*` entries in the manifest for the
+  exact tier.
 - **SSH** — upstream-only behind the opt-in `ssh` feature; listeners are
   refused. Host-key acceptance is warning-bearing to match pproxy's
   permissive behavior.

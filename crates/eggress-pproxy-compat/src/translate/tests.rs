@@ -1278,3 +1278,99 @@ fn test_translate_trojan_upstream_still_works() {
     );
     assert!(output.toml.contains("trojan://secret@proxy.example:443"));
 }
+
+#[test]
+fn udp_remote_errors_redact_credentials() {
+    // Regression: the raw `-ur` value used to be interpolated into the
+    // error, leaking socks5/ss credentials into user-visible diagnostics.
+    for (remote, expected_redacted) in [
+        (
+            "socks5://user:pass@127.0.0.1:notaport",
+            "socks5://****:****@127.0.0.1:notaport",
+        ),
+        ("socks5://user:p@ss@[::1", "socks5://****:****@[::1"),
+        ("tunnel://user:pass@{bad}", "tunnel://****:****@{bad}"),
+    ] {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-ul".into(),
+            ":1081".into(),
+            "-ur".into(),
+            remote.into(),
+        ])
+        .unwrap();
+        let error = translate_pproxy_args(&args).unwrap_err();
+        let message = error.to_string();
+        assert!(
+            message.contains(expected_redacted),
+            "expected redacted remote in '{message}'"
+        );
+        assert!(
+            !message.contains("pass"),
+            "error leaked a password: {message}"
+        );
+        assert!(
+            !message.contains("user:"),
+            "error leaked a username: {message}"
+        );
+    }
+}
+
+#[test]
+fn udp_remote_error_redacts_percent_and_bracket_passwords() {
+    for remote in [
+        "socks5://user:p%40ss@127.0.0.1:0:1",
+        "socks5://user:p[a]ss@127.0.0.1:0:1",
+    ] {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-ul".into(),
+            ":1081".into(),
+            "-ur".into(),
+            remote.into(),
+        ])
+        .unwrap();
+        let message = translate_pproxy_args(&args).unwrap_err().to_string();
+        assert!(!message.contains("p%40ss"), "leaked password: {message}");
+        assert!(!message.contains("p[a]ss"), "leaked password: {message}");
+        assert!(
+            message.contains("****:****@127.0.0.1"),
+            "expected redacted remote, got: {message}"
+        );
+    }
+}
+
+#[test]
+fn compat_ir_debug_redacts_reverse_auth_password() {
+    use super::model::{ReverseClientToml, ReverseServerToml};
+
+    let server = ReverseServerToml {
+        id: "rs".to_string(),
+        control_bind: "0.0.0.0:9443".to_string(),
+        external_bind: "0.0.0.0:9443".to_string(),
+        auth_username: Some("tunnel".to_string()),
+        auth_password: Some("s3cret-server".to_string()),
+        pproxy_compat: true,
+    };
+    let debug = format!("{server:?}");
+    assert!(debug.contains("auth_password: Some(****)"), "{debug}");
+    assert!(!debug.contains("s3cret-server"), "{debug}");
+
+    let client = ReverseClientToml {
+        id: "rc".to_string(),
+        server_addr: "proxy.example:9443".to_string(),
+        server_uri: Some("socks5://tunnel:s3cret-client@proxy.example:9443".to_string()),
+        auth_username: Some("tunnel".to_string()),
+        auth_password: Some("s3cret-client".to_string()),
+        parallel_connections: Some(2),
+        pproxy_compat: true,
+    };
+    let debug = format!("{client:?}");
+    assert!(debug.contains("auth_password: Some(****)"), "{debug}");
+    assert!(!debug.contains("s3cret-client"), "{debug}");
+    // Serialization still carries the real value (generated TOML must run).
+    let json = serde_json::to_string(&client).unwrap();
+    assert!(json.contains("s3cret-client"), "{json}");
+}

@@ -1872,6 +1872,53 @@ enabled = false
     }
 
     #[test]
+    fn reload_rejects_admin_allowed_hosts_change() {
+        // The admin allowlist is fixed when the admin task starts, so a
+        // change must require a restart instead of silently keeping the old
+        // (possibly wider) policy.
+        let config1 = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[admin]
+bind = "127.0.0.1:9090"
+enabled = false
+"#;
+        let config2 = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[admin]
+bind = "127.0.0.1:9090"
+enabled = false
+allowed_hosts = ["admin.example"]
+"#;
+        let f1 = write_config(config1);
+        let f2 = write_config(config2);
+        let sup = ServiceSupervisor::start(f1.path().to_str().unwrap()).unwrap();
+        let new_config =
+            eggress_config::compile::load_and_compile(f2.path().to_str().unwrap()).unwrap();
+
+        let snap = sup.state.snapshot.load();
+        let result = classify_reload_config(
+            &snap.listeners,
+            &snap.timeouts,
+            snap.admin.as_ref(),
+            &new_config,
+        );
+        let error = result.expect_err("admin allowed_hosts change should be rejected");
+        assert!(error.contains("allowed_hosts"), "unexpected error: {error}");
+    }
+
+    #[test]
     fn reload_rejects_listener_count_change() {
         let config1 = r#"
 version = 1

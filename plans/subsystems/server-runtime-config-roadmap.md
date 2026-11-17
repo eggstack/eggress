@@ -45,6 +45,12 @@ Architecture: `architecture/server.md`, `architecture/runtime.md`, `architecture
 
 Runtime supervisor decomposition, lean-runtime phases, and maintenance phases complete. No active lifecycle blocker; 1.0.10 qualified.
 
+Cross-boundary security corrective: Protocols Edge M003 adds a non-fatal
+`eggress-config` warning when a non-loopback HTTP/SOCKS listener has password
+auth without TLS. This roadmap remains closed for its original scope; the
+config-validation change is owned by the Protocols Edge plan and must preserve
+the existing warning mechanism and shutdown/reload semantics.
+
 ## 5. Target architecture
 
 Snapshot-compiled runtime with atomic reload and ordered shutdown — attained.

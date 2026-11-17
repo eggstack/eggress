@@ -7,9 +7,9 @@ The only TLS implementation in the workspace (no OpenSSL anywhere). Wraps
 
 | File | Role |
 |---|---|
-| `src/client.rs` | `TlsClientConfigBuilder`: system/custom CA PEM, ALPN, insecure mode, server-name override, `InsecureVerifier` (test/feature-gated), process-shared default verified/H2 accessors |
+| `src/client.rs` | `TlsClientConfigBuilder`: bundled-Mozilla/custom CA PEM, ALPN, insecure mode, server-name override, `InsecureVerifier` (test/feature-gated), process-shared default verified/H2 accessors |
 | `src/server.rs` | `TlsServerConfigBuilder`: cert chain + key PEM (PKCS#8), ALPN (PEM loaders are private helpers, not exported) |
-| `src/roots.rs` | `load_system_roots` (webpki-roots), `load_pem_roots` (PEM -> RootCertStore), `load_pem_certs` (PEM -> Vec<CertificateDer>). Empty PEM is an error in `load_pem_roots` |
+| `src/roots.rs` | `load_system_roots` (bundled `webpki-roots`), `load_pem_roots` (PEM -> RootCertStore), `load_pem_certs` (PEM -> Vec<CertificateDer>). Empty PEM is an error in `load_pem_roots` |
 | `src/transport.rs` | `tls_connect(stream, config, server_name)` / `tls_accept(stream, config)`: BoxStream in, TLS-wrapped BoxStream out |
 | `src/lib.rs` | Re-exports, `install_default_crypto_provider()` (ring, once), test-only crate-private `self_signed_cert()` (`#[cfg(test)] pub(crate)`) |
 | `src/error.rs` | `TlsError` enum |
@@ -21,7 +21,7 @@ The only TLS implementation in the workspace (no OpenSSL anywhere). Wraps
 | Method | Notes |
 |---|---|
 | `new()` | Empty root store, no ALPN, no override, not insecure |
-| `with_system_roots()` | Extends root store from `webpki_roots::TLS_SERVER_ROOTS` |
+| `with_system_roots()` | Extends root store from `webpki_roots::TLS_SERVER_ROOTS`. The name is historical: this is the **bundled Mozilla root set compiled into the binary**, not the operating-system trust store. It changes only when the `webpki-roots` dependency is updated |
 | `with_custom_ca_pem(pem_bytes)` | Replaces root store with parsed PEM CA certs |
 | `with_client_cert_pem(cert_pem, key_pem)` | mTLS client identity (both required; malformed PEM fails at `build`) |
 | `with_alpn(protocols)` | Sets ALPN protocol list (e.g., `b"h2"`, `b"http/1.1"`) |
@@ -53,7 +53,7 @@ The only TLS implementation in the workspace (no OpenSSL anywhere). Wraps
 
 | Function | Notes |
 |---|---|
-| `load_system_roots()` | Returns `RootCertStore` from webpki-roots |
+| `load_system_roots()` | Returns `RootCertStore` from the bundled `webpki-roots` Mozilla set (not the OS store) |
 | `load_pem_roots(pem)` | Parses PEM, adds each cert to `RootCertStore`. **Empty input is an error** (returns `PemParse`) |
 | `load_pem_certs(pem)` | Returns `Vec<CertificateDer>` from PEM. Does not fail on empty input (unlike `load_pem_roots`) |
 
@@ -97,7 +97,7 @@ The only TLS implementation in the workspace (no OpenSSL anywhere). Wraps
 
 ### Client config construction
 
-The ordinary system-root configurations are process-shared through `OnceLock`:
+The ordinary bundled-root configurations are process-shared through `OnceLock`:
 `default_client_config()` and `default_h2_client_config()` return cloned
 `Arc`s to immutable verified configurations. Feature-gated insecure and H2
 variants use separate caches. Custom CA, mTLS, ALPN, and caller-provided
@@ -145,14 +145,16 @@ Both `tls_connect` and `tls_accept` use `tokio-rustls`:
 
 | Consumer | Usage |
 |---|---|
-| `eggress-outbound` (`executor.rs`) | Upstream `+tls` hops: builds `TlsClientConfigBuilder` with system roots or custom CA, calls `tls_connect` on the box stream |
+| `eggress-outbound` (`executor.rs`) | Upstream `+tls` hops: builds `TlsClientConfigBuilder` with bundled Mozilla roots or a custom CA, calls `tls_connect` on the box stream |
 | `eggress-runtime` (`supervisor/connection.rs`) | Listener TLS: prepares one `Arc<ServerConfig>` per listener generation, then `wrap_tls_server()` only calls `tls_accept` on inbound streams (shared by standard/transparent/Unix paths) |
-| `eggress-protocol-trojan` (`tcp.rs`) | Trojan client: builds `TlsClientConfigBuilder` with system roots, then performs the handshake directly via `tokio_rustls::TlsConnector` (`tcp.rs:267`; does not call `tls_connect`) |
+| `eggress-protocol-trojan` (`tcp.rs`) | Trojan client: builds `TlsClientConfigBuilder` with bundled Mozilla roots, then performs the handshake directly via `tokio_rustls::TlsConnector` (`tcp.rs:267`; does not call `tls_connect`) |
 | `eggress-protocol-reverse` (`tls.rs`, `server.rs`, `client.rs`) | Native reverse control TLS/mTLS: server builds once via `TlsServerConfigBuilder` (+ optional client CA/require), client builds once via `TlsClientConfigBuilder` (+ optional client cert/key) and reuses `Arc` across reconnects; `tls_accept`/`tls_connect` wrap control TCP before reverse framing |
 
 ## Security notes
 
-- **Insecure mode is dual-gated.** `with_insecure()` is only available under `#[cfg(any(test, feature = "insecure-tls"))]`. If the feature is not enabled, `build()` returns `TlsError::Handshake("insecure TLS requires the insecure-tls feature")`. This prevents accidental use in release builds.
+- **Root source is bundled, not OS.** Outbound verification uses the Mozilla root set compiled in through `webpki-roots`. There is no operating-system-store backend, so a CA installed locally is not trusted automatically; the set moves only with the dependency version. Custom CA PEMs replace the set (`with_custom_ca_pem`) and stay scoped to the builder that supplied them.
+- **Insecure mode is dual-gated but compiled into shipped CLI builds.** `with_insecure()` is only available under `#[cfg(any(test, feature = "insecure-tls"))]`, and without the feature `build()` returns `TlsError::Handshake("insecure TLS requires the insecure-tls feature")`. It is *not* test-only in practice: `eggress-cli` and `eggress-runtime` enable `insecure-tls` unconditionally, so a per-hop `?insecure` in a URI is reachable from configuration and executes. The gate protects downstream embedders that never enable the feature, not the shipped binaries.
+- **Insecure selection is announced once.** `eggress-config` warns at compile time — one event per upstream, naming the upstream id and the affected hop indexes and protocols, never endpoints, credentials, or the source URI — before any chain executes. No build, root-load, or handshake error falls back to insecure verification, and `tls_override` plus a per-hop `insecure=true` fails closed.
 - **Empty PEM is an error.** `load_pem_roots(b"")` returns `PemParse("no certificates found in PEM root material")`. This prevents silently trusting everything when CA material is misconfigured.
 - **Client auth defaults to none; mTLS is opt-in.** See above for the explicit builders.
 - **PKCS#8 only.** `load_private_key_pem` uses `PrivatePkcs8KeyDer::from_pem_slice`. Other key formats (RSA, EC) are not supported.

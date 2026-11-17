@@ -148,10 +148,13 @@ Adversaries may include malicious clients on the network, compromised upstream p
   - Jump chains through reverse are not supported.
   - On-wire version is fixed at "user:pass + 1-byte handshake + bidirectional TCP relay" -- no versioning or upgrade path.
 
-**TLS Insecure Mode** (`eggress-transport-tls/src/client.rs:49-51`):
-- `with_insecure()` creates an `InsecureVerifier` that accepts any certificate.
+**TLS Insecure Mode** (`eggress-transport-tls` client builder):
+- `with_insecure()` creates an `InsecureVerifier` that accepts any certificate and any handshake signature without validation.
 - Documented as "for testing only — never use in production."
-- Not exposed in configuration; only available via programmatic API.
+- **Reachable from configuration, not API-only.** The native URI grammar accepts `?insecure` / `?insecure=true` per hop, and `eggress-cli` and `eggress-runtime` compile the `insecure-tls` feature unconditionally, so such chains load and execute in shipped CLI builds.
+- Config compilation emits one warning per upstream that selects it, naming the upstream plus the affected hop indexes and protocols only — endpoints, credentials, and the source URI are never echoed — before any chain executes.
+- It stays explicit: no build, root-load, or handshake error falls back to insecure verification, and `tls_override` combined with a per-hop `insecure=true` fails closed.
+- Insecure QUIC/H3 remains behind the separate `insecure-quic` feature; config compilation rejects insecure QUIC/H3 hops in default builds.
 
 **Unsupported Protocol/Transport Combinations** (`eggress-core/src/capability.rs`):
 - `classify_upstream_chain()` explicitly reports `UnsupportedProtocol` or `UnsupportedChain` for:
@@ -278,6 +281,46 @@ Adversaries may include malicious clients on the network, compromised upstream p
 - `/target`, `/dist`, `crates/eggress-python/dist/`, `*.so`, `*.pyc`, `__pycache__/`, `*.egg-info/`, `.venv/` are all gitignored.
 - Built wheels and sdist archives are not committed to the repository.
 
+### Self-Update and Distribution Trust
+
+`eggress update` is the only command that writes executables, so its inputs are
+treated as untrusted:
+
+- **Authority**: discover, download, verify, stage, execute, replace — in that
+  order. Release discovery accepts only an exact `vX.Y.Z` stable tag from the
+  GitHub Releases API; there is no prerelease, branch, or alternate-source
+  fallback.
+- **URL policy**: every update URL must be `https://` and `curl` additionally
+  runs with `--proto =https --tlsv1.2`. The `file://` + `EGRESS_UPDATE_BASE_URL`
+  offline fixture hook is compiled only for tests or the non-default
+  `update-fixtures` feature; release/default binaries never read that variable
+  and reject every non-HTTPS URL.
+- **Tool trust**: `curl` is resolved only from fixed system locations
+  (`/usr/bin/curl`, then `/bin/curl`; `%SystemRoot%\System32\curl.exe` on
+  Windows). `PATH` is never scanned, and a symlinked, non-regular, or
+  group/other-writable candidate is refused. The SHA-256 digest of the archive
+  is computed in-process with `sha2`; `sha256sum`/`shasum` are not consulted,
+  so a `PATH`-planted tool cannot influence the integrity decision. A missing
+  or untrusted tool fails before any download or mutation.
+- **Staging**: one unpredictable, owner-only (`0700`) directory per transaction,
+  created atomically. Output files are opened with `create_new` (no overwrite,
+  no symlink following) and `curl` writes into that already-open handle rather
+  than re-resolving a path. The archive is re-hashed immediately before
+  extraction, so a post-verification replacement fails closed.
+- **Output**: the `.sha256` sidecar remains the integrity gate; both staged
+  executables must report exactly the release tag and agree with each other
+  before the pair is replaced. `system-proxy inspect --json` serializes only
+  redacted settings, so OS/environment `user:pass@` proxy credentials cannot be
+  copied out of diagnostics.
+- **Privilege**: no `sudo`/UAC escalation, no shell/PATH mutation, no Cargo or
+  source fallback, no background checks. The updater never executes downloaded
+  data — only the staged, checksum-verified pair is run for version checks.
+
+**Supply chain**: CI and the release preflight run `cargo deny --workspace check`
+over the all-features graph (advisories, bans, licenses, sources). The only
+advisory ignores are the four tracked `zip 6.0.0` IDs inherited through
+`eggup-archive`; they carry an owner and a removal condition in `deny.toml`.
+
 ### Resource Management
 
 **Task Leaks on Malformed Clients**:
@@ -308,12 +351,12 @@ Adversaries may include malicious clients on the network, compromised upstream p
 5. **Input size limits**: HTTP request/response heads are bounded (32KB, 128 headers).
 6. **Config validation**: Duplicate names, invalid references, and incompatible protocol/transport combos are rejected at load time.
 7. **Capability classification**: Explicit `UnsupportedProtocol`/`UnsupportedChain` results prevent silent fallback to unsupported modes.
-8. **TLS certificate verification**: System root store by default; insecure mode is API-only with documentation warnings.
+8. **TLS certificate verification**: Bundled Mozilla root set via `webpki-roots` by default (not the OS certificate store); insecure mode is explicit, warned at config compile, documented, and never used as a fallback.
 9. **Admin loopback default**: Admin server binds to `127.0.0.1` unless explicitly configured otherwise.
 10. **No `unsafe` code**: Workspace-wide `unsafe_code = "deny"` prevents memory safety issues.
 11. **No OpenSSL dependency**: Uses `rustls` with `ring` crypto provider, eliminating C FFI attack surface.
 12. **Atomic config reload**: `ArcSwap<Router>` for lock-free reads; only hot-reloadable fields are swapped.
-13. **Unsupported protocol diagnostics**: pproxy compat layer produces structured `UnsupportedFeature` errors for SSH listeners, SSH upstreams when the optional feature is absent, Unix (upstream), and other unsupported protocols. No silent fallback to direct or different protocols. The optional SSH compatibility path accepts host keys only to match pproxy and emits a warning.
+13. **Unsupported protocol diagnostics**: pproxy compat layer produces structured `UnsupportedFeature` errors for SSH listeners, SSH upstreams when the optional feature is absent, Unix (upstream), and other unsupported protocols. No silent fallback to direct or different protocols. The optional SSH compatibility path accepts host keys only to match pproxy and emits a warning. The optional SSH transport is pinned to `russh` 0.65.x (closing RUSTSEC-2026-0492/-0495 and the `crypto-bigint`/`ctutils` timing advisories); verified policies require a `known_hosts` match, a lookup error fails closed, and certificate host keys are rejected rather than projected onto a plain key.
 14. **Python binding security**: Exception strings do not leak raw Rust errors; `repr()` uses Python class names; translation warnings redact credentials; no import-time side effects; context manager ensures cleanup.
 15. **Transparent proxy privilege separation**: Transparent proxy requires explicit `CAP_NET_ADMIN` or root; the listener validates `SO_ORIGINAL_DST` availability at startup and fails fast if unavailable.
 16. **Transparent proxy loop prevention**: Connections destined to the proxy's own listen address are rejected to prevent forwarding loops.

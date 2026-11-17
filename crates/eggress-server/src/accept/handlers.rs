@@ -148,29 +148,42 @@ pub(crate) async fn accept_socks4(
             port: request.addr.port(),
         }
     };
-    let cached = cached_identity(auth, peer_ip);
-    if cached.is_none() {
-        if let Some((username, _, _)) = auth_credentials(auth) {
+    let identity = match (cached_identity(auth, peer_ip), auth_credentials(auth)) {
+        // A cache hit is proof of an earlier full-credential authentication on
+        // this source IP; it does not re-verify a user ID.
+        (Some(identity), _) => identity,
+        (None, Some((username, password, _))) => {
+            // pproxy 2.7.9 carries the listener credential in the SOCKS4 user
+            // ID and compares it against the full `user:pass` string. SOCKS4
+            // has no separate password field, so the password is enforced here
+            // or not at all.
             use subtle::ConstantTimeEq;
-            let user_ok: bool = request.user_id.as_bytes().ct_eq(username.as_bytes()).into();
-            if !user_ok {
+            use zeroize::Zeroize;
+            let mut expected = Vec::with_capacity(username.len() + 1 + password.len());
+            expected.extend_from_slice(username.as_bytes());
+            expected.push(b':');
+            expected.extend_from_slice(password.as_bytes());
+            let credentials_ok: bool = request.user_id.as_bytes().ct_eq(expected.as_slice()).into();
+            expected.zeroize();
+            if !credentials_ok {
+                // Generic failure: neither the user ID nor the configured
+                // credential is echoed.
                 return Err(AcceptError::AuthenticationFailed);
             }
+            let identity = ClientIdentity::Username(username.to_string());
+            // Only a fully authenticated SOCKS4 session may seed the shared
+            // IP-reuse cache.
+            record_authenticated(auth, peer_ip, &identity);
+            identity
         }
-    }
-    let identity = cached.unwrap_or({
-        if request.user_id.is_empty() {
-            ClientIdentity::Anonymous
-        } else {
-            ClientIdentity::Opaque(request.user_id)
+        (None, None) => {
+            if request.user_id.is_empty() {
+                ClientIdentity::Anonymous
+            } else {
+                ClientIdentity::Opaque(request.user_id)
+            }
         }
-    });
-    if matches!(
-        identity,
-        ClientIdentity::Opaque(_) | ClientIdentity::Username(_)
-    ) {
-        record_authenticated(auth, peer_ip, &identity);
-    }
+    };
     let stream: BoxStream = Box::new(tokio::io::join(reader, writer));
 
     Ok(AcceptedSession::Tunnel(PendingTunnel {

@@ -349,6 +349,11 @@ pub struct AdminConfig {
     pub bind: Option<String>,
     pub enabled: Option<bool>,
     pub metrics: Option<bool>,
+    /// Extra `Host` header values accepted by the admin server, on top of the
+    /// defaults derived from `bind`. Required when the admin port is reached
+    /// through a reverse proxy or a DNS name.
+    #[serde(default)]
+    pub allowed_hosts: Option<Vec<String>>,
     pub auth: Option<AdminAuthConfig>,
     pub pac: Option<PacConfigToml>,
     pub static_content: Option<Vec<StaticContentToml>>,

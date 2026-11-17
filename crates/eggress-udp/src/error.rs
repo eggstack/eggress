@@ -28,6 +28,8 @@ pub enum UdpError {
     UnspecifiedTarget,
     #[error("port zero not allowed")]
     PortZero,
+    #[error("private network egress not allowed")]
+    PrivateEgressBlocked,
     #[error("{0}")]
     Other(String),
 }

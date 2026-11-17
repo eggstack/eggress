@@ -15,7 +15,7 @@ UDP association management, relay, upstream forwarding, and standalone relay mod
 | `standalone.rs` | `standalone_udp_relay`: pproxy-compatible standalone UDP relay |
 | `standalone_shadowsocks.rs` | `shadowsocks_standalone_udp_relay`: standalone AEAD-encrypted UDP relay (feature-gated) |
 | `flow.rs` | `UdpFlowKey`, `UdpFlowKind`, `TargetFlowEntry`, `ClientFlowState`; per-target flow management |
-| `direct.rs` | `UdpTargetFlow`: connected UDP socket per target for direct forwarding |
+| `direct.rs` | `UdpTargetFlow`: connected UDP socket per target for direct forwarding; `resolve_target` / `select_resolved_addr` apply `allow_private_egress` to the answers of the single lookup |
 | `hop.rs` | `UdpHopStack`, `UdpHop`: transport-neutral encode/decode for nested datagrams |
 | `composed.rs` | `open_composed_udp_upstream`: multi-hop SOCKS5+Shadowsocks composition |
 | `upstream_socks5.rs` | `open_socks5_udp_upstream`: TCP control + SOCKS5 handshake + UDP ASSOCIATE client |
@@ -57,9 +57,10 @@ UDP association management, relay, upstream forwarding, and standalone relay mod
 
 `handle_client_datagram` per-packet:
 1. `decode_packet()` (SOCKS5 UDP codec + size check).
-2. `validate_standalone_target()` (security gate).
+2. `validate_standalone_target()` (literal-target security gate).
 3. `routing.route(&RouteRequest { transport: TransportKind::Udp, ... })`.
-4. `SelectedRoute::Direct`: create/reuse `UdpTargetFlow`, send.
+4. `SelectedRoute::Direct`: create/reuse `UdpTargetFlow` (post-DNS policy applies
+   to domain targets here), send.
 5. `SelectedRoute::Upstream`: classify via `udp_capability(&chain)`:
    - `SupportedSocks5`: create/reuse `Socks5UdpTargetFlow`.
    - `SupportedShadowsocks` (feature-gated): create/reuse `ShadowsocksUdpTargetFlow`.
@@ -146,7 +147,30 @@ First valid packet pins `SocketAddr`; mismatches return `ClientAddressMismatch`.
 
 ### Target Validation (`security.rs`)
 
-`validate_standalone_target(target, allow_private_egress)` rejects: multicast, broadcast, unspecified, port zero, loopback (when !allow_private_egress), RFC 1918/link-local/unique-local IPv6 (when !allow_private_egress). IPv4-mapped IPv6 checked via `to_ipv4_mapped()`.
+`validate_standalone_target(target, allow_private_egress)` rejects: multicast,
+broadcast, unspecified, and port zero always, and loopback plus any
+private/reserved address when `!allow_private_egress`. Classification is the
+shared `eggress_core::connector::is_reserved_or_private_ip` (RFC 1918, link-local,
+CGNAT, documentation/benchmarking, IPv4-mapped forms, unique-local IPv6, NAT64,
+6to4, Teredo, ORCHID, and the other special-purpose ranges listed there), so the
+UDP gate cannot drift from the TCP DNS-rebinding gate.
+
+A domain target carries no address at validation time, so the policy is enforced
+post-DNS by `direct::resolve_target(target, allow_private_egress)`:
+
+1. one `tokio::net::lookup_host` call collects **all** answers (no second
+   lookup);
+2. with `allow_private_egress` the first answer is used unchanged (pproxy
+   compatibility);
+3. otherwise every answer is filtered through `is_reserved_or_private_ip` and
+   the first permitted address is connected;
+4. if no answer is permitted, `UdpError::PrivateEgressBlocked` is returned before
+   a socket is connected, and the call site records the dropped/rejected metric.
+
+`UdpTargetFlow::new` takes the same `allow_private_egress` flag; the standalone
+SOCKS5, SOCKS5 UDP ASSOCIATE, and standalone Shadowsocks relays all pass their
+configured value, so a private-resolving domain can no longer bypass the
+literal-target check.
 
 `validate_datagram_size(size, max_size)` is a standalone helper; `decode_packet()` enforces size limit at codec level.
 
@@ -217,11 +241,13 @@ Bridged via `MetricsRegistry::set_udp_metrics()` (`eggress-metrics/src/udp.rs`);
 
 ### Unit Tests (210, `cargo test -p eggress-udp --lib`)
 
-`assoc.rs`: create, close, idempotency, touch, pin. `registry.rs`: create/get/remove, limits, close_all, slot reuse. `relay.rs`: echo, pin reject, route reject, metrics, cancel, idle timeout, flow create/reuse/eviction, registry cleanup, double-close, composed/Shadowsocks upstream. `standalone.rs`+`standalone_shadowsocks.rs`: echo, reject, metrics, flow reuse, limits, timeout, malformed, decode error, wrong password. `flow.rs`: address equivalence (IPv4/v6/domain/mapped), endpoint resolution. `direct.rs`: echo, metrics, encode format. `hop.rs`: nested encode/decode, non-UDP rejection. `codec.rs`: size limits. `security.rs`: all validation paths. `udp_capability.rs`: all chain combinations. `upstream_socks5.rs`: wire format, credential limits, error labels. `metrics.rs`: all counters.
+`assoc.rs`: create, close, idempotency, touch, pin. `registry.rs`: create/get/remove, limits, close_all, slot reuse. `relay.rs`: echo, pin reject, route reject, metrics, cancel, idle timeout, flow create/reuse/eviction, registry cleanup, double-close, composed/Shadowsocks upstream, private-domain drop and permissive allow for the direct path. `standalone.rs`+`standalone_shadowsocks.rs`: echo, reject, metrics, flow reuse, limits, timeout, malformed, decode error, wrong password, private-domain drop with `allow_private_egress = false`. `flow.rs`: address equivalence (IPv4/v6/domain/mapped), endpoint resolution. `direct.rs`: echo, metrics, encode format, post-DNS filtering (`select_resolved_addr` mixed/invalid answers, private-domain drop, permissive allow, public resolution under a restrictive policy). `hop.rs`: nested encode/decode, non-UDP rejection. `codec.rs`: size limits. `security.rs`: all validation paths including CGNAT/NAT64/6to4/Teredo literals. `udp_capability.rs`: all chain combinations. `upstream_socks5.rs`: wire format, credential limits, error labels. `metrics.rs`: all counters.
 
 ### Crate Integration Tests (`crates/eggress-udp/tests/`)
 
-`udp_integration.rs`, `socks5_upstream.rs`, `standalone_udp.rs`.
+`udp_integration.rs`, `socks5_upstream.rs`, `standalone_udp.rs` (including
+private-domain drop with `allow_private_egress = false` and the permissive
+default).
 
 ### Runtime Tests (`crates/eggress-runtime/tests/`)
 
@@ -236,6 +262,7 @@ Bridged via `MetricsRegistry::set_udp_metrics()` (`eggress-metrics/src/udp.rs`);
 5. **Standalone has no client pinning**: any client address can send to any target.
 6. **Flow key includes upstream_id**: different upstreams for same target get separate flows.
 7. **SOCKS5 control keepalive** reads 1 byte with 300s timeout; upstream close tears down flow.
+8. **Domain targets are enforced post-DNS**: `validate_standalone_target` can only judge literal shapes, so the private-egress decision for a domain happens in `direct::resolve_target` from the answers of the one `lookup_host` call. Do not add a second resolution or filter only the first answer.
 8. **`max_standalone_flows = 0`** falls back to `max_associations_global`.
 9. **Feature-gated Shadowsocks**: `standalone_shadowsocks.rs`, `UdpHop::Shadowsocks`, `ShadowsocksUdpTargetFlow` behind `#[cfg(feature = "shadowsocks")]`.
 10. **`touch()` after pin check**: decode error or security reject after successful pin does NOT extend lifetime.

@@ -7,8 +7,11 @@
 //! replacement begin. Any mismatch is a hard error with no fallback to
 //! another install source.
 
+use std::io::Read;
 use std::path::Path;
 use std::process::Command;
+
+use sha2::{Digest, Sha256};
 
 use super::version::ReleaseVersion;
 
@@ -28,30 +31,42 @@ pub fn parse_checksum_sidecar(text: &str) -> Result<String, String> {
     Err("checksum sidecar contains no SHA-256 digest".to_string())
 }
 
-/// Compute the SHA-256 hex digest of a file using `sha256sum` or
-/// `shasum -a 256` (the same tools the bootstrap installer uses).
+/// Compute the SHA-256 hex digest of a file in-process.
+///
+/// This hash is the integrity authority. No `sha256sum`/`shasum` process is
+/// discovered, executed, or parsed, so a `PATH`-planted tool can never
+/// influence whether an archive is accepted.
 pub fn compute_sha256(path: &Path) -> Result<String, String> {
-    for (program, args) in [("sha256sum", vec![]), ("shasum", vec!["-a", "256"])] {
-        let output = match Command::new(program).args(&args).arg(path).output() {
-            Ok(output) => output,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(e) => {
-                return Err(format!("failed to run {program}: {e}"));
-            }
-        };
-        if !output.status.success() {
-            continue;
+    let mut file = std::fs::File::open(path).map_err(|e| {
+        format!(
+            "cannot open {} for SHA-256 verification: {e}",
+            path.display()
+        )
+    })?;
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer).map_err(|e| {
+            format!(
+                "cannot read {} for SHA-256 verification: {e}",
+                path.display()
+            )
+        })?;
+        if read == 0 {
+            break;
         }
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        if let Some(digest) = stdout
-            .split_whitespace()
-            .next()
-            .filter(|t| t.len() == 64 && t.bytes().all(|b| b.is_ascii_hexdigit()))
-        {
-            return Ok(digest.to_ascii_lowercase());
+        hasher.update(&buffer[..read]);
+    }
+    let digest = hasher.finalize();
+    let mut hex = String::with_capacity(64);
+    {
+        use std::fmt::Write as _;
+        for byte in digest {
+            // Writing into a `String` cannot fail.
+            let _ = write!(hex, "{byte:02x}");
         }
     }
-    Err("neither `sha256sum` nor `shasum -a 256` is available; install one or update with the bootstrap installer instead".to_string())
+    Ok(hex)
 }
 
 /// Verify an archive against its sidecar text. Fails closed on any mismatch.
@@ -163,6 +178,65 @@ mod tests {
         assert_eq!(parse_checksum_sidecar(digest).unwrap(), digest);
         assert!(parse_checksum_sidecar("not a checksum").is_err());
         assert!(parse_checksum_sidecar("").is_err());
+    }
+
+    /// FIPS 180-2 / RFC 6234 known-answer vectors: the in-process hasher must
+    /// agree with the published SHA-256 values, not with a shell tool.
+    #[test]
+    fn sha256_matches_known_vectors() {
+        let root = std::env::temp_dir().join(format!("eggress-sha256-vec-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+
+        let empty = root.join("empty");
+        std::fs::write(&empty, b"").unwrap();
+        assert_eq!(
+            compute_sha256(&empty).unwrap(),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+
+        let abc = root.join("abc");
+        std::fs::write(&abc, b"abc").unwrap();
+        assert_eq!(
+            compute_sha256(&abc).unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+
+        // Multi-block input: 1,000,000 'a' bytes crosses the 64 KiB read
+        // buffer many times and must still hash as one stream.
+        let million = root.join("million");
+        std::fs::write(&million, vec![b'a'; 1_000_000]).unwrap();
+        assert_eq!(
+            compute_sha256(&million).unwrap(),
+            "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"
+        );
+
+        assert!(compute_sha256(&root.join("missing")).is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The sidecar remains the gate: the in-process digest of the exact
+    /// archive file is what decides acceptance.
+    #[test]
+    fn sidecar_comparison_uses_the_in_process_digest() {
+        let root = std::env::temp_dir().join(format!("eggress-sha256-side-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let archive = root.join("eggress-x86_64-unknown-linux-gnu.tar.gz");
+        std::fs::write(&archive, b"release-bytes").unwrap();
+
+        let digest = compute_sha256(&archive).unwrap();
+        let sidecar = format!("{digest}  eggress-x86_64-unknown-linux-gnu.tar.gz\n");
+        verify_archive(&archive, &sidecar).unwrap();
+
+        std::fs::write(&archive, b"tampered-bytes").unwrap();
+        let err = verify_archive(&archive, &sidecar).unwrap_err();
+        assert!(err.contains("checksum mismatch"), "{err}");
+
+        // Same bytes written back: the digest is deterministic.
+        std::fs::write(&archive, b"release-bytes").unwrap();
+        verify_archive(&archive, &sidecar).unwrap();
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

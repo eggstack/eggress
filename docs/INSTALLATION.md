@@ -225,6 +225,20 @@ Behavior:
   background update checks, and never falls back to Cargo/source builds.
   Unwritable destinations and unsupported prebuilt targets fail before
   mutation with an actionable message.
+- Requires only a **trusted system `curl`**: `/usr/bin/curl` or `/bin/curl`
+  on Unix, `%SystemRoot%\System32\curl.exe` on Windows. `PATH` is not scanned,
+  a symlinked or group/other-writable tool is refused, and a missing trusted
+  binary fails before anything is downloaded. SHA-256 is computed in-process,
+  so `sha256sum`/`shasum` are not needed and cannot influence verification.
+- Uses a private staging directory: one unpredictable, owner-only (`0700`)
+  directory per run, `create_new` download files that never overwrite or follow
+  a symlink, and a second hash of the archive immediately before extraction. A
+  planted or replaced staging path fails the update closed and leaves the
+  installed pair untouched.
+- Every update URL is HTTPS (`curl` also runs with `--proto =https
+  --tlsv1.2`). Release binaries ignore `EGRESS_UPDATE_BASE_URL` and reject
+  `file://`; that offline fixture hook exists only in test builds or builds
+  with the non-default `update-fixtures` cargo feature.
 - Does not touch a Python environment. There is no background update check.
 
 Re-running the installer (latest or pinned) remains a supported equivalent;
@@ -300,3 +314,11 @@ glibc the build runner happens to provide.
 - `eggress update` reports a missing/mismatched sibling `pproxy`: reinstall
   with the bootstrap installer to repair the version-aligned pair, then
   update normally.
+- `eggress update` reports no trusted `curl`: install `curl` as a system
+  package so it exists at `/usr/bin/curl` or `/bin/curl`
+  (`%SystemRoot%\System32\curl.exe` on Windows). A `curl` found only earlier on
+  `PATH` is intentionally ignored; use the bootstrap installer if the platform
+  has no system `curl`.
+- `eggress update` reports a refused staging path: another update transaction
+  (or a planted path) owns that file. Nothing was replaced — rerun the update;
+  a persistent failure means the temp directory is not private to your user.

@@ -122,6 +122,23 @@ pub fn normalize_host_for_exact(host: &str) -> String {
     }
 }
 
+/// Canonicalize an address for CIDR comparison.
+///
+/// `ipnet::IpNet::contains` refuses cross-family comparisons, so an
+/// IPv4-mapped IPv6 literal (`::ffff:a.b.c.d`) would otherwise never match an
+/// IPv4 CIDR rule. A dual-stack client could then bypass a private-range rule
+/// by sending the mapped form.
+///
+/// The value is canonicalized only for the comparison: the target and source
+/// carried by the route request — and therefore the values reported by
+/// `route explain` — are never rewritten.
+fn canonical_ip(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V6(v6) => v6.to_ipv4_mapped().map_or(IpAddr::V6(v6), IpAddr::V4),
+        v4 => v4,
+    }
+}
+
 fn target_host_str(host: &TargetHost) -> Cow<'_, str> {
     match host {
         TargetHost::Domain(domain) => Cow::Borrowed(domain),
@@ -189,8 +206,10 @@ impl MatchExpr {
             }
             MatchExpr::DestinationCidr(cidr) => {
                 if let TargetHost::Ip(ip) = &request.target.host {
-                    cidr.contains(ip)
+                    cidr.contains(&canonical_ip(*ip))
                 } else {
+                    // CIDR rules are literal-IP-only by contract: no DNS
+                    // resolution happens during route evaluation.
                     false
                 }
             }
@@ -201,7 +220,7 @@ impl MatchExpr {
             }
             MatchExpr::SourceCidr(cidr) => {
                 if let Some(addr) = request.source {
-                    cidr.contains(&addr.ip())
+                    cidr.contains(&canonical_ip(addr.ip()))
                 } else {
                     false
                 }

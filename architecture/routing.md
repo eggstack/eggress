@@ -85,6 +85,27 @@ fn route(&self, request: &RouteRequest) -> Result<SelectedRoute, RouteError> {
 
 `HostRegex` tests against the raw host string (no normalization).
 
+### CIDR matching rules
+
+`DestinationCidr` and `SourceCidr` compare a canonicalized address via
+`canonical_ip()` at `src/matcher.rs`:
+
+- `Ipv6Addr::to_ipv4_mapped()` converts an IPv4-mapped literal (`::ffff:a.b.c.d`)
+  to its IPv4 form before `ipnet::IpNet::contains`. `ipnet` refuses
+  cross-family comparisons, so without this step a dual-stack client could
+  bypass an IPv4 private-range rule by sending the mapped form. The mapped form
+  also cannot satisfy a `not { destination_cidr = … }` rule.
+- Native IPv6 addresses keep their family, so an IPv4 CIDR does not match an
+  unrelated native IPv6 address and vice versa.
+- Canonicalization is local to the comparison: the `TargetAddr`/`Source` in the
+  `RouteRequest` is never rewritten, so `route explain` reports exactly the
+  literal the client supplied.
+- Matching stays literal-IP-only and synchronous: a `TargetHost::Domain` never
+  matches a CIDR and route evaluation performs no DNS resolution. Domain
+  private-egress protection belongs to the resolved-target guard, not to CIDR
+  rules; `validate_config_security` warns when a `reject` rule relies on a
+  private/reserved `destination_cidr` without a host condition.
+
 ### Health state machine
 
 Six states in `HealthState` (`src/health.rs:12-19`):
@@ -157,6 +178,7 @@ No Cargo features gate routing functionality (all routing code is always compile
 ## Security notes
 
 - `SourceCidr` / `SourcePort` match against `request.source` which is the peer socket address. Spoofable at the transport layer if the listener does not enforce real peer addresses (e.g. transparent proxy with netfilter).
+- CIDR match inputs are canonicalized for address-family correctness (`canonical_ip()` in `src/matcher.rs`), but CIDR rules remain literal-IP-only: no DNS resolution is added to route evaluation, and the config validator warns when a `reject` rule treats a private `destination_cidr` as a complete private-network ACL.
 - `CompatRegexRule` compiles user-supplied regex. Regexes are bounded by `regex::Regex` complexity limits (DFA size). No user-controlled regex can cause exponential backtracking due to the regex crate's guarantees.
 - Credentials and secret-bearing URIs are redacted before logging; `RouteExplanation::chain` uses `RedactedUri::new()` (`src/explain.rs`).
 - `validate_upstream_id()` at `src/upstream.rs:21-28` enforces `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$` to prevent label injection.
@@ -174,7 +196,7 @@ No Cargo features gate routing functionality (all routing code is always compile
 
 | Area | Files / tests | What is covered |
 |---|---|---|
-| MatchExpr | `src/matcher.rs` (unit-test-free; covered by `src/lib.rs` tests) | 30+ tests: host exact/suffix/regex, CIDR IPv4/v6, port exact/range/set, source CIDR/port, listener, protocol, identity, composite All/AnyOf/Not, empty All/AnyOf |
+| MatchExpr | `src/matcher.rs` (unit-test-free; covered by `src/lib.rs` tests) | 40+ tests: host exact/suffix/regex, CIDR IPv4/v6, IPv4-mapped IPv6 canonicalization for destination/source CIDR (including negation and an unchanged `route explain` target), port exact/range/set, source CIDR/port, listener, protocol, identity, composite All/AnyOf/Not, empty All/AnyOf |
 | Router decide/select | `src/router.rs` (unit-test-free; covered by `src/lib.rs` tests) | first-match-wins, default action, upstream group, reject, accessor methods |
 | Health state machine | `src/health.rs:366-710` | 15+ tests: every state transition, thread safety (100 threads), eligibility, timestamps, failure resets counter, Disabled terminal |
 | Jitter | `src/health.rs:678` | 1000 iterations, validates +/- 20% range |

@@ -4,7 +4,16 @@ This directory contains bounded plans handed directly to implementation agents.
 
 Implementation plans are operational documents tied to the current repository state. They may be corrected, superseded, or archived without modifying the canonical long-term documents.
 
-There is currently no active implementation plan. New plans are registered in `plans/registry.md` and `docs/ROADMAP.md` before handoff.
+Active plans are registered in `plans/registry.md` and `docs/ROADMAP.md` before handoff. The 2026-11-16 security-corrective set was implemented and closed on 2026-11-16:
+
+- `transports/004-tls-trust-and-dependency-advisory-remediation.md` (`plans/closure/transports/004-status.md`)
+- `transports/005-russh-065-advisory-migration.md` (`plans/closure/transports/005-status.md`)
+- `protocols-edge/003-socks4-auth-and-udp-private-egress.md` (`plans/closure/protocols-edge/003-status.md`)
+- `routing-health-observability/003-cidr-canonicalization-and-admin-exposure.md` (`plans/closure/routing-health-observability/003-status.md`)
+- `delivery/004-updater-trust-and-advisory-gate.md` (`plans/closure/delivery/004-status.md`)
+- `parity-compat/003-auth-reuse-and-compat-redaction.md` (`plans/closure/parity-compat/003-status.md`)
+
+The previously registered `transports/003-downstream-safe-bounded-websocket-composition-api.md` remains ready; Delivery M003 is closed.
 
 ## Layout and naming
 
