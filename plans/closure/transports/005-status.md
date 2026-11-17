@@ -170,6 +170,7 @@ Remaining `cargo audit` findings:
 | `zip 6.0.0` | RUSTSEC-2026-0369 | Delivery M004 |
 | `rustix 1.1.4` | RUSTSEC-2026-0486 (`unsound` warning, not a vulnerability) | Pre-existing via `tempfile`; unchanged here |
 | `wnaf 0.14.0` | yanked (warning only) | Pre-existing; not on the SSH path |
+| `chrono 0.4.45` | RUSTSEC-2026-0543 (unmaintained, published 2026-11-17) | Transports M005 (`russh-util` is unconditional; optional `ssh` only; no safe upgrade) |
 
 **Coordinator broad gate (2026-11-16, after all six corrective waves):** pass —
 `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
@@ -300,8 +301,15 @@ reports only the four tracked `zip 6.0.0` advisories. The condition recorded in
 
 Post-wave note (2026-11-16): the `rustix` advisory was cleared by the `rustix
 1.1.6` update in Delivery M004, and the `cargo deny` graph-scope finding was
-fixed by the `cargo deny --workspace check` gate in M004. The four `zip`
+fixed by the `cargo deny --workspace check` gate in M004. The seven `zip`
 advisories remain tracked there.
+
+Advisory-database note (2026-11-17): RUSTSEC-2026-0543 (`chrono` unmaintained)
+was published after this closure. It is not a vulnerability, is reachable only
+through the optional `ssh` feature, and has no safe upgrade because
+`russh-util 0.52.0` is unconditional in `russh 0.65.2` (the latest published
+line). It is added to the narrow `deny.toml` exception with owner Transports
+M005 and a 2027-05-01 review date; the SSH *vulnerability* set remains closed.
 
 ## 11. Roadmap disposition
 

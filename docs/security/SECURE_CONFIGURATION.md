@@ -266,8 +266,9 @@ candidate verification. Its trust boundary is deliberately narrow:
   download with a remediation message.
 - **Advisories are gated.** CI and the release preflight run
   `cargo deny --workspace check`. The only ignores are the tracked
-  `zip 6.0.0` advisories inherited from `eggup-archive`; they are listed with
-  their removal condition in `deny.toml`.
+  `zip 6.0.0` advisories inherited from `eggup-archive` and the unmaintained
+  `chrono` transitive through the optional `ssh` path (`russh-util`); both are
+  listed with owners and removal/review conditions in `deny.toml`.
 
 For a fully operator-controlled deployment, prefer the OS package flow (install
 to a root-owned directory, update through the package manager) and let

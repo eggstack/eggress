@@ -298,9 +298,11 @@ reports only the four tracked `zip 6.0.0` advisories. The condition recorded in
 
 Post-wave note (2026-11-16): the `russh`/`crypto-bigint`/`ctutils` and `zip`
 findings listed above are owned by Transports M005 and Delivery M004. M005
-cleared the SSH graph, and M004 added the advisory gate with a tracked `zip`
-exception and cleared the `rustix` advisory via `rustix 1.1.6`. No finding in
-this table remains open for M004 scope.
+cleared the SSH vulnerability set, and M004 added the advisory gate with a
+tracked `zip` exception and cleared the `rustix` advisory via `rustix 1.1.6`.
+A later unmaintained-only advisory (`chrono`, RUSTSEC-2026-0543, published
+2026-11-17) is tracked in M005. No finding in this table remains open for M004
+scope.
 
 ## 11. Roadmap disposition
 

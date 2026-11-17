@@ -171,6 +171,10 @@ cargo deny --workspace check
   — exactly `RUSTSEC-2026-0429`, `-0367`, `-0368`, `-0369`, all `zip 6.0.0`
   (`patched >= 9.0.0`), plus 1 allowed warning (`wnaf 0.14.0` yanked).
   `RUSTSEC-2026-0486` (rustix) is gone after the 1.1.6 update.
+  Advisory-database note (2026-11-17): `RUSTSEC-2026-0545`, `-0547`, and `-0548`
+  (all `zip 6.0.0`) were published after this run and added to the same tracked
+  exception; `cargo audit` now reports 7 `zip` vulnerabilities plus the
+  unmaintained `chrono` warning tracked by Transports M005. See §10.
 - `cargo deny --workspace check`: `advisories ok, bans ok, licenses ok,
   sources ok`; zero `advisory-not-detected` warnings (all four ignores matched
   `zip 6.0.0` nodes); remaining output is warnings only (duplicate versions,
@@ -286,8 +290,8 @@ reports only the four tracked `zip 6.0.0` advisories. The condition recorded in
 | low | Bare `cargo deny check` still prints `advisories ok` while skipping `eggress-cli`/`zip` (root-package graph) | A maintainer running the wrong command can believe the gate passed | Mitigated: CI/preflight/docs all use `cargo deny --workspace check`, and `deny.toml` documents the trap. Consider making `--workspace` the only documented form in `AGENTS.md` at the next docs pass. |
 | low | `tempfile`'s default directory mode is umask-derived (`0755`), not `0700` | Would have left staged archives readable by other local users | Fixed: `staging_dir()` passes an explicit `0700` mode; asserted by test |
 | low | `Apache-2.0 WITH LLVM-exception` (`target-lexicon`, via `pyo3-build-config`) had to be allow-listed once the gate scanned the whole workspace | Gate could not pass without it | Fixed in `deny.toml`; permissive license, no policy change |
-| medium | Four `zip 6.0.0` advisories remain in the updater graph | Upstream `eggup-archive` blocker; Eggup's bounded extractor does not call the vulnerable `extract()` APIs and Eggress verifies the whole-archive SHA-256 first | Tracked as a narrow commented `deny.toml` exception; remove when `eggup-archive` depends on `zip >= 9.0.0` |
-| low | Workspace-wide fmt/clippy/test gate not run in this wave | Cross-crate regressions outside the touched crates would be caught later | Coordinator runs it after all corrective waves |
+| medium | Seven `zip 6.0.0` advisories remain in the updater graph (four at closure; RUSTSEC-2026-0545/-0547/-0548 published 2026-11-17 and added to the same tracked exception) | Upstream `eggup-archive` blocker; Eggup's bounded extractor does not call the vulnerable `extract()`/`ZipStreamReader` APIs, disables `aes-crypto`, and Eggress verifies the whole-archive SHA-256 first | Tracked as a narrow commented `deny.toml` exception; remove when `eggup-archive` depends on `zip >= 9.0.0` |
+| low | Workspace-wide fmt/clippy/test gate not run in this wave | Cross-crate regressions outside the touched crates would be caught later | Coordinator ran it after all corrective waves (recorded in §4) |
 
 ## 11. Roadmap disposition
 

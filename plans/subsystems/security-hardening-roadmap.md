@@ -399,19 +399,20 @@ The program is complete when:
 | Milestone | Status | Implementation plan | Closure record | Blockers |
 |---|---|---|---|---|
 | S1 TLS trust/default advisories | closed | `plans/implementation/transports/004-tls-trust-and-dependency-advisory-remediation.md` | `plans/closure/transports/004-status.md` | — |
-| S2 SSH `russh` migration | closed | `plans/implementation/transports/005-russh-065-advisory-migration.md` | `plans/closure/transports/005-status.md` | — |
+| S2 SSH `russh` migration | closed | `plans/implementation/transports/005-russh-065-advisory-migration.md` | `plans/closure/transports/005-status.md` | RUSTSEC-2026-0543 (`chrono` unmaintained via `russh-util`) is a tracked, commented `deny.toml` exception with owner and review date; optional `ssh` only |
 | S3 SOCKS4/UDP/classification | closed | `plans/implementation/protocols-edge/003-socks4-auth-and-udp-private-egress.md` | `plans/closure/protocols-edge/003-status.md` | — |
 | S4 CIDR/admin exposure | closed | `plans/implementation/routing-health-observability/003-cidr-canonicalization-and-admin-exposure.md` | `plans/closure/routing-health-observability/003-status.md` | — |
-| S5 Updater/advisory gate/output | closed | `plans/implementation/delivery/004-updater-trust-and-advisory-gate.md` | `plans/closure/delivery/004-status.md` | Four `zip 6.0.0` advisories remain as a tracked, commented `deny.toml` exception with an owner and review date pending upstream `eggup-archive` with `zip >= 9.0.0` |
+| S5 Updater/advisory gate/output | closed | `plans/implementation/delivery/004-updater-trust-and-advisory-gate.md` | `plans/closure/delivery/004-status.md` | Seven `zip 6.0.0` advisories remain as a tracked, commented `deny.toml` exception with an owner and review date pending upstream `eggup-archive` with `zip >= 9.0.0` |
 | S6 Compat auth/reuse/redaction | closed | `plans/implementation/parity-compat/003-auth-reuse-and-compat-redaction.md` | `plans/closure/parity-compat/003-status.md` | — |
 
 Program disposition (2026-11-16): all six milestones are implemented and their
 closure records are `closed`. The coordinator broad gate passed — workspace
 `fmt`, `clippy -D warnings`, `test --workspace --locked`, the documented CLI and
 embed feature slices, the embed OpenSSH regression, and
-`cargo deny --workspace check` (advisories/bans/licenses/sources). The only
-remaining audit item is the four `zip 6.0.0` advisories in the updater graph,
-tracked as a narrow, commented `deny.toml` exception (owner: Delivery M004;
-review by 2027-05-01) pending an upstream `eggup-archive` release with
-`zip >= 9.0.0`. No commit, tag, or publication was authorized or created by
-this program.
+`cargo deny --workspace check` (advisories/bans/licenses/sources). The
+remaining audit items are the seven `zip 6.0.0` advisories in the updater graph
+and the unmaintained `chrono` transitive through `russh-util` on the optional
+`ssh` path, both tracked as narrow, commented `deny.toml` exceptions with owners
+and a 2027-05-01 review date pending an upstream `eggup-archive` release with
+`zip >= 9.0.0` and a `russh`/`russh-util` update. No commit, tag, or publication
+was authorized or created by this program.

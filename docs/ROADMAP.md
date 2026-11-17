@@ -116,12 +116,13 @@ tiers.
   ([closure](../plans/closure/parity-compat/003-status.md)).
 
 The workspace `fmt`/`clippy`/`test` gate, the documented feature slices, the
-embed OpenSSH regression, and `cargo deny --workspace check` all pass. The only
-remaining audit item is the four `zip 6.0.0` advisories in the updater graph,
-tracked as a narrow, commented `deny.toml` exception with an owner and review
-date pending an upstream `eggup-archive` release with `zip >= 9.0.0`. No version
-bump, tag, or publication was authorized; `v1.0.12` remains the current
-published release.
+embed OpenSSH regression, and `cargo deny --workspace check` all pass. The
+remaining audit items are the seven `zip 6.0.0` advisories in the updater graph
+and the unmaintained `chrono` transitive through `russh-util` on the optional
+`ssh` path, both tracked as narrow, commented `deny.toml` exceptions with owners
+and a 2027-05-01 review date pending an upstream `eggup-archive` release with
+`zip >= 9.0.0` and a `russh`/`russh-util` update. No version bump, tag, or
+publication was authorized; `v1.0.12` remains the current published release.
 
 ### Active maintenance — Eggup archive/pair self-update convergence
 

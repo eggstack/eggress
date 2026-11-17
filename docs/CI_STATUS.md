@@ -113,7 +113,7 @@ Run these only when their trigger condition applies:
 
 The commands remain documented in `docs/TESTING.md`, `docs/DIFFERENTIAL_TESTING.md`, and `AGENTS.md`. Their existence does not make them routine merge gates.
 
-The advisory gate runs `cargo deny --workspace check`, not a bare `cargo deny check`: the root manifest is the `eggress-bench` package (not a virtual manifest), so a root-only graph silently omits `eggress-cli` — and with it `eggup-archive -> zip` — and prints a misleading `advisories ok`. `deny.toml` sets `[graph] all-features = true` so optional-only dependencies (`russh`, QUIC/H3, the `zip` subtree) are scanned as well. `deny.toml` carries exactly four commented `zip 6.0.0` ignores; add nothing to that list without the same owner/removal-condition treatment.
+The advisory gate runs `cargo deny --workspace check`, not a bare `cargo deny check`: the root manifest is the `eggress-bench` package (not a virtual manifest), so a root-only graph silently omits `eggress-cli` — and with it `eggup-archive -> zip` — and prints a misleading `advisories ok`. `deny.toml` sets `[graph] all-features = true` so optional-only dependencies (`russh`, QUIC/H3, the `zip` subtree) are scanned as well. `deny.toml` carries seven commented `zip 6.0.0` ignores plus one commented `chrono`/`russh-util` ignore (unmaintained only, optional `ssh`); add nothing to that list without the same owner/removal-condition treatment.
 
 ## Evidence and completion records
 
