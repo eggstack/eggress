@@ -109,7 +109,34 @@ Attacker sending malformed protocol data to trigger bugs.
 - Fuzz harnesses for SOCKS, HTTP, Trojan, URI, Shadowsocks parsers
 - `unsafe_code = "deny"` in all workspace crates
 
-### A9: Log/Metrics Secret Leaker
+### A9: Binary Self-Update Supply Chain (`eggress update`)
+
+Attacker who can redirect update downloads (malicious env injection, network
+MITM outside TLS, or compromise of the GitHub release publishing account) may
+try to replace the installed `eggress`/`pproxy` pair.
+
+**Trust model today:**
+- Release discovery and asset fetch over HTTPS to GitHub Releases (default).
+- Archive **integrity** via SHA-256 sidecar verification and staged executable
+  version/identity checks before any replacement.
+- No release **authenticity** layer (no cosign, minisign, TUF, or platform code
+  signing). Matching checksums from a malicious publisher would pass today.
+
+**Mitigations:**
+- `EGRESS_UPDATE_BASE_URL` cannot redirect updates unless
+  `EGRESS_UPDATE_ALLOW_BASE_URL_OVERRIDE` is also set to a truthy value
+  (`1`/`true`/`yes`/`on`); base URL alone fails closed.
+- Permitted override schemes are `https://` or `file://` only; plaintext HTTP
+  URLs are rejected in the downloader.
+- Checksum and staged-version verification fail closed; a failed update leaves
+  the prior pair untouched.
+- Operators may avoid self-update and install from pinned release URLs or
+  verified installer scripts instead.
+
+**Residual risk:** Compromised GitHub release credentials that publish
+archives and SHA-256 sidecars consistent with the tagged version.
+
+### A10: Log/Metrics Secret Leaker
 
 Attacker reading logs, metrics, or admin output for credentials.
 
@@ -149,3 +176,6 @@ Attacker reading logs, metrics, or admin output for credentials.
 14. Graceful shutdown ordering (drain before cancel)
 15. No secrets in Python package data
 16. Config warnings for non-loopback binds without authentication
+17. Self-update base URL override gated on dual env acknowledgment; HTTPS-only
+    network fetches; SHA-256 + staged-version integrity before pair replacement
+    (authenticity signing explicitly deferred)

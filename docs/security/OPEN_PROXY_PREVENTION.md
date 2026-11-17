@@ -10,11 +10,22 @@ prevent accidental or intentional open proxy exposure.
 
 ### Warning System
 
-Config validation emits warnings for non-loopback binds without authentication:
+Config validation emits warnings for dangerous combinations:
 
-- **TCP listeners**: Warning if `bind` is not loopback and no auth/TLS/Shadowsocks
-- **Admin server**: Warning if `bind` is not loopback
+- **TCP listeners**: Warning if `bind` is not loopback and no auth/Shadowsocks/SSR/Trojan
+- **Standalone UDP**: Warning if `standalone_pproxy_udp` binds non-loopback (no TCP auth channel)
+- **Admin server**: Warning if non-loopback without auth; with `admin.require_auth = true`, also warn on loopback without auth
 - **Reverse control**: Warning if `control_bind` is not loopback and no auth
+
+By default these are log-only. Native operators can fail closed:
+
+```toml
+[process.security]
+fail_on_security_warnings = true
+```
+
+`eggress pproxy check --strict-security` exits non-zero when translated config
+emits the same security warnings. pproxy-compat run defaults remain warn-only.
 
 ### Loopback Detection
 
@@ -56,8 +67,10 @@ A listener is considered authenticated if it has any of:
 ### Admin Server
 
 - Default bind: `127.0.0.1:9090`
-- No authentication — relies on network-level access control
-- Warning emitted if bound to non-loopback
+- Loopback may be unauthenticated by default (local-machine trust)
+- Non-loopback without `[admin.auth]` is a structural validation error
+- Set `admin.require_auth = true` on multi-user hosts; combine with
+  `[process.security] fail_on_security_warnings = true` to refuse startup
 
 ### Metrics
 

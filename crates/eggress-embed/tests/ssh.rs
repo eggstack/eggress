@@ -516,3 +516,30 @@ async fn native_toml_connector_rejects_untrusted_ssh_host_key() {
     );
     echo_task.abort();
 }
+
+#[tokio::test]
+async fn pproxy_strict_connector_rejects_untrusted_ssh_host_key() {
+    let Some(fixture) = OpenSsh::start()
+        .await
+        .expect("OpenSSH fixture setup failed")
+    else {
+        return;
+    };
+    let (echo_addr, echo_task) = start_echo().await;
+    let connector =
+        eggress_embed::outbound::OutboundConnector::from_pproxy_uri_strict(&fixture.key_uri())
+            .unwrap();
+    let error = match connector
+        .connect_tcp(&echo_addr.ip().to_string(), echo_addr.port())
+        .await
+    {
+        Ok(_) => panic!("strict pproxy SSH must verify the host key"),
+        Err(error) => error,
+    };
+    let rendered = format!("{error:?} {error}");
+    assert!(
+        rendered.contains("SSH"),
+        "unexpected strict pproxy SSH error: {rendered}"
+    );
+    echo_task.abort();
+}

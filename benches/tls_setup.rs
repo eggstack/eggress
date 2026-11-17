@@ -88,7 +88,16 @@ fn tls_setup_benchmark(c: &mut Criterion) {
         b.iter(|| black_box(eggress_transport_tls::default_h2_client_config().unwrap()))
     });
     group.bench_function("chain_executor_construction", |b| {
-        b.iter(|| black_box(eggress_outbound::build_chain_executor(None, None)));
+        b.iter(|| {
+            #[cfg(feature = "ssh")]
+            {
+                black_box(eggress_outbound::build_chain_executor(None, None, None))
+            }
+            #[cfg(not(feature = "ssh"))]
+            {
+                black_box(eggress_outbound::build_chain_executor(None, None))
+            }
+        });
     });
 
     let certificate = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();

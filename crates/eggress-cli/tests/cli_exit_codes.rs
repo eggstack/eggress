@@ -117,3 +117,46 @@ fn test_exit_code_check_bounded_ssr_still_zero() {
         "expected parity report mentioning bounded SSR compatibility, got: {stdout}",
     );
 }
+
+#[test]
+fn test_exit_code_check_strict_security_open_listener() {
+    let output = eggress_bin()
+        .args([
+            "pproxy",
+            "check",
+            "--strict-security",
+            "--",
+            "-l",
+            "socks5://0.0.0.0:1080",
+        ])
+        .output()
+        .expect("failed to run eggress");
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "expected exit code 3 (config validation) for --strict-security open listener, got {:?}\nstderr: {}\nstdout: {}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout),
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("strict-security") || stderr.contains("without authentication"),
+        "expected strict-security diagnostic, got: {stderr}",
+    );
+}
+
+#[test]
+fn test_exit_code_check_without_strict_security_open_listener_zero() {
+    let output = eggress_bin()
+        .args(["pproxy", "check", "--", "-l", "socks5://0.0.0.0:1080"])
+        .output()
+        .expect("failed to run eggress");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "expected exit code 0 without --strict-security, got {:?}\nstderr: {}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}

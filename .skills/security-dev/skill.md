@@ -3,7 +3,7 @@
 ## When to use
 Use when working on security features, writing security tests, hardening attack surfaces, or reviewing security invariants.
 
-## DNS rebinding protection
+## DNS rebinding / private egress protection
 
 `DirectConnector` in `crates/eggress-core/src/connector.rs` rejects DNS resolutions that resolve to private/reserved IP ranges:
 
@@ -12,9 +12,11 @@ Use when working on security features, writing security tests, hardening attack 
 - Private ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
 - Unique-local IPv6 (fc00::/7)
 
-This prevents DNS rebinding attacks where a malicious DNS response points to an internal service. The check applies to domain resolution only — explicit IP targets in URIs bypass DNS and are not affected.
+This prevents DNS rebinding attacks where a malicious DNS response points to an internal service. By default the check applies to domain resolution only — literal IP targets bypass it unless `[process.security] enforce_literal_ip_check = true` (plumbed into `ConnectOptions` / server sessions / `OutboundConnector::from_toml`).
 
 Error variant: `ConnectError::ReservedTarget`.
+
+Native fail-closed open-proxy posture: `[process.security] fail_on_security_warnings = true` (also `admin.require_auth`, `eggress pproxy check --strict-security`). pproxy-compat defaults stay warn-only.
 
 ## Auth failure metrics
 
@@ -32,8 +34,16 @@ This enables monitoring for brute-force attempts and auth misconfigurations.
 The optional `ssh` feature uses `eggress-transport-ssh` to match pproxy 2.7.9.
 Because pproxy passes `known_hosts=None`, the compatibility client accepts any
 server key and emits a warning on new sessions. Keep this behavior isolated from
-native APIs and never describe it as secure host authentication. Test and review
-that:
+native APIs and never describe it as secure host authentication.
+
+`OutboundConnector::from_pproxy_uri()` always uses the insecure compatibility
+SSH cache when `ssh` + `pproxy-compat` are enabled. Security-sensitive embedders
+must opt into `from_pproxy_uri_strict()` or
+`from_pproxy_uri_with_host_key_policy()` (separate session cache; never shared
+with compat). `EGRESS_SSH_INSECURE_HOST_KEYS` applies only to pproxy compatibility
+runtime startup, not native/embed strict construction.
+
+Test and review that:
 
 - passwords never occur in `Debug`, errors, diagnostics, or evidence output;
 - private-key paths are not echoed by authentication failures;
@@ -51,7 +61,7 @@ The OpenSSH regression suite is:
 
 `validate_standalone_target()` in `crates/eggress-udp/src/security.rs` validates UDP relay targets against private/reserved IP ranges (same ranges as DNS rebinding protection). Called from standalone UDP relay paths instead of the weaker `validate_target()`.
 
-Uses `allow_private_egress = true` (pproxy compat default) to allow private targets when explicitly configured.
+Uses `allow_private_egress = true` (pproxy compat default) to allow private targets when explicitly configured. When `allow_private_egress = false`, `reject_reserved_resolved_addr` / `UdpTargetFlow::new_with_private_egress` also fail closed on domains that resolve to reserved/private addresses (residual DNS TOCTOU remains). Non-loopback `standalone_pproxy_udp` emits a config security warning.
 
 ## Legacy Shadowsocks boundary
 

@@ -19,7 +19,9 @@ pub(crate) mod upstreams;
 
 pub use composition::validate_config_composition;
 pub use core::validate_duration;
-pub use security::validate_config_security;
+pub use security::{
+    fail_closed_on_security_warnings, fail_on_security_warnings_enabled, validate_config_security,
+};
 
 use core::{validate_admin, validate_process, validate_timeouts};
 use listeners::validate_listeners;

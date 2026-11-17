@@ -110,6 +110,25 @@ maintainer-authorized Eggress release.
 
 Source implementation/closure does not itself authorize a version bump or tag.
 
+### Closed — security hardening (audit remediation)
+
+Cross-cutting workstream registered and closed 2026-11-17 against published
+**1.0.12** / baseline `ba64e16`, governed by
+[`plans/adrs/ADR-0002-native-compat-security-hardening.md`](../plans/adrs/ADR-0002-native-compat-security-hardening.md)
+(path-split / opt-in harden; no silent pproxy default flips) and
+[`plans/subsystems/security-hardening-roadmap.md`](../plans/subsystems/security-hardening-roadmap.md).
+
+| Milestone | Status | Plan / closure |
+|---|---|---|
+| M001 Native fail-closed + admin posture (findings #1, #8) | closed | [`001`](../plans/implementation/security-hardening/001-native-fail-closed-and-admin-posture.md) / [`closure`](../plans/closure/security-hardening/001-native-fail-closed-and-admin-posture.md) |
+| M002 Private egress policy plumbing (#5, #6, #7) | closed | [`002`](../plans/implementation/security-hardening/002-private-egress-policy-plumbing.md) / [`closure`](../plans/closure/security-hardening/002-private-egress-policy-plumbing.md) |
+| M003 Embed SSH strict host-key path (#4, #12) | closed | [`003`](../plans/implementation/security-hardening/003-embed-ssh-strict-host-key-path.md) / [`closure`](../plans/closure/security-hardening/003-embed-ssh-strict-host-key-path.md) |
+| M004 Compat residual without parity break (#2, #3, #11) | closed | [`004`](../plans/implementation/security-hardening/004-compat-residual-hardening.md) / [`closure`](../plans/closure/security-hardening/004-compat-residual-hardening.md) |
+| M005 Update trust hardening (#10; #9 deferred B2) | closed | [`005`](../plans/implementation/security-hardening/005-update-trust-hardening.md) / [`closure`](../plans/closure/security-hardening/005-update-trust-hardening.md) |
+
+Parity claims unchanged. Finding **#9** (update authenticity beyond SHA-256)
+remains deferred under Outcome B2 until a future signing ADR.
+
 ## Completed Milestones
 
 ### Phase 1: Core TCP proxy foundation
@@ -267,8 +286,10 @@ Current acceptance is governed by the practical parity roadmap and manifest.
 ## Remaining Work
 
 Post-milestone work covers advanced transport hardening, Python async API
-refinements, and release automation. These are ongoing improvements rather than
-blocking milestones.
+refinements, release automation, and the proposed
+[security hardening](#closed--security-hardening-audit-remediation) workstream
+(M001–M005 closed; #9 authenticity deferred B2). These are completed
+improvements rather than blocking product-core milestones.
 
 The API-boundary/interoperability implementation phases have landed and the
 narrow post-implementation corrective closure is complete (native write

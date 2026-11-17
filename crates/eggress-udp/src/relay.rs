@@ -541,7 +541,12 @@ async fn handle_client_datagram(
             e.into_mut()
         }
         std::collections::hash_map::Entry::Vacant(e) => {
-            let flow = UdpTargetFlow::new(request.target.clone(), config.upstream_udp_bind).await?;
+            let flow = UdpTargetFlow::new_with_private_egress(
+                request.target.clone(),
+                config.upstream_udp_bind,
+                config.allow_private_egress,
+            )
+            .await?;
 
             let target_addr_clone = request.target.clone();
             let flow_response_tx = response_tx.clone();

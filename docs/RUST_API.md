@@ -82,6 +82,12 @@ Representative (not exhaustive) downstream-shaped compile contracts:
   `eggress-runtime` supervisor/state/classify signatures) and
   `protocol_representative_paths_compile` (HTTP/SOCKS via URI + `HttpDetector`/
   `ConnectRequest`);
+- Additive SSH host-key constructors on `eggress-outbound::OutboundConnector`
+  (feature `ssh` + `pproxy-compat`): `from_pproxy_uri_strict` and
+  `from_pproxy_uri_with_host_key_policy`, plus `ssh_host_key_policy()`
+  introspection. Default `from_pproxy_uri` remains compatibility insecure
+  host-key policy; these methods are documentation/qualification of new
+  additive surface only and do not rename or signature-change existing items.
 - `eggress-core::connector::ConnectionMetadata` and the additive
   `DirectConnector::connect_with_options_and_metadata()` /
   `ChainExecutor::execute_with_metadata()` methods are supporting composition

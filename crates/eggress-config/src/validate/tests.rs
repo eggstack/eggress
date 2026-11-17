@@ -223,6 +223,7 @@ fn warn_non_loopback_admin() {
             enabled: None,
             metrics: None,
             auth: None,
+            require_auth: None,
             pac: None,
             static_content: None,
         }),
@@ -251,6 +252,7 @@ fn no_warn_loopback_admin() {
             enabled: None,
             metrics: None,
             auth: None,
+            require_auth: None,
             pac: None,
             static_content: None,
         }),
@@ -722,4 +724,151 @@ fn validate_trojan_fallback_valid_address_passes() {
         "valid trojan config with fallback should pass: {:?}",
         result.err()
     );
+}
+
+#[test]
+fn warn_loopback_admin_when_require_auth() {
+    let config = ConfigFile {
+        version: Some(1),
+        listeners: None,
+        upstreams: None,
+        upstream_groups: None,
+        rules: None,
+        rules_file: None,
+        routing: None,
+        admin: Some(crate::model::AdminConfig {
+            bind: Some("127.0.0.1:9090".to_string()),
+            enabled: Some(true),
+            metrics: None,
+            auth: None,
+            require_auth: Some(true),
+            pac: None,
+            static_content: None,
+        }),
+        process: None,
+        timeouts: None,
+        reverse_servers: None,
+        reverse_clients: None,
+    };
+    let warnings = validate_config_security(&config);
+    assert!(
+        warnings.iter().any(|w| w.path == "admin.require_auth"),
+        "expected require_auth warning, got {warnings:?}"
+    );
+}
+
+#[test]
+fn warn_standalone_udp_non_loopback() {
+    let config = ConfigFile {
+        version: Some(1),
+        listeners: Some(vec![crate::model::ListenerConfig {
+            name: "ul".to_string(),
+            bind: "127.0.0.1:1080".to_string(),
+            protocols: vec!["socks5".to_string()],
+            reuse_port: None,
+            connection_limit: None,
+            auth: None,
+            udp_enabled: Some(true),
+            udp: Some(crate::model::ListenerUdpConfig {
+                enabled: Some(true),
+                mode: Some("standalone_pproxy_udp".to_string()),
+                bind: Some("0.0.0.0:1080".to_string()),
+                advertise: None,
+                idle_timeout: None,
+                target_idle_timeout: None,
+                max_associations: None,
+                max_targets_per_association: None,
+                max_datagram_size: None,
+                client_pin: None,
+                allow_private_egress: None,
+                max_associations_global: None,
+                fixed_target: None,
+                upstream_connect_timeout: None,
+                upstream_udp_bind: None,
+            }),
+            tls: None,
+            shadowsocks: None,
+            ssr: None,
+            trojan: None,
+            transparent: None,
+            unix: None,
+            fixed_target: None,
+            local_bind: None,
+        }]),
+        upstreams: None,
+        upstream_groups: None,
+        rules: None,
+        rules_file: None,
+        routing: None,
+        admin: None,
+        process: None,
+        timeouts: None,
+        reverse_servers: None,
+        reverse_clients: None,
+    };
+    let warnings = validate_config_security(&config);
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.path.contains("udp.bind") && w.message.contains("standalone_pproxy_udp")),
+        "expected standalone UDP warning, got {warnings:?}"
+    );
+}
+
+#[test]
+fn fail_closed_rejects_open_listener() {
+    let toml = r#"
+version = 1
+
+[process.security]
+fail_on_security_warnings = true
+
+[[listeners]]
+name = "public"
+bind = "0.0.0.0:8080"
+protocols = ["http"]
+"#;
+    let err = crate::validate_and_compile_toml(toml).expect_err("must fail closed");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("fail_on_security_warnings") || msg.contains("0.0.0.0:8080"),
+        "unexpected error: {msg}"
+    );
+}
+
+#[test]
+fn fail_closed_unset_still_warns_only() {
+    let toml = r#"
+version = 1
+
+[[listeners]]
+name = "public"
+bind = "0.0.0.0:8080"
+protocols = ["http"]
+"#;
+    let (rt, warnings) =
+        crate::validate_and_compile_toml_with_warnings(toml).expect("warn-only path must succeed");
+    assert_eq!(rt.listeners.len(), 1);
+    assert!(warnings.iter().any(|w| w.path.starts_with("listeners[")));
+    assert!(!rt.process.fail_on_security_warnings);
+    assert!(!rt.process.enforce_literal_ip_check);
+}
+
+#[test]
+fn process_security_knobs_compile() {
+    let toml = r#"
+version = 1
+
+[process.security]
+fail_on_security_warnings = false
+enforce_literal_ip_check = true
+
+[[listeners]]
+name = "local"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+"#;
+    let rt = crate::validate_and_compile_toml(toml).expect("must compile");
+    assert!(rt.process.enforce_literal_ip_check);
+    assert!(!rt.process.fail_on_security_warnings);
 }

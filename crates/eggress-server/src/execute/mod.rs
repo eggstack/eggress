@@ -375,6 +375,7 @@ async fn open_route(
                         request.target,
                         &eggress_core::connector::ConnectOptions {
                             local_bind: bind,
+                            enforce_literal_ip_check: config.enforce_literal_ip_check,
                             ..Default::default()
                         },
                     )

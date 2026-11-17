@@ -154,6 +154,11 @@ Contract:
 - `from_pproxy_uri()` supports pproxy-style SSH only when both `ssh` and
   `pproxy-compat` are enabled. It retains the explicit pproxy compatibility
   host-key policy; enabling `pproxy-compat` never weakens native TOML SSH.
+- `from_pproxy_uri_strict()` and `from_pproxy_uri_with_host_key_policy()` are
+  additive alternatives when both `ssh` and `pproxy-compat` are enabled: same
+  pproxy URI parsing, but a separate SSH session cache with verified
+  `known_hosts` (or a caller-selected `KnownHostsFile`) instead of
+  `InsecureCompatibility`.
 - The connector owns the reusable SSH session cache for its lifetime, so
   callers do not construct `ChainExecutor` or SSH transport state themselves.
 - The SSH facade contract is covered by a required-mode local OpenSSH
@@ -412,7 +417,7 @@ This API is designed for thin PyO3 wrappers:
 | `ServiceStatus` | `generation`, `readiness`, `active_connections`, `uptime_secs`, `listener_count`, `listeners`, `udp_associations_active`, `upstream_count` |
 | `ListenerStatus` | `name`, `bind`, `local_addr`, `protocols`, `udp_enabled` |
 | `ReloadOutcome` | `Applied { generation, upstreams }` |
-| `OutboundConnector` | `from_chain`, `direct`, `from_toml`, `from_pproxy_uri`, `connect_tcp`, `connect_tcp_detailed`, `connect_tcp_timeout`, `connect_tcp_timeout_detailed`, `upstream_count`, `hop_count` |
+| `OutboundConnector` | `from_chain`, `direct`, `from_toml`, `from_pproxy_uri`, `from_pproxy_uri_strict`, `from_pproxy_uri_with_host_key_policy`, `connect_tcp`, `connect_tcp_detailed`, `connect_tcp_timeout`, `connect_tcp_timeout_detailed`, `upstream_count`, `hop_count`, `ssh_host_key_policy` (with `ssh`) |
 | `OutboundInfo` | `local_addr`, `peer_addr`, `hop_count` |
 | `OutboundConnectError` | `kind`, `stage`, `hop_index`, `protocol` |
 | `OutboundConnectErrorKind` | `Timeout`, `Dns`, `ConnectionRefused`, `NetworkUnreachable`, `HostUnreachable`, `Authentication`, `Tls`, `Protocol`, `Policy`, `Other` |

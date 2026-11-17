@@ -405,6 +405,7 @@ async fn start_eggress_server(
                 trojan: None,
                 fixed_target: None,
                 local_bind: None,
+                enforce_literal_ip_check: false,
             };
             tokio::spawn(async move {
                 let _ = eggress_server::serve_connection(conn.stream, config).await;

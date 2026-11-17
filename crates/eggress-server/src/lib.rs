@@ -107,6 +107,8 @@ pub struct ConnectionConfig {
     pub trojan: Option<accept::InboundTrojanConfig>,
     pub fixed_target: Option<eggress_core::TargetAddr>,
     pub local_bind: Option<String>,
+    /// When true, direct connects reject literal private/reserved IP targets.
+    pub enforce_literal_ip_check: bool,
     /// Shared optional SSH session cache for compatibility upstreams.
     #[cfg(feature = "ssh")]
     pub ssh_sessions: Option<Arc<eggress_transport_ssh::SshSessionCache>>,
@@ -265,6 +267,7 @@ mod tests {
             trojan: None,
             fixed_target: None,
             local_bind: None,
+            enforce_literal_ip_check: false,
         }
     }
 
@@ -1332,6 +1335,7 @@ mod metrics_lifecycle_tests {
             trojan: None,
             fixed_target: None,
             local_bind: None,
+            enforce_literal_ip_check: false,
         }
     }
 
@@ -1558,6 +1562,7 @@ mod lean_negative_tests {
             trojan: None,
             fixed_target: None,
             local_bind: None,
+            enforce_literal_ip_check: false,
         };
 
         let report = serve_connection(boxed, config).await;
@@ -1602,6 +1607,7 @@ mod lean_negative_tests {
             }),
             fixed_target: None,
             local_bind: None,
+            enforce_literal_ip_check: false,
         };
 
         let report = serve_connection(boxed, config).await;
@@ -1642,6 +1648,7 @@ mod lean_negative_tests {
             trojan: None,
             fixed_target: None,
             local_bind: None,
+            enforce_literal_ip_check: false,
         };
         client.write_all(&[0xff]).await.unwrap();
 
@@ -1679,6 +1686,7 @@ mod lean_negative_tests {
                 trojan: None,
                 fixed_target: None,
                 local_bind: None,
+                enforce_literal_ip_check: false,
             };
             serve_connection(boxed, config).await
         });

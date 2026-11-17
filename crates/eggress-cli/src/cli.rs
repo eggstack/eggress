@@ -224,6 +224,11 @@ pub struct PproxyCheck {
     /// Output results as JSON
     #[arg(long)]
     pub json: bool,
+
+    /// Fail with exit code 3 when translated config emits security warnings
+    /// (open listeners, standalone UDP, unauthenticated admin, etc.).
+    #[arg(long)]
+    pub strict_security: bool,
 }
 
 #[cfg(feature = "pproxy-compat")]

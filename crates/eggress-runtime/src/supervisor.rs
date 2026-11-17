@@ -418,6 +418,7 @@ impl ServiceSupervisor {
 
         let handshake_timeout = rt_config.timeouts.handshake;
         let connect_timeout = rt_config.timeouts.connect;
+        let enforce_literal_ip_check = rt_config.process.enforce_literal_ip_check;
 
         #[cfg(feature = "operations")]
         let listener_infos_provider: Arc<RuntimeAdminListenerInfos> =
@@ -780,6 +781,7 @@ impl ServiceSupervisor {
                                 },
                                 fixed_target: None,
                                 local_bind: None,
+                                enforce_literal_ip_check,
                                 #[cfg(feature = "extended")]
                                 shadowsocks_metrics: conn_ss_metrics,
                                 #[cfg(feature = "ssh")]
@@ -950,6 +952,7 @@ impl ServiceSupervisor {
                                 },
                                 fixed_target: None,
                                 local_bind: None,
+                                enforce_literal_ip_check,
                                 #[cfg(feature = "extended")]
                                 shadowsocks_metrics: conn_ss_metrics,
                                 #[cfg(feature = "ssh")]
@@ -1127,6 +1130,7 @@ impl ServiceSupervisor {
                                                 trojan: None,
                                                 fixed_target: None,
                                                 local_bind: None,
+                                                enforce_literal_ip_check,
                                                 #[cfg(feature = "ssh")]
                                                 ssh_sessions: Some(ssh_sessions),
                                             };
@@ -1203,6 +1207,7 @@ impl ServiceSupervisor {
                                         },
                                         fixed_target: None,
                                         local_bind: None,
+                                        enforce_literal_ip_check,
                                         #[cfg(feature = "extended")]
                                         shadowsocks_metrics: state.shadowsocks_metrics.clone(),
                                         #[cfg(feature = "ssh")]
@@ -1304,6 +1309,7 @@ impl ServiceSupervisor {
                                 },
                                 fixed_target,
                                 local_bind,
+                                enforce_literal_ip_check,
                                 #[cfg(feature = "extended")]
                                 shadowsocks_metrics: conn_ss_metrics,
                                 #[cfg(feature = "ssh")]
@@ -2268,6 +2274,23 @@ path = "/tmp/eggress-new.sock"
             };
             let hooks = CompatibilityRuntimeHooks::from_legacy_options(&options);
             assert!(!hooks.allow_insecure_ssh_host_keys);
+        });
+    }
+
+    /// Native `start_from_config` (no compat hooks) must ignore
+    /// `EGRESS_SSH_INSECURE_HOST_KEYS` for cache policy even when the env is set.
+    #[cfg(feature = "ssh")]
+    #[test]
+    fn native_start_ignores_insecure_ssh_env_for_session_cache() {
+        with_legacy_env_reset(|| {
+            std::env::set_var("EGRESS_SSH_INSECURE_HOST_KEYS", "1");
+            assert!(ssh_insecure_acknowledged());
+            let sup = ServiceSupervisor::start_from_config(minimal_runtime_config(), None).unwrap();
+            assert!(sup.compatibility_hooks.is_none());
+            assert!(matches!(
+                sup.ssh_sessions.policy(),
+                eggress_transport_ssh::SshHostKeyPolicy::KnownHosts
+            ));
         });
     }
 

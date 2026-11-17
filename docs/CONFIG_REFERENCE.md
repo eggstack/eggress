@@ -51,6 +51,20 @@ All sections are optional. An empty file is a valid config.
 | `log_level` | string | `"info"` | Tracing filter level |
 | `shutdown_grace` | duration string | `"30s"` | Grace period for draining connections on shutdown |
 
+### `[process.security]`
+
+Opt-in native hardening. Defaults preserve warn-only / permissive behavior
+(including pproxy-compat). Enabling these knobs is an explicit operator action.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `fail_on_security_warnings` | bool | `false` | Treat security warnings (open listeners, unauthenticated admin/reverse, non-loopback standalone UDP) as load/startup errors |
+| `enforce_literal_ip_check` | bool | `false` | Reject literal private/reserved IP targets on ordinary direct connects (same classification as DNS-rebinding protection) |
+
+Listener UDP still uses `listeners[].udp.allow_private_egress` (default `true`)
+to allow or deny private/reserved UDP targets, including post-DNS domain
+admission when set to `false`.
+
 ---
 
 ## `[timeouts]`
@@ -551,12 +565,15 @@ Value can be `"direct"`, `"reject"`, or a group ID reference.
 | `bind` | string | `"127.0.0.1:9090"` | Admin HTTP bind address |
 | `enabled` | bool | false | Enable admin server |
 | `metrics` | bool | false | Enable `/metrics` endpoint |
+| `require_auth` | bool | `false` | When true, warn (or fail closed) if `[admin.auth]` is missing even on loopback — multi-user host hardening |
 | `pac` | table | none | PAC file configuration |
 | `static_content` | table array | none | Static content routes |
 
 ### `[admin.auth]`
 
-Configure exactly one authentication method for non-loopback admin binds.
+Configure exactly one authentication method for non-loopback admin binds
+(structural requirement). On loopback, auth remains optional unless
+`require_auth = true`.
 `bearer_token_env` and `basic_auth.password_env` keep secrets out of the TOML
 file. Configured credentials protect every admin endpoint.
 

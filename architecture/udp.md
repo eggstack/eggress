@@ -21,7 +21,7 @@ UDP association management, relay, upstream forwarding, and standalone relay mod
 | `upstream_socks5.rs` | `open_socks5_udp_upstream`: TCP control + SOCKS5 handshake + UDP ASSOCIATE client |
 | `udp_capability.rs` | `udp_capability`, `UdpRelayCapability`: chain classification for UDP support |
 | `codec.rs` | `decode_packet`: size-gated wrapper around `socks5::udp_codec` |
-| `security.rs` | `validate_target`, `validate_standalone_target`, `validate_datagram_size` |
+| `security.rs` | `validate_target`, `validate_standalone_target`, `reject_reserved_resolved_addr`, `validate_datagram_size` |
 | `limits.rs` | `UdpLimits`: all configurable bounds |
 | `metrics.rs` | `UdpMetrics`: atomic counters for relay, standalone, and upstream paths |
 | `error.rs` | `UdpError`: structured error enum |
@@ -146,7 +146,7 @@ First valid packet pins `SocketAddr`; mismatches return `ClientAddressMismatch`.
 
 ### Target Validation (`security.rs`)
 
-`validate_standalone_target(target, allow_private_egress)` rejects: multicast, broadcast, unspecified, port zero, loopback (when !allow_private_egress), RFC 1918/link-local/unique-local IPv6 (when !allow_private_egress). IPv4-mapped IPv6 checked via `to_ipv4_mapped()`.
+`validate_standalone_target(target, allow_private_egress)` rejects: multicast, broadcast, unspecified, port zero, loopback (when !allow_private_egress), RFC 1918/link-local/unique-local IPv6 (when !allow_private_egress). IPv4-mapped IPv6 checked via `to_ipv4_mapped()`. Domain targets pass shape validation; when `allow_private_egress = false`, `UdpTargetFlow::new_with_private_egress` applies `reject_reserved_resolved_addr` post-DNS (same classification as TCP `is_dns_rebinding_risk`). Residual DNS TOCTOU between admission and connect remains.
 
 `validate_datagram_size(size, max_size)` is a standalone helper; `decode_packet()` enforces size limit at codec level.
 

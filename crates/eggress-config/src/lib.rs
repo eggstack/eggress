@@ -29,6 +29,8 @@ pub fn validate_and_compile_toml(toml_str: &str) -> Result<RuntimeConfig, Config
         let messages: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
         ConfigError::validation("config", &messages.join("; "))
     })?;
+    let warnings = validate::validate_config_security(&config);
+    validate::fail_closed_on_security_warnings(&config, &warnings)?;
     compile::compile_config(&config)
 }
 
@@ -62,6 +64,7 @@ pub fn validate_and_compile_toml_with_warnings(
         ConfigError::validation("config", &messages.join("; "))
     })?;
     let mut warnings = validate::validate_config_security(&config);
+    validate::fail_closed_on_security_warnings(&config, &warnings)?;
     if config.version.is_none() {
         warnings.push(ConfigWarning {
             path: "version".to_string(),

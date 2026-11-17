@@ -602,6 +602,15 @@ impl PyOutboundConnector {
         Ok(Self { inner })
     }
 
+    /// Create a connector from a pproxy URI with verified SSH known-hosts policy.
+    #[staticmethod]
+    #[cfg(feature = "ssh")]
+    fn from_pproxy_uri_strict(uri: &str) -> PyResult<Self> {
+        let inner = eggress_embed::outbound::OutboundConnector::from_pproxy_uri_strict(uri)
+            .map_err(|e| ConnectionError::new_err(format!("failed to create connector: {e}")))?;
+        Ok(Self { inner })
+    }
+
     /// Create a connector from a TOML config string.
     #[staticmethod]
     fn from_toml(config_toml: &str) -> PyResult<Self> {

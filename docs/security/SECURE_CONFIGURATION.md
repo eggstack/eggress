@@ -56,16 +56,25 @@ uri = "socks5+tls://upstream.example:1080"
 
 The admin server exposes `/-/status`, `/-/config`, `/-/routes`, `/-/upstreams`, and `/-/metrics`. Configure authentication for non-loopback access; configured credentials protect every endpoint.
 
-**Default:** `127.0.0.1:9090` (loopback only).
+**Default:** `127.0.0.1:9090` (loopback only). On multi-user hosts set `require_auth = true`.
 
 ```toml
 [admin]
 bind = "127.0.0.1:9090"
 enabled = true
 metrics = true
+require_auth = true
 
 [admin.auth]
 bearer_token_env = "EGGRESS_ADMIN_TOKEN"
+```
+
+Fail closed on open-proxy / admin warnings and deny literal private TCP targets:
+
+```toml
+[process.security]
+fail_on_security_warnings = true
+enforce_literal_ip_check = true
 ```
 
 If remote admin access is required:
@@ -88,16 +97,18 @@ idle_timeout = "60s"
 max_associations = 512
 max_targets_per_association = 32
 client_pin = true
+allow_private_egress = false
 ```
 
 | Setting | Default | Recommendation |
 |---------|---------|----------------|
 | `client_pin` | `true` | Keep `true` — prevents UDP reflection attacks |
+| `allow_private_egress` | `true` | Set `false` to deny private/reserved literals and resolved domains |
 | `max_associations` | 1024 | Lower for constrained environments |
 | `idle_timeout` | `60s` | Reduce for tighter resource management |
 | `validate_target()` | Always on | Rejects multicast, broadcast, unspecified — no config needed |
 
-**Standalone UDP mode** (`mode = "standalone_pproxy_udp"`) accepts SOCKS5-framed datagrams without a TCP control connection. This mode has no authentication beyond client address pinning. Only use on trusted networks.
+**Standalone UDP mode** (`mode = "standalone_pproxy_udp"`) accepts SOCKS5-framed datagrams without a TCP control connection. This mode has no authentication beyond client address pinning. Only use on trusted networks; non-loopback binds emit a security warning.
 
 ### 5. Reverse Proxy Security
 

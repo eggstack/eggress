@@ -75,6 +75,24 @@ pub struct ProcessConfig {
     pub log_format: Option<String>,
     pub log_level: Option<String>,
     pub shutdown_grace: Option<String>,
+    /// Optional process-wide security policy (fail-closed, egress checks).
+    #[serde(default)]
+    pub security: Option<ProcessSecurityConfig>,
+}
+
+/// Opt-in process-wide security posture for native TOML / `eggress run`.
+///
+/// Defaults preserve warn-only / permissive behavior for pproxy-compat and
+/// existing configs. Enabling these knobs is an explicit operator action.
+#[derive(Debug, Deserialize, Clone, Default)]
+#[serde(deny_unknown_fields)]
+pub struct ProcessSecurityConfig {
+    /// When true, [`crate::validate::validate_config_security`] warnings become
+    /// load/startup errors instead of log-only advisories.
+    pub fail_on_security_warnings: Option<bool>,
+    /// When true, ordinary proxy direct connects reject literal private /
+    /// reserved IP targets (same classification as DNS-rebinding protection).
+    pub enforce_literal_ip_check: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -350,6 +368,9 @@ pub struct AdminConfig {
     pub enabled: Option<bool>,
     pub metrics: Option<bool>,
     pub auth: Option<AdminAuthConfig>,
+    /// When true, admin must configure `[admin.auth]` even on loopback binds
+    /// (multi-user host hardening). Default remains allow-unauth-loopback.
+    pub require_auth: Option<bool>,
     pub pac: Option<PacConfigToml>,
     pub static_content: Option<Vec<StaticContentToml>>,
 }

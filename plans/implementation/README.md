@@ -4,7 +4,7 @@ This directory contains bounded plans handed directly to implementation agents.
 
 Implementation plans are operational documents tied to the current repository state. They may be corrected, superseded, or archived without modifying the canonical long-term documents.
 
-There is currently no active implementation plan. New plans are registered in `plans/registry.md` and `docs/ROADMAP.md` before handoff.
+New plans are registered in `plans/registry.md` and `docs/ROADMAP.md` before handoff. See `plans/registry.md` for the current ready/proposed set (including Transports M003 and Security hardening M001–M005).
 
 ## Layout and naming
 
@@ -12,7 +12,7 @@ There is currently no active implementation plan. New plans are registered in `p
 implementation/<subsystem>/NNN-short-title.md
 ```
 
-Milestone numbering is local to the subsystem roadmap unless the roadmap defines another stable identifier. Subsystem names: `proxy-core-relay`, `server-runtime-config`, `routing-health-observability`, `protocols-edge`, `transports`, `outbound-chains`, `parity-compat`, `delivery`.
+Milestone numbering is local to the subsystem roadmap unless the roadmap defines another stable identifier. Subsystem names: `proxy-core-relay`, `server-runtime-config`, `routing-health-observability`, `protocols-edge`, `transports`, `outbound-chains`, `parity-compat`, `delivery`, `security-hardening`.
 
 ## Required implementation-plan template
 

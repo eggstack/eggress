@@ -31,6 +31,8 @@ mod udp;
 pub use connect_error::{OutboundConnectError, OutboundConnectErrorKind, OutboundConnectStage};
 pub use connector::OUTBOUND_MAX_DATAGRAM_SIZE;
 pub use connector::{OutboundConnector, OutboundInfo};
+#[cfg(feature = "ssh")]
+pub use eggress_transport_ssh::SshHostKeyPolicy;
 pub use error::OutboundError;
 pub use executor::{
     build_chain_executor, build_chain_executor_with_options, clear_h2_pool_registries,

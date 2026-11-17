@@ -271,6 +271,16 @@ class OutboundConnector:
         return OutboundConnector(inner)
 
     @staticmethod
+    def from_pproxy_uri_strict(uri: str) -> OutboundConnector:
+        """Create a connector from a pproxy URI using verified SSH known_hosts.
+
+        Parsing matches :meth:`from_pproxy_uri`, but SSH hops verify host keys
+        instead of using the pproxy compatibility insecure policy.
+        """
+        inner = _PyOutboundConnector.from_pproxy_uri_strict(uri)
+        return OutboundConnector(inner)
+
+    @staticmethod
     def from_toml(config_toml: str) -> OutboundConnector:
         """Create a connector from a TOML configuration string.
 

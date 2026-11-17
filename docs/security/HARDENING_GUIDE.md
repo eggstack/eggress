@@ -13,11 +13,23 @@ Eggress defaults to a conservative security posture:
 
 ## Hardening Checklist
 
+### 0. Fail-closed security policy (native)
+
+```toml
+[process.security]
+fail_on_security_warnings = true
+enforce_literal_ip_check = true
+```
+
+- pproxy-compat translation does **not** enable these by default (parity).
+- Use `eggress pproxy check --strict-security` for one-shot fail-closed checks.
+
 ### 1. Admin Server
 
 - **Default**: `127.0.0.1:9090`; loopback probes may be unauthenticated
-- **Risk**: Non-loopback binds without authentication are rejected
-- **Action**: Configure `[admin.auth]` with a bearer token or basic credentials for remote access
+- **Risk**: Non-loopback binds without authentication are rejected; multi-user loopback hosts can read unauthenticated admin
+- **Action**: Configure `[admin.auth]` with a bearer token or basic credentials
+- **Action**: Set `admin.require_auth = true` on shared hosts
 - **Additional protection**: Use network-level access control (firewall, VPN)
 
 ### 2. Listener Authentication
@@ -27,6 +39,7 @@ Eggress defaults to a conservative security posture:
 - **Shadowsocks listeners**: Password-based auth via AEAD encryption
 - **TLS listeners**: Client certificate auth via TLS (if configured)
 - **Action**: Add `[listeners.auth]` with `type = "password"` for HTTP/SOCKS if exposed
+- **Action**: Prefer `socks5_udp_associate` over `standalone_pproxy_udp` on non-loopback
 
 ### 3. Reverse Proxy
 
@@ -57,13 +70,21 @@ Eggress defaults to a conservative security posture:
 - **Action**: Disable metrics (`metrics = false`) if not needed
 - **Action**: Keep admin on loopback to protect metrics endpoint
 
-### 7. UDP
+### 7. UDP / private egress
 
 - **Client pinning**: Enabled by default — prevents address spoofing
 - **Amplification**: `validate_target()` rejects multicast/broadcast
+- **Private egress**: `listeners[].udp.allow_private_egress` defaults to `true` (compat); set `false` to deny private/reserved literals and domain resolutions
+- **TCP literals**: `[process.security] enforce_literal_ip_check = true` denies private/reserved literal targets on ordinary direct connects
 - **Action**: Review `max_associations` and `idle_timeout` for your use case
 
-### 8. Transparent Proxy
+### 8. Opt-in insecure features
+
+- `legacy-crypto`, `insecure-tls`, and `insecure-quic` stay off CLI default `full`
+- Enabling them is an operator residual risk (unauthenticated stream ciphers / verifier bypass)
+- Prefer AEAD Shadowsocks and verified TLS; never treat legacy-crypto as a secure default
+
+### 9. Transparent Proxy
 
 - **Requires**: `CAP_NET_ADMIN` (Linux) or root
 - **Setup**: iptables/nftables rules for REDIRECT
@@ -80,3 +101,6 @@ Eggress defaults to a conservative security posture:
 | Config file with plaintext passwords | Credential exposure | Medium |
 | Metrics on non-loopback admin | Information leakage | Medium |
 | Transparent proxy without capability check | Silent fallback to normal listener | Low |
+| `standalone_pproxy_udp` on non-loopback | Open UDP relay without TCP auth | High |
+| Long `--auth` reuse TTL / shared NAT IP | IP-scoped AUTH_NONE after first success | Medium |
+| `legacy-crypto` / `insecure-tls` / `insecure-quic` | Weak crypto or verifier bypass | High |

@@ -88,10 +88,24 @@ pub(crate) fn build_intermediates(
         output = output.with_warning(
             "auth-timeout",
             format!(
-                "--auth {}s enables pproxy-compatible source-IP authentication reuse",
+                "--auth {}s enables pproxy-compatible source-IP authentication reuse \
+                 (IP-scoped; NAT/shared egress may widen reuse)",
                 auth.as_secs()
             ),
         );
+        // Soft advisory only: do not change method selection or default TTL.
+        // Extremely large windows amplify NAT/shared-IP residual risk.
+        const AUTH_REUSE_WARN_SECS: u64 = 86_400 * 7;
+        if auth.as_secs() > AUTH_REUSE_WARN_SECS {
+            output = output.with_warning(
+                "auth-timeout-ttl",
+                format!(
+                    "--auth {}s exceeds 7 days; long IP-scoped reuse windows increase NAT/shared-IP risk — \
+                     prefer a shorter TTL or native auth without reuse",
+                    auth.as_secs()
+                ),
+            );
+        }
     }
     if args.verbose_level > 0 {
         output = output.with_warning(

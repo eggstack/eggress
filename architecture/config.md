@@ -165,11 +165,17 @@ Validation errors include a `path` string (e.g. `"listeners[1].tls.cert"`) for p
 
 ### ConfigWarning
 
-Non-fatal warnings emitted during `validate_config_security()`:
+Warnings emitted during `validate_config_security()` (non-fatal by default):
 - Non-loopback listener bind without auth (and not shadowsocks/ssr/trojan)
-- Non-loopback admin bind without auth
+- Non-loopback `standalone_pproxy_udp` bind
+- Non-loopback admin bind without auth; loopback admin without auth when `admin.require_auth = true`
 - Non-loopback reverse server control_bind without auth
 - Omitted `version` field (`validate_and_compile_toml_with_warnings` only): reminds operators to add `version = 1` to make the schema contract explicit
+
+When `[process.security] fail_on_security_warnings = true`, security-surface
+warnings (listeners/admin/reverse) become `ConfigError` at load. Version and
+protocol-alias notices stay advisory. `[process.security] enforce_literal_ip_check`
+is compiled onto `ProcessConfig` and plumbed into ordinary direct connects.
 
 ## Configuration/features
 
@@ -183,7 +189,7 @@ Non-fatal warnings emitted during `validate_config_security()`:
 
 - File size limit: 1 MB with TOCTOU guard (`file.take(MAX_CONFIG_SIZE + 1)`)
 - Secrets resolved at compile time -- no secret-bearing strings remain in references
-- Security warnings for non-loopback binds without auth (not errors, operator review required)
+- Security warnings for non-loopback binds without auth (errors only when `fail_on_security_warnings`)
 - TLS cert/key validated at compile time via `TlsServerConfigBuilder`
 - Trojan requires TLS -- validated at structural level
 - UDP transport validation prevents routing UDP through non-UDP-capable upstreams
@@ -208,7 +214,7 @@ Non-fatal warnings emitted during `validate_config_security()`:
 ## Reviewer gotchas
 
 - `validate_config` returns `Result<(), Vec<ConfigError>>` -- multiple errors collected in one pass; caller joins them into a single `ConfigError::Validation`.
-- `validate_config_security` runs only after structural validation succeeds; warnings do not prevent loading.
+- `validate_config_security` runs only after structural validation succeeds; warnings do not prevent loading unless `fail_on_security_warnings` is set.
 - Legacy matcher fields and the recursive `match` field are mutually exclusive on a rule.
 - `udp_enabled = true` with `[listeners.udp]` merges (udp section overrides defaults). Only `false` + `enabled = true` is a conflict.
 - Combined legacy matchers (e.g. `host_exact` + `destination_port`) are rejected at validation time.

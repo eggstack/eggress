@@ -22,13 +22,13 @@ eggress --config hardened.toml  # with [listeners.auth] configured
 
 The `pproxy translate` command generates TOML from pproxy arguments. It does not add `[listeners.auth]` unless `--auth` was in the original args. The generated TOML is valid and will produce config validation warnings at runtime, but the `translate` output itself does not include auth.
 
-**Recommendation:** Always run `eggress pproxy check` after `translate` to review security warnings before starting the service.
+**Recommendation:** Always run `eggress pproxy check` after `translate` to review security warnings before starting the service. Use `eggress pproxy check --strict-security` to fail closed on open-listener / standalone-UDP / admin warnings without changing pproxy defaults.
 
 ### Standalone UDP Mode
 
 pproxy's `-ul` flag generates `mode = "standalone_pproxy_udp"`. This mode accepts SOCKS5-framed UDP datagrams directly without a TCP control connection. There is no authentication beyond client address pinning (`client_pin = true`).
 
-**Risk:** On a non-loopback bind, any host that can reach the UDP socket can relay traffic.
+**Risk:** On a non-loopback bind, any host that can reach the UDP socket can relay traffic. Config validation emits a security warning for non-loopback standalone UDP; native fail-closed (`[process.security] fail_on_security_warnings`) or `--strict-security` can refuse startup/check.
 
 **Contrast with eggress-native:** Standard UDP mode (`socks5_udp_associate`) requires a TCP control connection with SOCKS5 handshake before UDP data flows.
 
@@ -52,13 +52,25 @@ pproxy's backward mode (`-R`) can be invoked without authentication. The compat 
 
 **Contrast with eggress-native:** Config validation emits a warning for non-loopback reverse control binds without auth.
 
-## DNS Rebinding Protection
+## DNS Rebinding / Private Egress Protection
 
 Eggress blocks DNS resolutions that resolve to private/reserved IP ranges (loopback, link-local, RFC 1918, etc.). This prevents DNS rebinding attacks where a malicious domain resolves to a private IP to access internal services.
 
-Literal private IP targets (e.g., `192.168.1.1`) are allowed for pproxy compatibility with local/LAN proxy usage. This is the deliberate default — pproxy users commonly proxy to local network addresses.
+Literal private IP targets (e.g., `192.168.1.1`) are allowed by default for pproxy compatibility with local/LAN proxy usage.
 
-A strict mode could block both DNS-resolved and literal private IPs, but the default favors compatibility. For hardened deployments, use routing rules (`destination_cidr` matchers) to restrict accessible destinations.
+Native operators can tighten without leaving the product:
+
+```toml
+[process.security]
+enforce_literal_ip_check = true   # deny literal private/reserved TCP targets
+```
+
+```toml
+[listeners.udp]
+allow_private_egress = false      # deny private/reserved UDP literals + resolved domains
+```
+
+pproxy-compat translation leaves these permissive. Routing `destination_cidr` denies remain a complementary control. Residual DNS TOCTOU between admission and connect is documented, not eliminated.
 
 ## What pproxy Compat Mode Exposes That Hardened Mode Doesn't
 

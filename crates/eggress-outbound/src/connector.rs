@@ -70,6 +70,11 @@ pub struct OutboundConnector {
     route: OutboundRoute,
     chain_executor: eggress_core::chain::ChainExecutor,
     udp_live: Arc<AtomicU64>,
+    /// When true, listener-free direct connects reject literal private/reserved IPs.
+    enforce_literal_ip_check: bool,
+    /// Host-key policy for the connector-owned SSH session cache, when `ssh` is enabled.
+    #[cfg(feature = "ssh")]
+    ssh_host_key_policy: Option<eggress_transport_ssh::SshHostKeyPolicy>,
 }
 
 #[derive(Clone, Copy)]
@@ -78,6 +83,9 @@ enum ExecutorMode {
     Direct,
     #[cfg(feature = "pproxy-compat")]
     PproxyCompatibility,
+    /// Parsed pproxy URI with verified known-hosts policy (not insecure compat).
+    #[cfg(all(feature = "pproxy-compat", feature = "ssh"))]
+    PproxyVerifiedHostKeys,
 }
 
 fn build_outbound_executor(mode: ExecutorMode) -> eggress_core::chain::ChainExecutor {
@@ -89,6 +97,10 @@ fn build_outbound_executor(mode: ExecutorMode) -> eggress_core::chain::ChainExec
         ExecutorMode::PproxyCompatibility => Some(Arc::new(
             eggress_transport_ssh::SshSessionCache::new_compatibility(),
         )),
+        #[cfg(all(feature = "pproxy-compat", feature = "ssh"))]
+        ExecutorMode::PproxyVerifiedHostKeys => {
+            Some(Arc::new(eggress_transport_ssh::SshSessionCache::new()))
+        }
     };
 
     #[cfg(not(feature = "ssh"))]
@@ -102,6 +114,114 @@ fn build_outbound_executor(mode: ExecutorMode) -> eggress_core::chain::ChainExec
     {
         crate::build_chain_executor(None, None)
     }
+}
+
+#[cfg(all(feature = "pproxy-compat", feature = "ssh"))]
+fn ssh_session_cache_for_policy(
+    policy: eggress_transport_ssh::SshHostKeyPolicy,
+) -> eggress_transport_ssh::SshSessionCache {
+    match policy {
+        eggress_transport_ssh::SshHostKeyPolicy::KnownHosts => {
+            eggress_transport_ssh::SshSessionCache::new()
+        }
+        eggress_transport_ssh::SshHostKeyPolicy::KnownHostsFile(path) => {
+            eggress_transport_ssh::SshSessionCache::with_known_hosts(path)
+        }
+        eggress_transport_ssh::SshHostKeyPolicy::InsecureCompatibility => {
+            #[cfg(feature = "pproxy-compat")]
+            {
+                return eggress_transport_ssh::SshSessionCache::new_compatibility();
+            }
+            #[cfg(not(feature = "pproxy-compat"))]
+            eggress_transport_ssh::SshSessionCache::new()
+        }
+    }
+}
+
+#[cfg(feature = "ssh")]
+fn ssh_host_key_policy_for_mode(
+    mode: ExecutorMode,
+) -> Option<eggress_transport_ssh::SshHostKeyPolicy> {
+    match mode {
+        ExecutorMode::Direct => None,
+        ExecutorMode::Native => Some(eggress_transport_ssh::SshHostKeyPolicy::KnownHosts),
+        #[cfg(feature = "pproxy-compat")]
+        ExecutorMode::PproxyCompatibility => {
+            Some(eggress_transport_ssh::SshHostKeyPolicy::InsecureCompatibility)
+        }
+        #[cfg(all(feature = "pproxy-compat", feature = "ssh"))]
+        ExecutorMode::PproxyVerifiedHostKeys => {
+            Some(eggress_transport_ssh::SshHostKeyPolicy::KnownHosts)
+        }
+    }
+}
+
+fn new_outbound_connector(
+    route: OutboundRoute,
+    mode: ExecutorMode,
+    enforce_literal_ip_check: bool,
+) -> OutboundConnector {
+    OutboundConnector {
+        route,
+        chain_executor: build_outbound_executor(mode),
+        udp_live: Arc::new(AtomicU64::new(0)),
+        enforce_literal_ip_check,
+        #[cfg(feature = "ssh")]
+        ssh_host_key_policy: ssh_host_key_policy_for_mode(mode),
+    }
+}
+
+#[cfg(all(feature = "pproxy-compat", feature = "ssh"))]
+fn new_pproxy_outbound_connector(
+    route: OutboundRoute,
+    ssh_host_key_policy: eggress_transport_ssh::SshHostKeyPolicy,
+) -> OutboundConnector {
+    let ssh_sessions = Some(Arc::new(ssh_session_cache_for_policy(
+        ssh_host_key_policy.clone(),
+    )));
+    OutboundConnector {
+        route,
+        chain_executor: crate::build_chain_executor(None, None, ssh_sessions),
+        udp_live: Arc::new(AtomicU64::new(0)),
+        enforce_literal_ip_check: false,
+        ssh_host_key_policy: Some(ssh_host_key_policy),
+    }
+}
+
+#[cfg(feature = "pproxy-compat")]
+fn compile_pproxy_uri_to_native_chain(
+    uri: &str,
+) -> Result<Option<eggress_uri::ProxyChainSpec>, OutboundError> {
+    let redacted_expr = redact_pproxy_expression(uri);
+    let chain = eggress_pproxy_compat::uri::parse_pproxy_chain(uri)
+        .map_err(|e| map_compat_parse_error(uri, &redacted_expr, e))?;
+    if chain.hops.len() == 1 && chain.hops[0].scheme == "direct" {
+        return Ok(None);
+    }
+    let native_chain = eggress_pproxy_compat::translate::compile_chain_to_native(&chain)
+        .map_err(|e| map_compat_translate_error(&chain, uri, &redacted_expr, e))?;
+    if native_chain.hops.is_empty() {
+        return Err(OutboundError::Config(format!(
+            "pproxy chain '{}' produced an empty native chain",
+            chain.redacted_display()
+        )));
+    }
+    Ok(Some(native_chain))
+}
+
+#[cfg(feature = "pproxy-compat")]
+fn connector_from_pproxy_native_chain(
+    native_chain: eggress_uri::ProxyChainSpec,
+    mode: ExecutorMode,
+) -> OutboundConnector {
+    new_outbound_connector(
+        OutboundRoute::Chain {
+            chain: Arc::new(native_chain),
+            upstream_count: 1,
+        },
+        mode,
+        false,
+    )
 }
 
 /// Adapt the canonical config error into the outbound facade's established
@@ -148,14 +268,14 @@ impl OutboundConnector {
             return Err(OutboundError::Config("upstream chain is empty".to_string()));
         }
 
-        Ok(Self {
-            route: OutboundRoute::Chain {
+        Ok(new_outbound_connector(
+            OutboundRoute::Chain {
                 chain: Arc::new(chain),
                 upstream_count,
             },
-            chain_executor: build_outbound_executor(ExecutorMode::Native),
-            udp_live: Arc::new(AtomicU64::new(0)),
-        })
+            ExecutorMode::Native,
+            runtime_config.process.enforce_literal_ip_check,
+        ))
     }
 
     /// Create a connector from an already-compiled native chain.
@@ -169,14 +289,14 @@ impl OutboundConnector {
         if chain.hops.is_empty() {
             return Err(OutboundError::Config("upstream chain is empty".to_string()));
         }
-        Ok(Self {
-            route: OutboundRoute::Chain {
+        Ok(new_outbound_connector(
+            OutboundRoute::Chain {
                 chain: Arc::new(chain),
                 upstream_count: 1,
             },
-            chain_executor: build_outbound_executor(ExecutorMode::Native),
-            udp_live: Arc::new(AtomicU64::new(0)),
-        })
+            ExecutorMode::Native,
+            false,
+        ))
     }
 
     /// Create a direct connector with no proxy hops.
@@ -184,11 +304,7 @@ impl OutboundConnector {
     /// Explicit alternative to encoding a fake chain: connections open
     /// directly to the requested target.
     pub fn direct() -> Self {
-        Self {
-            route: OutboundRoute::Direct,
-            chain_executor: build_outbound_executor(ExecutorMode::Direct),
-            udp_live: Arc::new(AtomicU64::new(0)),
-        }
+        new_outbound_connector(OutboundRoute::Direct, ExecutorMode::Direct, false)
     }
 
     /// Create a connector from a pproxy-style remote expression.
@@ -201,32 +317,76 @@ impl OutboundConnector {
     /// Unsupported chain members fail construction instead of being dropped.
     #[cfg(feature = "pproxy-compat")]
     pub fn from_pproxy_uri(uri: &str) -> Result<Self, OutboundError> {
-        let redacted_expr = redact_pproxy_expression(uri);
-        let chain = eggress_pproxy_compat::uri::parse_pproxy_chain(uri)
-            .map_err(|e| map_compat_parse_error(uri, &redacted_expr, e))?;
-        if chain.hops.len() == 1 && chain.hops[0].scheme == "direct" {
-            return Ok(Self::direct());
+        match compile_pproxy_uri_to_native_chain(uri)? {
+            None => Ok(Self::direct()),
+            Some(native_chain) => Ok(connector_from_pproxy_native_chain(
+                native_chain,
+                ExecutorMode::PproxyCompatibility,
+            )),
         }
-        // Direct native compilation: typed `PproxyChain` -> native
-        // `ProxyChainSpec` with no TOML serialize/parse round trip. Validation
-        // (backward, unsupported hops, plugins, local-bind, schemes) lives in
-        // the compatibility crate so direct and TOML paths agree.
-        let native_chain = eggress_pproxy_compat::translate::compile_chain_to_native(&chain)
-            .map_err(|e| map_compat_translate_error(&chain, uri, &redacted_expr, e))?;
-        if native_chain.hops.is_empty() {
-            return Err(OutboundError::Config(format!(
-                "pproxy chain '{}' produced an empty native chain",
-                chain.redacted_display()
-            )));
+    }
+
+    /// Create a connector from a pproxy-style remote expression using verified
+    /// SSH host-key policy (`~/.ssh/known_hosts`).
+    ///
+    /// Parsing and chain translation match [`OutboundConnector::from_pproxy_uri`],
+    /// but SSH upstreams use a separate verified session cache instead of the
+    /// pproxy compatibility insecure host-key policy.
+    #[cfg(all(feature = "pproxy-compat", feature = "ssh"))]
+    pub fn from_pproxy_uri_strict(uri: &str) -> Result<Self, OutboundError> {
+        match compile_pproxy_uri_to_native_chain(uri)? {
+            None => Ok(Self::direct()),
+            Some(native_chain) => Ok(connector_from_pproxy_native_chain(
+                native_chain,
+                ExecutorMode::PproxyVerifiedHostKeys,
+            )),
         }
-        Ok(Self {
-            route: OutboundRoute::Chain {
-                chain: Arc::new(native_chain),
-                upstream_count: 1,
-            },
-            chain_executor: build_outbound_executor(ExecutorMode::PproxyCompatibility),
-            udp_live: Arc::new(AtomicU64::new(0)),
-        })
+    }
+
+    /// Create a connector from a pproxy-style remote expression with an
+    /// explicit SSH host-key verification policy.
+    ///
+    /// [`OutboundConnector::from_pproxy_uri`] is equivalent to
+    /// `InsecureCompatibility` when `ssh` is enabled. Strict embedders should
+    /// prefer [`OutboundConnector::from_pproxy_uri_strict`] or
+    /// [`SshHostKeyPolicy::KnownHosts`] here.
+    #[cfg(all(feature = "pproxy-compat", feature = "ssh"))]
+    pub fn from_pproxy_uri_with_host_key_policy(
+        uri: &str,
+        policy: eggress_transport_ssh::SshHostKeyPolicy,
+    ) -> Result<Self, OutboundError> {
+        match compile_pproxy_uri_to_native_chain(uri)? {
+            None => Ok(Self::direct()),
+            Some(native_chain) => Ok(match policy {
+                eggress_transport_ssh::SshHostKeyPolicy::InsecureCompatibility => {
+                    connector_from_pproxy_native_chain(
+                        native_chain,
+                        ExecutorMode::PproxyCompatibility,
+                    )
+                }
+                eggress_transport_ssh::SshHostKeyPolicy::KnownHosts => {
+                    connector_from_pproxy_native_chain(
+                        native_chain,
+                        ExecutorMode::PproxyVerifiedHostKeys,
+                    )
+                }
+                eggress_transport_ssh::SshHostKeyPolicy::KnownHostsFile(_) => {
+                    new_pproxy_outbound_connector(
+                        OutboundRoute::Chain {
+                            chain: Arc::new(native_chain),
+                            upstream_count: 1,
+                        },
+                        policy,
+                    )
+                }
+            }),
+        }
+    }
+
+    /// SSH host-key policy for this connector's session cache, when `ssh` is enabled.
+    #[cfg(feature = "ssh")]
+    pub fn ssh_host_key_policy(&self) -> Option<eggress_transport_ssh::SshHostKeyPolicy> {
+        self.ssh_host_key_policy.clone()
     }
 
     /// Connect to a target host:port through the configured proxy chain.
@@ -401,7 +561,10 @@ impl OutboundConnector {
                 let (stream, metadata) = eggress_core::connector::DirectConnector
                     .connect_with_options_and_metadata(
                         &target,
-                        &eggress_core::connector::ConnectOptions::default(),
+                        &eggress_core::connector::ConnectOptions {
+                            enforce_literal_ip_check: self.enforce_literal_ip_check,
+                            ..Default::default()
+                        },
                     )
                     .await
                     .map_err(direct_failure)?;
@@ -893,6 +1056,24 @@ mod tests {
         let connector = OutboundConnector::from_pproxy_uri("socks5://127.0.0.1:1080").unwrap();
         assert_eq!(connector.upstream_count(), 1);
         assert_eq!(connector.hop_count(), 1);
+    }
+
+    #[cfg(all(feature = "pproxy-compat", feature = "ssh"))]
+    #[test]
+    fn from_pproxy_uri_strict_uses_verified_ssh_host_key_policy() {
+        use eggress_transport_ssh::SshHostKeyPolicy;
+
+        let uri = "socks5://127.0.0.1:1080";
+        let compat = OutboundConnector::from_pproxy_uri(uri).unwrap();
+        let strict = OutboundConnector::from_pproxy_uri_strict(uri).unwrap();
+        assert_eq!(
+            compat.ssh_host_key_policy(),
+            Some(SshHostKeyPolicy::InsecureCompatibility)
+        );
+        assert_eq!(
+            strict.ssh_host_key_policy(),
+            Some(SshHostKeyPolicy::KnownHosts)
+        );
     }
 
     #[cfg(feature = "pproxy-compat")]

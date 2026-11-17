@@ -10,6 +10,7 @@ use super::resolve_password;
 pub(crate) fn compile_process(config: &ConfigFile) -> Result<ProcessConfig, ConfigError> {
     let defaults = ProcessConfig::default();
     let process = config.process.as_ref();
+    let security = process.and_then(|p| p.security.as_ref());
 
     let shutdown_grace = match process.and_then(|p| p.shutdown_grace.as_ref()) {
         Some(s) => super::parse_duration_opt(s)?,
@@ -24,6 +25,12 @@ pub(crate) fn compile_process(config: &ConfigFile) -> Result<ProcessConfig, Conf
             .and_then(|p| p.log_level.clone())
             .unwrap_or(defaults.log_level),
         shutdown_grace,
+        fail_on_security_warnings: security
+            .and_then(|s| s.fail_on_security_warnings)
+            .unwrap_or(defaults.fail_on_security_warnings),
+        enforce_literal_ip_check: security
+            .and_then(|s| s.enforce_literal_ip_check)
+            .unwrap_or(defaults.enforce_literal_ip_check),
     })
 }
 
@@ -89,6 +96,7 @@ pub(crate) fn compile_admin(config: &ConfigFile) -> Result<Option<AdminConfig>, 
         enabled: admin.enabled.unwrap_or(true),
         metrics: admin.metrics.unwrap_or(true),
         auth,
+        require_auth: admin.require_auth.unwrap_or(false),
         pac,
         static_content,
     }))

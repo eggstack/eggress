@@ -371,6 +371,7 @@ async fn serve_listener(
                 trojan: None,
                 fixed_target: None,
                 local_bind: None,
+                enforce_literal_ip_check: false,
                 #[cfg(feature = "ssh")]
                 ssh_sessions: None,
             };
@@ -457,6 +458,7 @@ mod tests {
                     trojan: None,
                     fixed_target: None,
                     local_bind: None,
+                    enforce_literal_ip_check: false,
                     #[cfg(feature = "ssh")]
                     ssh_sessions: None,
                 };

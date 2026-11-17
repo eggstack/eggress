@@ -99,13 +99,28 @@ pub fn validate_standalone_target(
                 }
             }
             // Domain targets are deferred: the true private-egress check
-            // happens post-DNS in `eggress_core::connector::is_reserved_or_private_ip`.
+            // happens post-DNS via [`reject_reserved_resolved_addr`].
             // This pre-check is best-effort; TOCTOU between validation and lookup
-            // is accepted and documented (B-07).
+            // is accepted and documented (residual risk).
             _ => {}
         }
     }
 
+    Ok(())
+}
+
+/// Post-DNS admission: reject resolved addresses in reserved/private ranges
+/// when private egress is denied. Uses the same classification as TCP
+/// DNS-rebinding protection (`eggress_core::connector::is_dns_rebinding_risk`).
+pub fn reject_reserved_resolved_addr(
+    addr: std::net::SocketAddr,
+    allow_private_egress: bool,
+) -> Result<(), UdpError> {
+    if !allow_private_egress && eggress_core::connector::is_dns_rebinding_risk(&addr.ip()) {
+        return Err(UdpError::Other(
+            "private network egress not allowed".to_string(),
+        ));
+    }
     Ok(())
 }
 
@@ -374,5 +389,18 @@ mod tests {
             validate_datagram_size(65536, 65535),
             Err(UdpError::DatagramTooLarge(65536, 65535))
         ));
+    }
+
+    #[test]
+    fn reject_reserved_resolved_private_when_denied() {
+        let addr = "192.168.0.1:8080".parse().unwrap();
+        assert!(reject_reserved_resolved_addr(addr, false).is_err());
+        assert!(reject_reserved_resolved_addr(addr, true).is_ok());
+    }
+
+    #[test]
+    fn allow_reserved_resolved_public_when_denied() {
+        let addr = "8.8.8.8:53".parse().unwrap();
+        assert!(reject_reserved_resolved_addr(addr, false).is_ok());
     }
 }

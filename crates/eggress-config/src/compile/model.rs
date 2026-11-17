@@ -183,6 +183,10 @@ pub struct ProcessConfig {
     pub log_format: String,
     pub log_level: String,
     pub shutdown_grace: std::time::Duration,
+    /// Fail closed on security warnings at load/startup.
+    pub fail_on_security_warnings: bool,
+    /// Reject literal private/reserved IP targets on ordinary direct connects.
+    pub enforce_literal_ip_check: bool,
 }
 
 impl Default for ProcessConfig {
@@ -191,6 +195,8 @@ impl Default for ProcessConfig {
             log_format: "text".to_string(),
             log_level: "info".to_string(),
             shutdown_grace: std::time::Duration::from_secs(30),
+            fail_on_security_warnings: false,
+            enforce_literal_ip_check: false,
         }
     }
 }
@@ -376,6 +382,8 @@ pub struct AdminConfig {
     pub enabled: bool,
     pub metrics: bool,
     pub auth: Option<AdminAuthConfig>,
+    /// Require `[admin.auth]` even on loopback when true.
+    pub require_auth: bool,
     pub pac: Option<PacConfig>,
     pub static_content: Vec<StaticRoute>,
 }

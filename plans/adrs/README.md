@@ -4,6 +4,11 @@ This directory contains durable decisions that affect Eggress architecture acros
 
 Pre-existing product/compat decision records live under `docs/adr/` (e.g. SSH upstream parity, QUIC/H3 parity, SSR compatibility) in their original `ADR_<name>.md` convention and stay where they are. New cross-cutting process or architecture decisions that govern multiple subsystems or milestones go here under the `ADR-NNNN` convention below.
 
+Current `plans/adrs/` records:
+
+- `ADR-0001-planning-conventions.md` (accepted) — codegg-style planning hierarchy.
+- `ADR-0002-native-compat-security-hardening.md` (accepted) — path-split / opt-in security harden for the security-hardening workstream.
+
 Use an ADR when a question cannot be answered safely inside one implementation plan without establishing a reusable architectural contract.
 
 ## Naming

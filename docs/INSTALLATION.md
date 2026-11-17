@@ -215,6 +215,19 @@ Behavior:
   release tag exactly and agree with one another — before replacing
   anything. A checksum, extraction, or candidate-version failure leaves the
   current installation untouched with no fallback to another source.
+  SHA-256 is **integrity** evidence (detect accidental corruption or a
+  mismatched sidecar), not cryptographic **authenticity** — there is no
+  cosign, minisign, TUF, or platform code signing on release assets today.
+  Trust rests on HTTPS to GitHub Releases plus the checksum and staged-version
+  gates; a compromised release account that publishes consistent archives and
+  sidecars remains a residual supply-chain risk. Operators who need stronger
+  provenance should pin installer URLs or wait for a future signing scheme.
+- Downloads only from the latest stable GitHub Release API and asset URLs
+  over HTTPS. `EGRESS_UPDATE_BASE_URL` can redirect discovery and downloads
+  for offline tests, but only when **both** that variable and
+  `EGGRESS_UPDATE_ALLOW_BASE_URL_OVERRIDE=1` (or `true`/`yes`) are set; with
+  only the base URL set the command fails closed. Overrides must use
+  `https://` or `file://`.
 - Replaces `eggress` and the sibling `pproxy` next to it as one release
   unit through a verified staging transaction (bounded archive extraction
   plus atomic pair commit with rollback on failure; `eggup-core` +

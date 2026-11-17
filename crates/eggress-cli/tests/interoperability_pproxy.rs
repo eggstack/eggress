@@ -738,6 +738,7 @@ async fn test_eggress_server_pproxy_socks5_client() {
                 trojan: None,
                 fixed_target: None,
                 local_bind: None,
+                enforce_literal_ip_check: false,
             };
             tokio::spawn(async move {
                 let _ = eggress_server::serve_connection(conn.stream, config).await;
@@ -829,6 +830,7 @@ async fn test_eggress_server_pproxy_http_client() {
                 trojan: None,
                 fixed_target: None,
                 local_bind: None,
+                enforce_literal_ip_check: false,
             };
             tokio::spawn(async move {
                 let _ = eggress_server::serve_connection(conn.stream, config).await;

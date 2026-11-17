@@ -634,7 +634,12 @@ async fn build_direct_flow(
     response_tx: &tokio::sync::mpsc::Sender<ResponseMsg>,
     target: SocksAddr,
 ) -> Result<TargetFlowEntry, UdpError> {
-    let flow = UdpTargetFlow::new(target.clone(), local_udp_bind_addr()).await?;
+    let flow = UdpTargetFlow::new_with_private_egress(
+        target.clone(),
+        local_udp_bind_addr(),
+        config.allow_private_egress,
+    )
+    .await?;
     let target_idle_timeout = config.limits.target_idle_timeout;
 
     let flow_response_tx = response_tx.clone();

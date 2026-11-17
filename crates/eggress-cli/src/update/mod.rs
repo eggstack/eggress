@@ -17,7 +17,18 @@
 //! - normal operation never touches the network except for this explicit
 //!   command; unit tests never depend on live GitHub availability
 //!   (`EGRESS_UPDATE_BASE_URL` + `file://` fixtures cover the flow
-//!   offline).
+//!   offline when both override env vars are set — see below);
+//! - release discovery and downloads use GitHub Releases over HTTPS unless
+//!   an explicit, dual-acknowledged base URL override is in effect
+//!   (`EGRESS_UPDATE_BASE_URL` plus
+//!   `EGRESS_UPDATE_ALLOW_BASE_URL_OVERRIDE=1`/`true`/`yes`). If the base URL
+//!   is set without the allow flag, the command fails closed so operators
+//!   notice; overrides must be `https://` or `file://` (non-HTTPS network URLs
+//!   are still rejected in the download layer);
+//! - integrity is SHA-256 sidecar verification plus staged executable identity
+//!   checks — not code signing, minisign, cosign, or TUF. A compromised GitHub
+//!   release account remains residual risk; operators who need stronger
+//!   authenticity should pin installers or wait for a future signing scheme.
 
 pub mod download;
 pub mod eggup;
@@ -98,9 +109,7 @@ fn run_update() -> Result<String, UpdateFailure> {
     let current = ReleaseVersion::current();
     let target = detect_target().map_err(UpdateFailure::UnsupportedTarget)?;
 
-    // Test hook: redirect release discovery/downloads at `file://` fixtures
-    // without touching production URLs.
-    let base_override = std::env::var("EGRESS_UPDATE_BASE_URL").ok();
+    let base_override = update_base_override_from_env()?;
 
     let latest = discover_latest_release(&base_override)?;
     if current >= latest {
@@ -122,7 +131,9 @@ fn run_update() -> Result<String, UpdateFailure> {
     check_destination_writable(&install_dir).map_err(UpdateFailure::Failed)?;
 
     let tag = tag_for(latest);
-    let download_base = base_override.unwrap_or_else(|| download_base_for_tag(&tag));
+    let download_base = base_override
+        .clone()
+        .unwrap_or_else(|| download_base_for_tag(&tag));
     let (archive_url, checksum_url) = asset_urls(&download_base, target);
 
     let stage = staging_dir()?;
@@ -281,6 +292,57 @@ fn map_download_error(error: DownloadError) -> UpdateFailure {
     }
 }
 
+const ENV_UPDATE_BASE_URL: &str = "EGRESS_UPDATE_BASE_URL";
+const ENV_UPDATE_ALLOW_BASE_URL_OVERRIDE: &str = "EGRESS_UPDATE_ALLOW_BASE_URL_OVERRIDE";
+
+/// Read and validate optional update base URL override from the environment.
+fn update_base_override_from_env() -> Result<Option<String>, UpdateFailure> {
+    resolve_update_base_override(
+        std::env::var(ENV_UPDATE_BASE_URL).ok().as_deref(),
+        std::env::var(ENV_UPDATE_ALLOW_BASE_URL_OVERRIDE)
+            .ok()
+            .as_deref(),
+    )
+}
+
+/// Gate `EGRESS_UPDATE_BASE_URL` behind an explicit second env acknowledgment
+/// and restrict schemes to `https://` or `file://`.
+fn resolve_update_base_override(
+    base_url: Option<&str>,
+    allow_override: Option<&str>,
+) -> Result<Option<String>, UpdateFailure> {
+    let Some(raw) = base_url else {
+        return Ok(None);
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if !env_acknowledgment_truthy(allow_override) {
+        return Err(UpdateFailure::ExternalDependency(format!(
+            "{ENV_UPDATE_BASE_URL} is set but {ENV_UPDATE_ALLOW_BASE_URL_OVERRIDE} is not enabled; \
+             refusing to redirect update discovery — unset {ENV_UPDATE_BASE_URL} to use GitHub \
+             Releases, or set {ENV_UPDATE_ALLOW_BASE_URL_OVERRIDE}=1 (or true/yes) together with \
+             an https:// or file:// base URL for intentional offline/fixture use only"
+        )));
+    }
+    if !(trimmed.starts_with("https://") || trimmed.starts_with("file://")) {
+        return Err(UpdateFailure::ExternalDependency(format!(
+            "{ENV_UPDATE_BASE_URL} must be an https:// or file:// URL; got a disallowed scheme"
+        )));
+    }
+    Ok(Some(trimmed.to_string()))
+}
+
+fn env_acknowledgment_truthy(value: Option<&str>) -> bool {
+    match value.map(str::trim) {
+        None | Some("") => false,
+        Some(v) => {
+            matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on")
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -291,6 +353,41 @@ mod tests {
         assert_eq!(parse_github_tag(body).unwrap(), "v1.2.3");
         assert!(parse_github_tag(r#"{"name":"x"}"#).is_err());
         assert!(parse_github_tag("not json").is_err());
+    }
+
+    #[test]
+    fn base_url_override_rejected_without_acknowledgment() {
+        let err = resolve_update_base_override(Some("file:///tmp/fixtures"), None).unwrap_err();
+        assert!(
+            err.to_string().contains(ENV_UPDATE_ALLOW_BASE_URL_OVERRIDE),
+            "{err}"
+        );
+        assert!(resolve_update_base_override(Some("file:///tmp/fixtures"), Some("0")).is_err());
+        assert!(resolve_update_base_override(Some("file:///tmp/fixtures"), Some("no")).is_err());
+    }
+
+    #[test]
+    fn base_url_override_allowed_with_dual_acknowledgment() {
+        for allow in ["1", "true", "TRUE", "yes", "on"] {
+            let base = resolve_update_base_override(Some("file:///tmp/fixtures/"), Some(allow))
+                .expect(allow);
+            assert_eq!(base, Some("file:///tmp/fixtures/".to_string()));
+            let https =
+                resolve_update_base_override(Some("https://example.test/releases"), Some(allow))
+                    .expect(allow);
+            assert_eq!(https, Some("https://example.test/releases".to_string()));
+        }
+    }
+
+    #[test]
+    fn base_url_override_rejects_disallowed_schemes_even_with_acknowledgment() {
+        for bad in ["http://insecure", "ftp://x", "/abs/path"] {
+            let err = resolve_update_base_override(Some(bad), Some("1")).unwrap_err();
+            assert!(
+                err.to_string().contains("disallowed scheme"),
+                "{bad}: {err}"
+            );
+        }
     }
 
     #[test]

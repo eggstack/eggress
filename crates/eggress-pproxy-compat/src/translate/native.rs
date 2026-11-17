@@ -442,6 +442,7 @@ pub(crate) fn intermediates_to_config_file(
             enabled: None,
             metrics: None,
             auth: None,
+            require_auth: None,
             pac: Some(model::PacConfigToml {
                 path: intermediates.pac_path.clone(),
                 proxy,

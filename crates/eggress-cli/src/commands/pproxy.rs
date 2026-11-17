@@ -253,6 +253,33 @@ fn handle_pproxy_check(args: &PproxyCheck) -> i32 {
     if output.has_unsupported() {
         return EXIT_UNSUPPORTED_FEATURE;
     }
+
+    if args.strict_security {
+        match eggress_config::validate_and_compile_toml_with_warnings(&output.toml) {
+            Ok((_rt, warnings)) => {
+                let security: Vec<_> = warnings
+                    .iter()
+                    .filter(|w| {
+                        w.path.starts_with("listeners[")
+                            || w.path.starts_with("admin.")
+                            || w.path.starts_with("reverse_servers[")
+                    })
+                    .collect();
+                if !security.is_empty() {
+                    eprintln!("error: security warnings treated as errors (--strict-security):");
+                    for w in security {
+                        eprintln!("  {w}");
+                    }
+                    return EXIT_CONFIG_VALIDATION;
+                }
+            }
+            Err(e) => {
+                eprintln!("error: config error: {e}");
+                return EXIT_CONFIG_VALIDATION;
+            }
+        }
+    }
+
     EXIT_SUCCESS
 }
 

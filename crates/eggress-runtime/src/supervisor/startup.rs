@@ -205,11 +205,19 @@ pub(crate) fn init_supervisor(
     );
 
     #[cfg(feature = "ssh")]
-    let ssh_sessions = build_ssh_sessions(
-        compatibility_hooks
-            .as_ref()
-            .is_some_and(|hooks| hooks.allow_insecure_ssh_host_keys),
-    );
+    let allow_insecure_ssh_host_keys = compatibility_hooks
+        .as_ref()
+        .is_some_and(|hooks| hooks.allow_insecure_ssh_host_keys);
+    #[cfg(feature = "ssh")]
+    if !allow_insecure_ssh_host_keys && super::ssh_insecure_acknowledged() {
+        tracing::warn!(
+            "EGRESS_SSH_INSECURE_HOST_KEYS is set but native startup keeps verified \
+             known_hosts SSH host-key policy; this variable applies only to pproxy \
+             compatibility runtime startup with explicit insecure opt-in"
+        );
+    }
+    #[cfg(feature = "ssh")]
+    let ssh_sessions = build_ssh_sessions(allow_insecure_ssh_host_keys);
 
     let tasks = TaskTracker::new();
     let connection_tasks = TaskTracker::new();

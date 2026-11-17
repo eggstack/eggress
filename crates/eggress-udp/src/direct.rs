@@ -19,8 +19,21 @@ pub struct UdpTargetFlow {
 
 impl UdpTargetFlow {
     pub async fn new(target: SocksAddr, local_bind: SocketAddr) -> Result<Self, UdpError> {
+        Self::new_with_private_egress(target, local_bind, true).await
+    }
+
+    /// Create a flow, optionally denying reserved/private resolved addresses.
+    ///
+    /// When `allow_private_egress` is false, domain targets that resolve to
+    /// private/reserved ranges fail closed (aligned with TCP rebinding policy).
+    pub async fn new_with_private_egress(
+        target: SocksAddr,
+        local_bind: SocketAddr,
+        allow_private_egress: bool,
+    ) -> Result<Self, UdpError> {
         let socket = UdpSocket::bind(local_bind).await?;
         let resolved = resolve_target(&target).await?;
+        crate::security::reject_reserved_resolved_addr(resolved, allow_private_egress)?;
         socket.connect(resolved).await?;
         Ok(Self {
             target,

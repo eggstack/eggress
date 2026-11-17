@@ -21,6 +21,7 @@ transports-roadmap.md
 outbound-chains-roadmap.md
 parity-compat-roadmap.md
 delivery-roadmap.md
+security-hardening-roadmap.md
 ```
 
 ## Required roadmap structure

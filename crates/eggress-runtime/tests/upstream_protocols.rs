@@ -2150,6 +2150,9 @@ async fn h2_hop_zero_local_bind_honors_source_socket() {
         }
     });
 
+    #[cfg(feature = "ssh")]
+    let executor = eggress_server::build_chain_executor(None, None, None);
+    #[cfg(not(feature = "ssh"))]
     let executor = eggress_server::build_chain_executor(None, None);
     let ordinary =
         eggress_uri::parse_proxy_chain(&format!("h2://{}:{}", proxy_addr.ip(), proxy_addr.port()))

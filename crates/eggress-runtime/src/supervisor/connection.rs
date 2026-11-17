@@ -75,6 +75,7 @@ pub(crate) struct ConnectionBuildParams {
     pub(crate) security: InboundSecurity,
     pub(crate) fixed_target: Option<eggress_core::TargetAddr>,
     pub(crate) local_bind: Option<String>,
+    pub(crate) enforce_literal_ip_check: bool,
     #[cfg(feature = "extended")]
     pub(crate) shadowsocks_metrics:
         std::sync::Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>,
@@ -128,6 +129,7 @@ pub(crate) fn build_connection_config(
             }),
         fixed_target: params.fixed_target,
         local_bind: params.local_bind,
+        enforce_literal_ip_check: params.enforce_literal_ip_check,
         #[cfg(feature = "ssh")]
         ssh_sessions: params.ssh_sessions,
     }
