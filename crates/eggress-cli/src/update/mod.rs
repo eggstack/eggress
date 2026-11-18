@@ -416,7 +416,7 @@ mod tests {
 
     /// End-to-end offline flow: fixture release metadata + archive +
     /// checksum over `file://`, installed into a temp pair directory.
-    /// Requires `curl`, `tar`, and a SHA-256 tool (present on CI runners).
+    /// Requires `curl`, `tar`, `gzip`, and a SHA-256 tool (present on CI runners).
     #[test]
     fn offline_fixture_update_replaces_pair_atomically() {
         let Some(target) = target::detect_target().ok() else {
@@ -425,7 +425,7 @@ mod tests {
         if target::is_windows_target(target) {
             return; // fixture scripts are POSIX shell; Windows covered by installer tests.
         }
-        for tool in ["curl", "tar"] {
+        for tool in ["curl", "tar", "gzip"] {
             let available = std::process::Command::new(tool)
                 .arg("--version")
                 .output()
@@ -526,7 +526,7 @@ mod tests {
         if target::is_windows_target(target) {
             return;
         }
-        for tool in ["curl", "tar"] {
+        for tool in ["curl", "tar", "gzip"] {
             let available = std::process::Command::new(tool)
                 .arg("--version")
                 .output()
