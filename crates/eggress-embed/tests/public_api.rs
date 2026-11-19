@@ -47,14 +47,34 @@ fn outbound_authority_and_compat_reexport_paths_compile() {
 #[test]
 fn relay_routing_core_representative_paths_compile() {
     // `eggress-relay::{relay, RelayOptions, RelayReport}` type paths.
-    let options = eggress_relay::RelayOptions::default();
-    assert!(options.buffer_size.get() > 0);
+    let options = eggress_relay::RelayOptions {
+        buffer_size: std::num::NonZeroUsize::new(8192).unwrap(),
+        half_close: eggress_relay::HalfClosePolicy::Drain,
+    };
+    assert_eq!(options.buffer_size.get(), 8192);
     let report = eggress_relay::RelayReport {
         bytes_upstream: 0,
         bytes_downstream: 0,
         termination: eggress_relay::RelayTermination::ClientClosed,
     };
     assert_eq!(report.bytes_upstream, 0);
+    let _termination_shape = match report.termination {
+        eggress_relay::RelayTermination::ClientClosed => 0,
+        eggress_relay::RelayTermination::ServerClosed => 1,
+        eggress_relay::RelayTermination::DrainTimedOut { .. } => 2,
+    };
+
+    // The accepted idle-timeout seam is additive and its outcome is public.
+    let _idle_relay =
+        eggress_relay::relay_with_idle_timeout::<tokio::io::DuplexStream, tokio::io::DuplexStream>;
+    let _idle_outcome = eggress_relay::RelayIdleTimeoutOutcome::IdleTimedOut {
+        bytes_upstream: 0,
+        bytes_downstream: 0,
+    };
+    let (_relay_client, _relay_server) = tokio::io::duplex(1024);
+    let _idle_call =
+        eggress_relay::relay_with_idle_timeout(_relay_client, _relay_server, options, None);
+
     // Proves the maintained async entry point resolves without executing I/O.
     let _relay = eggress_relay::relay::<tokio::io::DuplexStream, tokio::io::DuplexStream>;
 

@@ -12,7 +12,7 @@ existing public items.
 | Full in-process service lifecycle | `eggress-embed::{EggressConfig, EggressService, EggressHandle}` |
 | Listener-free outbound chains | `eggress-outbound::OutboundConnector` |
 | Existing full-service imports | `eggress_embed::outbound::*` compatibility re-export |
-| Generic relay between connected streams | `eggress-relay::{relay, RelayOptions, RelayReport}` |
+| Generic relay between connected streams | `eggress-relay::{relay, relay_with_idle_timeout, RelayOptions, RelayReport, RelayIdleTimeoutOutcome}` |
 | CLI and installed binaries | `eggress-cli` (`eggress` and `pproxy` targets) |
 
 `eggress-config::RuntimeConfig` crossing `eggress-embed::EggressConfig` is an
@@ -77,7 +77,9 @@ Representative (not exhaustive) downstream-shaped compile contracts:
 - `eggress-embed/tests/public_api.rs`: embed config handoff
   (`EggressConfig::from_toml_str`/`from_compiled`), outbound authority
   (`OutboundConnector::direct`/`from_chain`) plus `eggress_embed::outbound`
-  compatibility re-export, relay/routing/core paths, plus Phase 4
+  compatibility re-export, relay/routing/core paths, including an old
+  `RelayOptions` struct literal, exhaustive `RelayTermination` match, and the
+  additive `relay_with_idle_timeout`/`RelayIdleTimeoutOutcome` paths; plus Phase 4
   `supporting_config_runtime_paths_compile` (`eggress-config` TOML compile,
   `eggress-runtime` supervisor/state/classify signatures) and
   `protocol_representative_paths_compile` (HTTP/SOCKS via URI + `HttpDetector`/
@@ -122,5 +124,7 @@ Representative (not exhaustive) downstream-shaped compile contracts:
 
 Compatibility re-exports (`eggress_embed::outbound::*`, server re-exports)
 remain covered; private implementation movement (Phases 1–2) does not change
-public paths. No public item or feature changes visibility, name, location,
-default, or signature in this phase.
+public paths. The relay timeout is an additive opt-in surface only: existing
+`RelayOptions`, `RelayReport`, `RelayTermination`, and relay function
+signatures/defaults remain unchanged, and existing entry points never enable
+the timeout.

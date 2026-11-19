@@ -8,6 +8,7 @@ Current `plans/adrs/` records:
 
 - `ADR-0001-planning-conventions.md` (accepted) — codegg-style planning hierarchy.
 - `ADR-0002-native-compat-security-hardening.md` (accepted) — path-split / opt-in security harden for the security-hardening workstream.
+- `ADR-0003-relay-idle-timeout-semantics.md` (accepted) — additive API and connection-wide no-progress semantics for eggress-relay.
 
 Use an ADR when a question cannot be answered safely inside one implementation plan without establishing a reusable architectural contract.
 

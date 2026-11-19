@@ -34,6 +34,53 @@ where
 }
 ```
 
+### Optional connection-wide idle timeout
+
+`relay_with_idle_timeout(client, server, options, Some(duration))` is an
+additive opt-in for callers that need to close a connection with no forwarded
+byte progress. A successful write in either direction resets the same deadline;
+reads, buffered-but-unwritten data, EOF, and shutdown do not. The deadline stays
+active after a half-close and is independent of `HalfClosePolicy::DrainFor`.
+
+```rust
+use std::time::Duration;
+use tokio::io::{AsyncRead, AsyncWrite};
+use eggress_relay::{relay_with_idle_timeout, RelayIdleTimeoutOutcome, RelayOptions};
+
+async fn idle_bridge<C, S>(client: C, server: S)
+where
+    C: AsyncRead + AsyncWrite + Unpin,
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let outcome = relay_with_idle_timeout(
+        client,
+        server,
+        RelayOptions::default(),
+        Some(Duration::from_secs(30)),
+    )
+    .await;
+    match outcome {
+        Ok(RelayIdleTimeoutOutcome::Completed(report)) => {
+            // Handle the existing completion report.
+            let _ = report;
+        }
+        Ok(RelayIdleTimeoutOutcome::IdleTimedOut { bytes_upstream, bytes_downstream }) => {
+            // The relay stopped after no successful forwarded write for 30 seconds.
+            let _ = (bytes_upstream, bytes_downstream);
+        }
+        Err(failure) => {
+            // Directional I/O errors remain distinct and keep their byte counts.
+            let _ = failure;
+        }
+    }
+}
+```
+
+Pass `None` to disable the new timer; `Some(Duration::ZERO)` expires on the
+first poll before stream I/O. Existing `relay()` and `relay_with_options()`
+remain disabled and retain their existing result types. A timeout may close a
+legitimate quiet stream, so consumers own the setting and choose the duration.
+
 The default policy (`HalfClosePolicy::Drain`) waits for the opposite
 direction without an extra deadline, so a slow response after a client
 half-close is delivered. Choose

@@ -182,6 +182,24 @@ pub struct RelayReport {
     pub termination: RelayTermination,
 }
 
+/// Terminal outcome of [`relay_with_idle_timeout`].
+///
+/// Idle expiry is distinct from [`RelayTermination::DrainTimedOut`]: the
+/// former means no bytes were forwarded in either direction for the configured
+/// interval, while the latter bounds only post-half-close draining.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelayIdleTimeoutOutcome {
+    /// The relay completed according to its half-close policy.
+    Completed(RelayReport),
+    /// The connection-wide interval elapsed without forwarded-byte progress.
+    IdleTimedOut {
+        /// Bytes copied client -> server before expiry.
+        bytes_upstream: u64,
+        /// Bytes copied server -> client before expiry.
+        bytes_downstream: u64,
+    },
+}
+
 /// Which copy direction failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RelayDirection {
@@ -253,6 +271,38 @@ enum DirectionPoll {
     Failed(std::io::Error),
 }
 
+/// After a successful write, let due deadlines win before extending the idle
+/// interval. Drain expiry is checked first when both deadlines are due.
+fn reset_idle_deadline_after_write(
+    cx: &mut std::task::Context<'_>,
+    drain_deadline: &mut Option<std::pin::Pin<Box<tokio::time::Sleep>>>,
+    idle_deadline: &mut Option<std::pin::Pin<Box<tokio::time::Sleep>>>,
+    idle_timeout: Option<Duration>,
+) -> bool {
+    let Some(idle_timeout) = idle_timeout else {
+        return true;
+    };
+
+    if let Some(deadline) = drain_deadline.as_mut() {
+        if std::future::Future::poll(deadline.as_mut(), cx).is_ready() {
+            return false;
+        }
+    }
+
+    let Some(deadline) = idle_deadline.as_mut() else {
+        debug_assert!(false, "idle timeout has no deadline");
+        return true;
+    };
+    if std::future::Future::poll(deadline.as_mut(), cx).is_ready() {
+        return false;
+    }
+
+    deadline
+        .as_mut()
+        .reset(tokio::time::Instant::now() + idle_timeout);
+    true
+}
+
 /// Poll one direction while retaining both complete streams in the parent
 /// future. The bounded step budget prevents a stream that is always ready from
 /// monopolising a poll and starving the opposite direction.
@@ -260,6 +310,9 @@ fn poll_direction<R, W>(
     mut reader: std::pin::Pin<&mut R>,
     mut writer: std::pin::Pin<&mut W>,
     state: &mut DirectionState,
+    drain_deadline: &mut Option<std::pin::Pin<Box<tokio::time::Sleep>>>,
+    idle_deadline: &mut Option<std::pin::Pin<Box<tokio::time::Sleep>>>,
+    idle_timeout: Option<Duration>,
     cx: &mut std::task::Context<'_>,
 ) -> std::task::Poll<DirectionPoll>
 where
@@ -284,6 +337,14 @@ where
                     state.write_pos += written;
                     state.bytes += written as u64;
                     made_progress = true;
+                    if !reset_idle_deadline_after_write(
+                        cx,
+                        drain_deadline,
+                        idle_deadline,
+                        idle_timeout,
+                    ) {
+                        return std::task::Poll::Ready(DirectionPoll::Progress);
+                    }
                     continue;
                 }
                 std::task::Poll::Ready(Err(error)) => {
@@ -356,12 +417,15 @@ struct RelayFuture<C, S> {
     downstream: DirectionState,
     half_close: HalfClosePolicy,
     first_closed: Option<RelaySide>,
+    idle_timeout: Option<Duration>,
+    idle_deadline: Option<std::pin::Pin<Box<tokio::time::Sleep>>>,
     drain_deadline: Option<std::pin::Pin<Box<tokio::time::Sleep>>>,
 }
 
 impl<C, S> RelayFuture<C, S> {
-    fn new(client: C, server: S, options: RelayOptions) -> Self {
+    fn new(client: C, server: S, options: RelayOptions, idle_timeout: Option<Duration>) -> Self {
         let buffer_size = options.buffer_size.get();
+        let idle_deadline = idle_timeout.map(|duration| Box::pin(tokio::time::sleep(duration)));
         Self {
             client,
             server,
@@ -369,6 +433,8 @@ impl<C, S> RelayFuture<C, S> {
             downstream: DirectionState::new(buffer_size),
             half_close: options.half_close,
             first_closed: None,
+            idle_timeout,
+            idle_deadline,
             drain_deadline: None,
         }
     }
@@ -379,6 +445,33 @@ impl<C, S> RelayFuture<C, S> {
             self.drain_deadline = Some(Box::pin(tokio::time::sleep(duration)));
         }
     }
+
+    /// Poll drain before idle so an exact tie preserves the established
+    /// post-half-close termination classification.
+    fn poll_expired(&mut self, cx: &mut std::task::Context<'_>) -> Option<RelayIdleTimeoutOutcome> {
+        if let Some(deadline) = self.drain_deadline.as_mut() {
+            if std::future::Future::poll(deadline.as_mut(), cx).is_ready() {
+                if let Some(first_closed) = self.first_closed {
+                    return Some(RelayIdleTimeoutOutcome::Completed(RelayReport {
+                        bytes_upstream: self.upstream.bytes,
+                        bytes_downstream: self.downstream.bytes,
+                        termination: RelayTermination::DrainTimedOut { first_closed },
+                    }));
+                }
+                debug_assert!(false, "drain deadline fired with no first close");
+            }
+        }
+
+        if let Some(deadline) = self.idle_deadline.as_mut() {
+            if std::future::Future::poll(deadline.as_mut(), cx).is_ready() {
+                return Some(RelayIdleTimeoutOutcome::IdleTimedOut {
+                    bytes_upstream: self.upstream.bytes,
+                    bytes_downstream: self.downstream.bytes,
+                });
+            }
+        }
+        None
+    }
 }
 
 impl<C, S> std::future::Future for RelayFuture<C, S>
@@ -386,21 +479,48 @@ where
     C: AsyncRead + AsyncWrite + Unpin,
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    type Output = Result<RelayReport, RelayFailure>;
+    type Output = Result<RelayIdleTimeoutOutcome, RelayFailure>;
 
     fn poll(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Self::Output> {
         let this = self.get_mut();
+        let had_first_closed = this.first_closed.is_some();
+
+        if let Some(timeout) = this.idle_timeout {
+            if timeout.is_zero() {
+                return std::task::Poll::Ready(Ok(RelayIdleTimeoutOutcome::IdleTimedOut {
+                    bytes_upstream: this.upstream.bytes,
+                    bytes_downstream: this.downstream.bytes,
+                }));
+            }
+        }
+
+        // Preserve the legacy entry points' established ordering: without an
+        // idle timer, poll the surviving direction before checking DrainFor.
+        if this.idle_timeout.is_some() {
+            if let Some(outcome) = this.poll_expired(cx) {
+                return std::task::Poll::Ready(Ok(outcome));
+            }
+        }
 
         if this.first_closed.is_none() {
-            match poll_direction(
+            let upstream = poll_direction(
                 std::pin::Pin::new(&mut this.client),
                 std::pin::Pin::new(&mut this.server),
                 &mut this.upstream,
+                &mut this.drain_deadline,
+                &mut this.idle_deadline,
+                this.idle_timeout,
                 cx,
-            ) {
+            );
+            if this.idle_timeout.is_some() {
+                if let Some(outcome) = this.poll_expired(cx) {
+                    return std::task::Poll::Ready(Ok(outcome));
+                }
+            }
+            match upstream {
                 std::task::Poll::Ready(DirectionPoll::Complete) => {
                     this.start_drain(RelaySide::Client);
                 }
@@ -416,12 +536,21 @@ where
             }
 
             if this.first_closed.is_none() {
-                match poll_direction(
+                let downstream = poll_direction(
                     std::pin::Pin::new(&mut this.server),
                     std::pin::Pin::new(&mut this.client),
                     &mut this.downstream,
+                    &mut this.drain_deadline,
+                    &mut this.idle_deadline,
+                    this.idle_timeout,
                     cx,
-                ) {
+                );
+                if this.idle_timeout.is_some() {
+                    if let Some(outcome) = this.poll_expired(cx) {
+                        return std::task::Poll::Ready(Ok(outcome));
+                    }
+                }
+                match downstream {
                     std::task::Poll::Ready(DirectionPoll::Complete) => {
                         this.start_drain(RelaySide::Server);
                     }
@@ -442,25 +571,12 @@ where
             }
         }
 
-        if let Some(deadline) = this.drain_deadline.as_mut() {
-            if std::future::Future::poll(deadline.as_mut(), cx).is_ready() {
-                let Some(first_closed) = this.first_closed else {
-                    debug_assert!(false, "drain deadline fired with no first close");
-                    return std::task::Poll::Ready(Err(RelayFailure {
-                        direction: RelayDirection::Upstream,
-                        source: std::io::Error::new(
-                            std::io::ErrorKind::BrokenPipe,
-                            "relay drain without first close",
-                        ),
-                        bytes_upstream: this.upstream.bytes,
-                        bytes_downstream: this.downstream.bytes,
-                    }));
-                };
-                return std::task::Poll::Ready(Ok(RelayReport {
-                    bytes_upstream: this.upstream.bytes,
-                    bytes_downstream: this.downstream.bytes,
-                    termination: RelayTermination::DrainTimedOut { first_closed },
-                }));
+        // In opted-in mode, a newly-started DrainFor timer can be zero duration.
+        // Poll it before the surviving direction; legacy entry points retain
+        // their established post-direction drain check.
+        if !had_first_closed && this.idle_timeout.is_some() {
+            if let Some(outcome) = this.poll_expired(cx) {
+                return std::task::Poll::Ready(Ok(outcome));
             }
         }
 
@@ -481,26 +597,37 @@ where
                 std::pin::Pin::new(&mut this.server),
                 std::pin::Pin::new(&mut this.client),
                 &mut this.downstream,
+                &mut this.drain_deadline,
+                &mut this.idle_deadline,
+                this.idle_timeout,
                 cx,
             ),
             RelaySide::Server => poll_direction(
                 std::pin::Pin::new(&mut this.client),
                 std::pin::Pin::new(&mut this.server),
                 &mut this.upstream,
+                &mut this.drain_deadline,
+                &mut this.idle_deadline,
+                this.idle_timeout,
                 cx,
             ),
         };
+        // Catch deadlines that became due during this direction poll. This is
+        // also the legacy entry points' established DrainFor check ordering.
+        if let Some(outcome) = this.poll_expired(cx) {
+            return std::task::Poll::Ready(Ok(outcome));
+        }
 
         match remaining {
             std::task::Poll::Ready(DirectionPoll::Complete) => {
-                std::task::Poll::Ready(Ok(RelayReport {
+                std::task::Poll::Ready(Ok(RelayIdleTimeoutOutcome::Completed(RelayReport {
                     bytes_upstream: this.upstream.bytes,
                     bytes_downstream: this.downstream.bytes,
                     termination: match first_closed {
                         RelaySide::Client => RelayTermination::ClientClosed,
                         RelaySide::Server => RelayTermination::ServerClosed,
                     },
-                }))
+                })))
             }
             std::task::Poll::Ready(DirectionPoll::Failed(source)) => {
                 std::task::Poll::Ready(Err(RelayFailure {
@@ -529,7 +656,7 @@ where
     relay_with_options(client, server, RelayOptions::default()).await
 }
 
-/// Relay with explicit options.
+/// Relay with explicit options and no idle timeout.
 ///
 /// A single [`RelayFuture`] owns both complete streams and their two
 /// directional copy states. It polls bounded work from each direction in the
@@ -546,12 +673,73 @@ where
     C: AsyncRead + AsyncWrite + Unpin,
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    RelayFuture::new(client, server, options).await
+    match RelayFuture::new(client, server, options, None).await? {
+        RelayIdleTimeoutOutcome::Completed(report) => Ok(report),
+        RelayIdleTimeoutOutcome::IdleTimedOut { .. } => {
+            unreachable!("idle timeout is disabled for relay_with_options")
+        }
+    }
+}
+
+/// Relay with an optional connection-wide timeout for successfully forwarded
+/// byte progress.
+///
+/// The connection-wide idle timer starts on the future's first poll and stays
+/// active through half-close draining. Only a successful non-empty write in
+/// either direction resets it; reads, buffered input, EOF, and shutdown do not.
+/// `None` disables the timer; `Some(Duration::ZERO)` expires before either
+/// stream is polled. At an idle deadline, timeout takes precedence over I/O or
+/// progress observed in that poll. If idle and `DrainFor` deadlines are both
+/// due, `DrainTimedOut` takes precedence.
+///
+/// A timeout is returned as [`RelayIdleTimeoutOutcome::IdleTimedOut`] with the
+/// final directional byte counts. The same future owns both streams, so
+/// timeout completion and cancellation both drop them without spawning a
+/// detached task.
+///
+/// ```no_run
+/// use std::time::Duration;
+/// use tokio::io::{AsyncRead, AsyncWrite};
+/// use eggress_relay::{relay_with_idle_timeout, RelayIdleTimeoutOutcome, RelayOptions};
+///
+/// async fn bridge<C, S>(client: C, server: S)
+/// where
+///     C: AsyncRead + AsyncWrite + Unpin,
+///     S: AsyncRead + AsyncWrite + Unpin,
+/// {
+///     let outcome = relay_with_idle_timeout(
+///         client,
+///         server,
+///         RelayOptions::default(),
+///         Some(Duration::from_secs(30)),
+///     )
+///     .await;
+///     match outcome {
+///         Ok(RelayIdleTimeoutOutcome::Completed(report)) => { let _ = report; }
+///         Ok(RelayIdleTimeoutOutcome::IdleTimedOut { bytes_upstream, bytes_downstream }) => {
+///             let _ = (bytes_upstream, bytes_downstream);
+///         }
+///         Err(failure) => { let _ = failure; }
+///     }
+/// }
+/// ```
+pub async fn relay_with_idle_timeout<C, S>(
+    client: C,
+    server: S,
+    options: RelayOptions,
+    idle_timeout: Option<Duration>,
+) -> Result<RelayIdleTimeoutOutcome, RelayFailure>
+where
+    C: AsyncRead + AsyncWrite + Unpin,
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    RelayFuture::new(client, server, options, idle_timeout).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::future::Future;
     use std::pin::Pin;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
@@ -563,6 +751,10 @@ mod tests {
             buffer_size: NonZeroUsize::new(8192).unwrap(),
             half_close,
         }
+    }
+
+    async fn poll_once<F: Future>(future: &mut Pin<Box<F>>) -> Poll<F::Output> {
+        std::future::poll_fn(|cx| Poll::Ready(future.as_mut().poll(cx))).await
     }
 
     async fn relay_pair(
@@ -914,6 +1106,340 @@ mod tests {
         fn drop(&mut self) {
             self.drops.fetch_add(1, Ordering::SeqCst);
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn idle_timeout_none_keeps_silent_relay_open() {
+        let (_client_peer, relay_client) = tokio::io::duplex(64);
+        let (relay_server, _server_peer) = tokio::io::duplex(64);
+        let mut relay = Box::pin(relay_with_idle_timeout(
+            relay_client,
+            relay_server,
+            test_options(HalfClosePolicy::Drain),
+            None,
+        ));
+
+        assert!(poll_once(&mut relay).await.is_pending());
+        tokio::time::advance(Duration::from_secs(60)).await;
+        assert!(poll_once(&mut relay).await.is_pending());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn idle_deadline_starts_on_first_poll_not_future_construction() {
+        let (_client_peer, relay_client) = tokio::io::duplex(64);
+        let (relay_server, _server_peer) = tokio::io::duplex(64);
+        let mut relay = Box::pin(relay_with_idle_timeout(
+            relay_client,
+            relay_server,
+            test_options(HalfClosePolicy::Drain),
+            Some(Duration::from_secs(10)),
+        ));
+
+        tokio::time::advance(Duration::from_secs(60)).await;
+        assert!(poll_once(&mut relay).await.is_pending());
+        tokio::time::advance(Duration::from_secs(9)).await;
+        assert!(poll_once(&mut relay).await.is_pending());
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert!(matches!(
+            poll_once(&mut relay).await,
+            Poll::Ready(Ok(RelayIdleTimeoutOutcome::IdleTimedOut {
+                bytes_upstream: 0,
+                bytes_downstream: 0,
+            }))
+        ));
+    }
+
+    #[tokio::test]
+    async fn zero_idle_timeout_expires_before_polling_streams() {
+        let client = ScriptedStream::new(Vec::new(), Some(std::io::ErrorKind::ConnectionReset));
+        let server = ScriptedStream::new(Vec::new(), Some(std::io::ErrorKind::ConnectionReset));
+
+        let outcome = relay_with_idle_timeout(
+            client,
+            server,
+            test_options(HalfClosePolicy::Drain),
+            Some(Duration::ZERO),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            outcome,
+            RelayIdleTimeoutOutcome::IdleTimedOut {
+                bytes_upstream: 0,
+                bytes_downstream: 0,
+            }
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn idle_timeout_expires_quiet_relay_with_counts_and_releases_streams() {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let (client_peer, relay_client) = tokio::io::duplex(64);
+        let (relay_server, server_peer) = tokio::io::duplex(64);
+        let client = DropCounted {
+            inner: relay_client,
+            drops: Arc::clone(&drops),
+        };
+        let server = DropCounted {
+            inner: relay_server,
+            drops: Arc::clone(&drops),
+        };
+        let mut relay = Box::pin(relay_with_idle_timeout(
+            client,
+            server,
+            test_options(HalfClosePolicy::Drain),
+            Some(Duration::from_secs(5)),
+        ));
+
+        assert!(poll_once(&mut relay).await.is_pending());
+        tokio::time::advance(Duration::from_secs(5)).await;
+        let outcome = poll_once(&mut relay).await;
+        assert!(matches!(
+            outcome,
+            Poll::Ready(Ok(RelayIdleTimeoutOutcome::IdleTimedOut {
+                bytes_upstream: 0,
+                bytes_downstream: 0,
+            }))
+        ));
+        drop(relay);
+        assert_eq!(drops.load(Ordering::SeqCst), 2);
+        drop((client_peer, server_peer));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn idle_deadline_wins_over_progress_ready_at_exact_deadline() {
+        let (mut client_peer, relay_client) = tokio::io::duplex(64);
+        let (relay_server, _server_peer) = tokio::io::duplex(64);
+        let mut relay = Box::pin(relay_with_idle_timeout(
+            relay_client,
+            relay_server,
+            test_options(HalfClosePolicy::Drain),
+            Some(Duration::from_secs(5)),
+        ));
+
+        assert!(poll_once(&mut relay).await.is_pending());
+        tokio::time::advance(Duration::from_secs(5)).await;
+        client_peer.write_all(b"late").await.unwrap();
+
+        let outcome = poll_once(&mut relay).await;
+        assert!(matches!(
+            outcome,
+            Poll::Ready(Ok(RelayIdleTimeoutOutcome::IdleTimedOut {
+                bytes_upstream: 0,
+                bytes_downstream: 0,
+            }))
+        ));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn upstream_forwarded_bytes_reset_the_shared_idle_deadline() {
+        let (mut client_peer, relay_client) = tokio::io::duplex(64);
+        let (relay_server, mut server_peer) = tokio::io::duplex(64);
+        let mut relay = Box::pin(relay_with_idle_timeout(
+            relay_client,
+            relay_server,
+            test_options(HalfClosePolicy::Drain),
+            Some(Duration::from_secs(10)),
+        ));
+
+        assert!(poll_once(&mut relay).await.is_pending());
+        tokio::time::advance(Duration::from_secs(9)).await;
+        client_peer.write_all(b"u").await.unwrap();
+        assert!(poll_once(&mut relay).await.is_pending());
+        let mut forwarded = [0; 1];
+        server_peer.read_exact(&mut forwarded).await.unwrap();
+        assert_eq!(&forwarded, b"u");
+
+        tokio::time::advance(Duration::from_secs(9)).await;
+        assert!(poll_once(&mut relay).await.is_pending());
+        tokio::time::advance(Duration::from_secs(2)).await;
+        let outcome = poll_once(&mut relay).await;
+        assert!(matches!(
+            outcome,
+            Poll::Ready(Ok(RelayIdleTimeoutOutcome::IdleTimedOut {
+                bytes_upstream: 1,
+                bytes_downstream: 0,
+            }))
+        ));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn downstream_forwarded_bytes_reset_the_shared_idle_deadline() {
+        let (mut client_peer, relay_client) = tokio::io::duplex(64);
+        let (relay_server, mut server_peer) = tokio::io::duplex(64);
+        let mut relay = Box::pin(relay_with_idle_timeout(
+            relay_client,
+            relay_server,
+            test_options(HalfClosePolicy::Drain),
+            Some(Duration::from_secs(10)),
+        ));
+
+        assert!(poll_once(&mut relay).await.is_pending());
+        tokio::time::advance(Duration::from_secs(9)).await;
+        server_peer.write_all(b"d").await.unwrap();
+        assert!(poll_once(&mut relay).await.is_pending());
+        let mut forwarded = [0; 1];
+        client_peer.read_exact(&mut forwarded).await.unwrap();
+        assert_eq!(&forwarded, b"d");
+
+        tokio::time::advance(Duration::from_secs(9)).await;
+        assert!(poll_once(&mut relay).await.is_pending());
+        tokio::time::advance(Duration::from_secs(2)).await;
+        let outcome = poll_once(&mut relay).await;
+        assert!(matches!(
+            outcome,
+            Poll::Ready(Ok(RelayIdleTimeoutOutcome::IdleTimedOut {
+                bytes_upstream: 0,
+                bytes_downstream: 1,
+            }))
+        ));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn buffered_but_unwritten_input_does_not_reset_idle_deadline() {
+        let (mut client_peer, relay_client) = tokio::io::duplex(8);
+        // Keep the one-byte server-side buffer full so the second byte remains
+        // buffered in the relay without a successful destination write.
+        let (relay_server, _server_peer) = tokio::io::duplex(1);
+        let mut relay = Box::pin(relay_with_idle_timeout(
+            relay_client,
+            relay_server,
+            test_options(HalfClosePolicy::Drain),
+            Some(Duration::from_secs(10)),
+        ));
+
+        assert!(poll_once(&mut relay).await.is_pending());
+        client_peer.write_all(b"a").await.unwrap();
+        assert!(poll_once(&mut relay).await.is_pending());
+        tokio::time::advance(Duration::from_secs(9)).await;
+
+        client_peer.write_all(b"b").await.unwrap();
+        assert!(poll_once(&mut relay).await.is_pending());
+        tokio::time::advance(Duration::from_secs(2)).await;
+        let outcome = poll_once(&mut relay).await;
+        assert!(matches!(
+            outcome,
+            Poll::Ready(Ok(RelayIdleTimeoutOutcome::IdleTimedOut {
+                bytes_upstream: 1,
+                bytes_downstream: 0,
+            }))
+        ));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn idle_timeout_remains_active_during_half_close_drain() {
+        let (mut client_peer, relay_client) = tokio::io::duplex(64);
+        let (relay_server, mut server_peer) = tokio::io::duplex(64);
+        let mut relay = Box::pin(relay_with_idle_timeout(
+            relay_client,
+            relay_server,
+            test_options(HalfClosePolicy::Drain),
+            Some(Duration::from_secs(10)),
+        ));
+
+        client_peer.write_all(b"req").await.unwrap();
+        client_peer.shutdown().await.unwrap();
+        assert!(poll_once(&mut relay).await.is_pending());
+        let mut request = [0; 3];
+        server_peer.read_exact(&mut request).await.unwrap();
+        assert_eq!(&request, b"req");
+
+        tokio::time::advance(Duration::from_secs(10)).await;
+        let outcome = poll_once(&mut relay).await;
+        assert!(matches!(
+            outcome,
+            Poll::Ready(Ok(RelayIdleTimeoutOutcome::IdleTimedOut {
+                bytes_upstream: 3,
+                bytes_downstream: 0,
+            }))
+        ));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn response_within_idle_interval_completes_after_half_close() {
+        let (mut client_peer, relay_client) = tokio::io::duplex(64);
+        let (relay_server, mut server_peer) = tokio::io::duplex(64);
+        let mut relay = Box::pin(relay_with_idle_timeout(
+            relay_client,
+            relay_server,
+            test_options(HalfClosePolicy::Drain),
+            Some(Duration::from_secs(10)),
+        ));
+
+        client_peer.write_all(b"req").await.unwrap();
+        client_peer.shutdown().await.unwrap();
+        assert!(poll_once(&mut relay).await.is_pending());
+        let mut request = [0; 3];
+        server_peer.read_exact(&mut request).await.unwrap();
+        assert_eq!(&request, b"req");
+
+        tokio::time::advance(Duration::from_secs(9)).await;
+        assert!(poll_once(&mut relay).await.is_pending());
+        server_peer.write_all(b"ok").await.unwrap();
+        server_peer.shutdown().await.unwrap();
+        let outcome = poll_once(&mut relay).await;
+        let report = match outcome {
+            Poll::Ready(Ok(RelayIdleTimeoutOutcome::Completed(report))) => report,
+            other => panic!("expected successful half-close completion, got {other:?}"),
+        };
+        let mut response = [0; 2];
+        client_peer.read_exact(&mut response).await.unwrap();
+        assert_eq!(&response, b"ok");
+        assert_eq!(report.bytes_upstream, 3);
+        assert_eq!(report.bytes_downstream, 2);
+        assert_eq!(report.termination, RelayTermination::ClientClosed);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn drain_deadline_wins_exact_tie_with_idle_deadline() {
+        let (mut client_peer, relay_client) = tokio::io::duplex(64);
+        let (relay_server, _server_peer) = tokio::io::duplex(64);
+        let mut relay = Box::pin(relay_with_idle_timeout(
+            relay_client,
+            relay_server,
+            test_options(HalfClosePolicy::DrainFor(Duration::from_secs(5))),
+            Some(Duration::from_secs(5)),
+        ));
+
+        client_peer.shutdown().await.unwrap();
+        assert!(poll_once(&mut relay).await.is_pending());
+        tokio::time::advance(Duration::from_secs(5)).await;
+        let outcome = poll_once(&mut relay).await;
+        let report = match outcome {
+            Poll::Ready(Ok(RelayIdleTimeoutOutcome::Completed(report))) => report,
+            other => panic!("expected drain timeout to win the tie, got {other:?}"),
+        };
+        assert_eq!(report.bytes_upstream, 0);
+        assert_eq!(report.bytes_downstream, 0);
+        assert_eq!(
+            report.termination,
+            RelayTermination::DrainTimedOut {
+                first_closed: RelaySide::Client,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn opted_in_relay_preserves_io_failure_and_byte_counts() {
+        let client = ScriptedStream::new(
+            b"partial".to_vec(),
+            Some(std::io::ErrorKind::ConnectionReset),
+        );
+        let server = ScriptedStream::new(Vec::new(), None);
+        let failure = relay_with_idle_timeout(
+            client,
+            server,
+            test_options(HalfClosePolicy::Drain),
+            Some(Duration::from_secs(10)),
+        )
+        .await
+        .expect_err("I/O failure remains distinct from idle expiry");
+
+        assert_eq!(failure.direction, RelayDirection::Upstream);
+        assert_eq!(failure.source.kind(), std::io::ErrorKind::ConnectionReset);
+        assert_eq!(failure.bytes_upstream, 7);
+        assert_eq!(failure.bytes_downstream, 0);
     }
 
     #[tokio::test]

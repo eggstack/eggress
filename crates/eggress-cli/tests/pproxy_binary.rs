@@ -413,7 +413,7 @@ fn auth_flag_starts_compatibility_listener() {
             "--auth",
             "30",
         ]),
-        1500,
+        5000,
     );
     assert!(
         status.is_none(),
@@ -428,6 +428,7 @@ fn auth_flag_starts_compatibility_listener() {
         "--auth must not be rejected as unsupported: {stderr}"
     );
 }
+
 
 #[test]
 fn malformed_auth_fails() {

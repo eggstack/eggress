@@ -129,6 +129,12 @@ Cross-cutting workstream registered and closed 2026-11-17 against published
 Parity claims unchanged. Finding **#9** (update authenticity beyond SHA-256)
 remains deferred under Outcome B2 until a future signing ADR.
 
+### Conditionally closed maintenance — optional relay no-progress timeout
+
+[Issue #10](https://github.com/eggstack/eggress/issues/10) requests an opt-in no-progress timeout at the generic relay API. The source implementation is complete under accepted [ADR-0003](../plans/adrs/ADR-0003-relay-idle-timeout-semantics.md); see the [subsystem roadmap](../plans/subsystems/proxy-core-relay-roadmap.md), [implementation plan](../plans/implementation/proxy-core-relay/003-optional-relay-idle-timeout.md), and [closure record](../plans/closure/proxy-core-relay/003-status.md).
+
+The additive API is implemented and existing relay calls remain disabled and source-compatible. Closure is conditional because workspace-wide verification did not complete. No release or downstream issue was created. After a compatible API release is separately authorized and published, the plan calls for linked Eggchaos config-adoption and Eggtunnel exact-pin/adoption issues (with its existing `relay_drain` kept separate).
+
 ## Completed Milestones
 
 ### Phase 1: Core TCP proxy foundation

@@ -44,8 +44,8 @@ path = "src/pproxy_main.rs"
 required-features = ["pproxy-compat"]
 
 [dependencies]
-eggup-archive = "=0.1.2"
-eggup-core = "=0.1.2"
+eggup-archive = "=0.2.0"
+eggup-core = "=0.2.0"
 eggress-admin.workspace = true
 eggress-core.workspace = true
 eggress-server.workspace = true
